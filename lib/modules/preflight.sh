@@ -14,6 +14,10 @@ m_preflight_probe() {
     PROBE=FAIL; NOTE="bukan Android (uname -o = $os)"; return
   fi
   if [ "$arch" != "aarch64" ]; then
+    if [ "${CODEMUX_ALLOW_NONANDROID:-0}" = "1" ]; then
+      PROBE=WARN; NOTE="arsitektur $arch (mode uji: tidak dipaksakan)"
+      return
+    fi
     PROBE=FAIL; NOTE="arsitektur $arch (codemux v1 hanya aarch64)"; return
   fi
   if [ "$uid" -eq 0 ]; then
