@@ -2,6 +2,7 @@
 # tests/smoke.sh — uji cepat tanpa menyentuh sistem.
 # shellcheck shell=bash
 set -Eeuo pipefail
+export CODEMUX_ALLOW_NONANDROID=1  # supaya bisa diuji di CI (bukan Android)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -42,11 +43,24 @@ else
   bad "check --json"
 fi
 
-# 6. perintah belum tersedia harus gagal rapi (bukan crash)
-if bash bin/codemux install >/dev/null 2>&1; then
-  bad "install seharusnya belum tersedia"
+# 6. install --dry-run: rencana 5 modul, tanpa mengubah apa pun
+out="$(bash bin/codemux install --dry-run 2>&1 || true)"
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/5 ' || true)"
+if [ "$rows" -eq 5 ] && printf '%s' "$out" | grep -q 'dry-run'; then
+  ok "install --dry-run (5 modul)"
 else
-  ok "install belum tersedia (exit != 0)"
+  bad "install --dry-run (baris rencana=$rows)"
+fi
+
+# 7. status & repair --dry-run tidak boleh crash
+if bash bin/codemux status >/dev/null 2>&1; then ok "status"; else bad "status"; fi
+if bash bin/codemux repair --dry-run >/dev/null 2>&1; then ok "repair --dry-run"; else bad "repair --dry-run"; fi
+
+# 8. perintah yang belum ada harus gagal rapi (bukan crash)
+if bash bin/codemux upgrade >/dev/null 2>&1; then
+  bad "upgrade seharusnya belum tersedia"
+else
+  ok "upgrade belum tersedia (exit != 0)"
 fi
 
 # 7. shellcheck kalau tersedia

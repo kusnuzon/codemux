@@ -10,10 +10,16 @@ CODEMUX_HOME="${CODEMUX_HOME:-$HOME/.config/codemux}"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
 # versions.env (opsional; jangan gagal kalau tidak ada)
+# Nilai dari environment menang atas file (dipakai tests/ dan CI).
+_CODEMUX_ENV_APT="${CODEMUX_APT_PACKAGES-__unset__}"
+_CODEMUX_ENV_MIRROR="${CODEMUX_MIRROR_MAIN-__unset__}"
 if [ -f "$CODEMUX_ROOT/versions.env" ]; then
   # shellcheck source=/dev/null
   . "$CODEMUX_ROOT/versions.env"
 fi
+[ "$_CODEMUX_ENV_APT" = "__unset__" ] || CODEMUX_APT_PACKAGES="$_CODEMUX_ENV_APT"
+[ "$_CODEMUX_ENV_MIRROR" = "__unset__" ] || CODEMUX_MIRROR_MAIN="$_CODEMUX_ENV_MIRROR"
+unset _CODEMUX_ENV_APT _CODEMUX_ENV_MIRROR
 OPENCODE_V1_VERSION="${OPENCODE_V1_VERSION:-?}"
 OPENCODE_V2_VERSION="${OPENCODE_V2_VERSION:-?}"
 CODEMUX_APT_PACKAGES="${CODEMUX_APT_PACKAGES:-}"
@@ -83,18 +89,28 @@ penggunaan:
 
 perintah:
   check              status tiap modul (tidak mengubah apa pun)
+  install            pasang yang belum ada; aman diulang & lanjut setelah terputus
+  status             progres install terakhir, lock, 10 baris log terakhir
+  repair             bereskan sisa proses yang mati di tengah
   version            versi codemux + komponen terpasang
   help               bantuan ini
-  install            pasang yang belum ada        (M2, belum tersedia)
   update-check       cek rilis baru di hulu       (M5, belum tersedia)
   upgrade            perbarui semua komponen      (M5, belum tersedia)
-  repair             perbaiki modul rusak         (M5, belum tersedia)
   doctor             diagnosa lengkap             (M5, belum tersedia)
   memory             kelola ingatan lintas sesi   (M4, belum tersedia)
   uninstall          lepas komponen               (M5, belum tersedia)
 
 opsi check:
   --json             keluaran mesin
+
+opsi install:
+  --dry-run          tampilkan rencana, tidak mengubah apa pun
+  --fresh            mulai dari langkah 1 (bukan melanjutkan)
+  --skip a,b         lewati modul tertentu (deps,mirror,storage,toolset,glibc)
+  -y, --yes          tanpa konfirmasi (default: tanpa tanya)
+
+opsi repair:
+  --dry-run          tampilkan perbaikan yang akan dilakukan
 EOF
 }
 

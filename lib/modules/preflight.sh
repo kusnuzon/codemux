@@ -10,7 +10,7 @@ m_preflight_probe() {
   free="$(df -Pk "$HOME" 2>/dev/null | awk 'NR==2{print $4}')"
   free="${free:-0}"
 
-  if [ "$os" != "Android" ]; then
+  if [ "$os" != "Android" ] && [ "${CODEMUX_ALLOW_NONANDROID:-0}" != "1" ]; then
     PROBE=FAIL; NOTE="bukan Android (uname -o = $os)"; return
   fi
   if [ "$arch" != "aarch64" ]; then
@@ -20,7 +20,7 @@ m_preflight_probe() {
     PROBE=FAIL; NOTE="dijalankan sebagai root (tidak didukung)"; return
   fi
 
-  notes="android/$arch · user $(id -un)"
+  notes="$os/$arch · user $(id -un)"
   if [ "$free" -lt 3145728 ]; then
     PROBE=WARN
     NOTE="$notes · disk $(human_bytes $((free * 1024))) (< 3 GB)"
