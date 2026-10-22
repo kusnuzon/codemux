@@ -99,6 +99,7 @@ perintah:
   doctor             diagnosa lengkap + saran perbaikan
   memory             status ingatan lintas sesi (read-only)
   uninstall          lepas payload V1/V2 + blok launcher (memori tetap)
+  self-update        perbarui kode codemux dari rilis hulu
 
 opsi check:
   --json             keluaran mesin
@@ -106,7 +107,7 @@ opsi check:
 opsi install:
   --dry-run          tampilkan rencana, tidak mengubah apa pun
   --fresh            mulai dari langkah 1 (bukan melanjutkan)
-  --skip a,b         lewati modul (deps,mirror,storage,toolset,glibc,v1,v2,launcher,dotfiles,memory)
+  --skip a,b         lewati modul (deps,mirror,storage,toolset,glibc,v1,v2,launcher,dotfiles,memory,self)
   -y, --yes          tanpa konfirmasi (default: tanpa tanya)
 
 opsi repair:
@@ -140,6 +141,6 @@ codemux_versions() {
 
 codemux_not_ready() {
   log_warn "perintah '$1' belum tersedia di versi $CODEMUX_VERSION (milestone berikutnya)."
-  log_dim "Saat ini yang jalan: check, version, help."
+  log_dim "Perintah yang tersedia: check, install, status, repair, memory, update-check, doctor, upgrade, uninstall, self-update, version, help."
   exit 1
 }

@@ -26,7 +26,7 @@ case "$out" in codemux*) ok "version" ;; *) bad "version" ;; esac
 
 # 4. check: 12 baris modul
 rows="$(bash bin/codemux check 2>/dev/null | grep -c '^\[' || true)"
-if [ "$rows" -eq 12 ]; then ok "check rows ($rows)"; else bad "check rows ($rows, harus 12)"; fi
+if [ "$rows" -eq 13 ]; then ok "check rows ($rows)"; else bad "check rows ($rows, harus 13)"; fi
 
 # 5. check --json valid (exit code check diabaikan: MISS/WARN wajar)
 json_out="$(bash bin/codemux check --json 2>/dev/null || true)"
@@ -34,9 +34,9 @@ if printf '%s' "$json_out" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
 assert d["codemux"] == "codemux", d
-assert len(d["modul"]) == 12, len(d["modul"])
+assert len(d["modul"]) == 13, len(d["modul"])
 r = d["ringkasan"]
-assert r["ok"] + r["warn"] + r["miss"] + r["fail"] == 12, r
+assert r["ok"] + r["warn"] + r["miss"] + r["fail"] == 13, r
 '; then
   ok "check --json"
 else
@@ -45,9 +45,9 @@ fi
 
 # 6. install --dry-run: rencana 5 modul, tanpa mengubah apa pun
 out="$(bash bin/codemux install --dry-run 2>&1 || true)"
-rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/10 ' || true)"
-if [ "$rows" -eq 10 ] && printf '%s' "$out" | grep -q 'dry-run'; then
-  ok "install --dry-run (10 modul)"
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/11 ' || true)"
+if [ "$rows" -eq 11 ] && printf '%s' "$out" | grep -q 'dry-run'; then
+  ok "install --dry-run (11 modul)"
 else
   bad "install --dry-run (baris rencana=$rows)"
 fi
