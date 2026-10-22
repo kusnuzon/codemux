@@ -63,5 +63,8 @@ PRD.md             rancangan lengkap (tujuan, mekanisme, milestone)
 
 - Repo ini hanya berisi **mekanisme**; isi memori pribadi tidak pernah di-push.
 - Butuh Termux aarch64 (Android), bukan root.
+- Kalau repo di-clone ke `/storage/emulated/0` (FUSE), file di sana **tidak bisa
+  dieksekusi langsung** (`Permission denied`) → jalankan `bash bin/codemux …`.
+  Setelah di-install ke `$PREFIX/bin`, `codemux` jalan normal.
 - `raw.githubusercontent.com` bisa menyajikan cache lama di jaringan seluler —
   unduhan rilis memakai tarball + verifikasi sha256.
