@@ -11,6 +11,8 @@ codemux_colors
 . "$CODEMUX_ROOT/lib/state.sh"
 # shellcheck source=../lib/exec.sh
 . "$CODEMUX_ROOT/lib/exec.sh"
+# shellcheck source=../lib/adapter.sh
+. "$CODEMUX_ROOT/lib/adapter.sh"
 # shellcheck source=../lib/check.sh
 . "$CODEMUX_ROOT/lib/check.sh"
 # shellcheck source=../lib/install.sh

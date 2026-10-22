@@ -82,7 +82,7 @@ codemux_cmd_check() {
     if [ "$fail" -gt 0 ]; then
       log_fail "ada komponen yang belum memenuhi syarat — lihat baris FAIL di atas."
     elif [ "$miss" -gt 0 ] || [ "$warn" -gt 0 ]; then
-      log_info "yang belum lengkap akan dipasang oleh \`codemux install\` (M2)."
+      log_info "yang belum lengkap akan dipasang oleh \`codemux install\`."
     else
       log_ok "semua komponen siap."
     fi

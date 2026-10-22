@@ -49,7 +49,7 @@ codemux_spawn() {
   cmd=""
   for a in "$@"; do cmd+="$(printf '%q' "$a") "; done
   {
-    printf '#!%s/bin/bash\n' "$PREFIX"
+    printf '#!%s\n' "$(command -v bash)"
     printf 'echo $$ > %q\n' "$pidf"
     printf '%s\n' "$cmd"
     printf 'rc=$?\necho "$rc" > %q\nexit "$rc"\n' "$rc"
