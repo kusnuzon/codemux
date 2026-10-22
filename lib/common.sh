@@ -97,7 +97,7 @@ perintah:
   update-check       cek rilis baru di hulu       (M5, belum tersedia)
   upgrade            perbarui semua komponen      (M5, belum tersedia)
   doctor             diagnosa lengkap             (M5, belum tersedia)
-  memory             kelola ingatan lintas sesi   (M4, belum tersedia)
+  memory             status ingatan lintas sesi (read-only)
   uninstall          lepas komponen               (M5, belum tersedia)
 
 opsi check:
@@ -106,7 +106,7 @@ opsi check:
 opsi install:
   --dry-run          tampilkan rencana, tidak mengubah apa pun
   --fresh            mulai dari langkah 1 (bukan melanjutkan)
-  --skip a,b         lewati modul tertentu (deps,mirror,storage,toolset,glibc)
+  --skip a,b         lewati modul (deps,mirror,storage,toolset,glibc,v1,v2,launcher,dotfiles,memory)
   -y, --yes          tanpa konfirmasi (default: tanpa tanya)
 
 opsi repair:

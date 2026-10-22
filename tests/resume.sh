@@ -63,7 +63,7 @@ run_install() { # <sleep> [opsi install...]
   local sleep_s="$1"
   shift
   env CM_TEST_SLEEP="$sleep_s" CM_TEST_FAIL="$TEST_FAIL" bash "$CODEXUX" install "$@" \
-    --skip deps,mirror,storage,glibc,v1,v2 >>"$SANDBOX/out.log" 2>&1
+    --skip deps,mirror,storage,glibc,v1,v2,launcher,dotfiles,memory >>"$SANDBOX/out.log" 2>&1
 }
 
 run_state() { awk -F'\t' -v m="$1" '!/^#/ && $1==m {s=$2} END{print s}' "$CODEMUX_HOME/run.tsv"; }
@@ -84,7 +84,7 @@ if [ "$(run_state toolset)" = "DONE" ]; then ok "run.tsv: toolset DONE"; else ba
 # =============================================================================
 rm -f "$SANDBOX/installed/fakepkg1" "$SANDBOX/installed/fakepkg2"
 CM_TEST_SLEEP=8 bash "$CODEXUX" install --fresh \
-  --skip deps,mirror,storage,glibc,v1,v2 >>"$SANDBOX/out.log" 2>&1 &
+  --skip deps,mirror,storage,glibc,v1,v2,launcher,dotfiles,memory >>"$SANDBOX/out.log" 2>&1 &
 parent=$!
 sleep 3
 
@@ -101,7 +101,7 @@ if [ "$(run_state toolset)" = "DONE" ]; then ok "run kedua menutup langkah jadi 
 # =============================================================================
 rm -f "$SANDBOX/installed/fakepkg1" "$SANDBOX/installed/fakepkg2" "$SANDBOX/state/run/toolset.rc"
 CM_TEST_SLEEP=30 bash "$CODEXUX" install --fresh \
-  --skip deps,mirror,storage,glibc,v1,v2 >>"$SANDBOX/out.log" 2>&1 &
+  --skip deps,mirror,storage,glibc,v1,v2,launcher,dotfiles,memory >>"$SANDBOX/out.log" 2>&1 &
 parent=$!
 sleep 3
 child="$(cat "$SANDBOX/state/run/toolset.pid" 2>/dev/null || true)"
@@ -125,7 +125,7 @@ if [ "$(run_state toolset)" = "DONE" ]; then ok "status pulih ke DONE"; else bad
 # =============================================================================
 rm -f "$SANDBOX/installed/fakepkg1" "$SANDBOX/installed/fakepkg2" "$SANDBOX/state/run/toolset.rc"
 CM_TEST_SLEEP=6 bash "$CODEXUX" install --fresh \
-  --skip deps,mirror,storage,glibc,v1,v2 >>"$SANDBOX/out.log" 2>&1 &
+  --skip deps,mirror,storage,glibc,v1,v2,launcher,dotfiles,memory >>"$SANDBOX/out.log" 2>&1 &
 parent=$!
 sleep 2
 run_install 0 >/dev/null 2>&1

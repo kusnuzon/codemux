@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# codemux — pemasang & pemelihara Termux (M2: install + resume).
+# codemux — pemasang & pemelihara Termux (M4: install + launcher + ingatan).
 # shellcheck shell=bash
 set -Eeuo pipefail
 
@@ -19,6 +19,8 @@ codemux_colors
 . "$CODEMUX_ROOT/lib/install.sh"
 # shellcheck source=../lib/repair.sh
 . "$CODEMUX_ROOT/lib/repair.sh"
+# shellcheck source=../lib/memory.sh
+. "$CODEMUX_ROOT/lib/memory.sh"
 
 cmd="${1:-help}"
 if [ "$#" -gt 0 ]; then shift; fi
@@ -28,9 +30,10 @@ case "$cmd" in
   install) codemux_cmd_install "$@" ;;
   status) codemux_cmd_status "$@" ;;
   repair) codemux_cmd_repair "$@" ;;
+  memory) codemux_cmd_memory "$@" ;;
   version | --version | -V) codemux_versions ;;
   help | --help | -h) codemux_usage ;;
-  upgrade | doctor | uninstall | self-update | update-check | memory)
+  upgrade | doctor | uninstall | self-update | update-check)
     codemux_not_ready "$cmd"
     ;;
   *)

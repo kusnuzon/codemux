@@ -44,3 +44,5 @@ jobs:
 
       - name: adapter V1/V2
         run: bash tests/adapter.sh
+      - name: launcher + ingatan
+        run: bash tests/launcher-memory.sh

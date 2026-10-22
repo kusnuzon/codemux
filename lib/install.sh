@@ -2,7 +2,7 @@
 # lib/install.sh — `codemux install` (M2) + `codemux status`.
 # Sifat: idempoten, atomik, bisa dilanjutkan setelah mati di tengah.
 
-CODEMUX_INSTALL_MODULES=(deps mirror storage toolset glibc v1 v2)
+CODEMUX_INSTALL_MODULES=(deps mirror storage toolset glibc v1 v2 launcher dotfiles memory)
 CODEMUX_INSTALL_CRITICAL="deps glibc"
 
 codemux_in_list() {
@@ -147,6 +147,12 @@ codemux_cmd_install() {
       codemux_run_set "$m" DONE "${APPLY_NOTE:-$NOTE}"
       codemux_state_set "$m" DONE "-" "${APPLY_NOTE:-$NOTE}"
       printf '%sOK%s    %s\n' "$C_OK" "$C_R" "${APPLY_NOTE:-$NOTE}"
+      ok_n=$((ok_n + 1))
+    elif [ "$PROBE" = WARN ]; then
+      # sudah dipasang, tapi perlu perhatian (mis. MEMORY.md hampir penuh).
+      codemux_run_set "$m" DONE "${APPLY_NOTE:-$NOTE}"
+      codemux_state_set "$m" WARN "-" "${APPLY_NOTE:-$NOTE}"
+      printf '%sWARN%s  %s\n' "$C_WARN" "$C_R" "$NOTE"
       ok_n=$((ok_n + 1))
     else
       codemux_run_set "$m" FAILED "${APPLY_NOTE:-$NOTE}"

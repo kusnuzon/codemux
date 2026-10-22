@@ -259,7 +259,7 @@ isi memori tetap lokal, repo hanya berisi mekanisme (template).
 | `~/.config/opencode/RECENT.md` | ringkasan 8 sesi terakhir (auto-generate) | dibuat/ditimpa setiap digest |
 | `~/.config/opencode/bin/session-digest.py` | pembuat `RECENT.md` | tidak ditimpa (bandingkan versi skrip) |
 | `~/.config/opencode/plugins/memory.js` | tool `memory_save` + hook compaction + refresh digest | tidak ditimpa; kalau versi lebih baru → tawarkan `--force` |
-| `~/.bashrc` (blok launcher) | panggil digest sebelum opencode dibuka | sisip di dalam blok bertanda |
+| `~/.bashrc` (blok `# codemux:memory`) | panggil digest sebelum opencode dibuka | hanya ditambah kalau `_oc_refresh_digest` belum ada |
 
 ### Bagaimana satu plugin melayani dua versi
 
@@ -298,17 +298,23 @@ yang dimuat otomatis lewat `instructions`.
    di-push.
 4. **Isolasi V1/V2.** Keduanya berbagi folder config (ingatan sama), tetapi DB
    sesi terpisah; digest membaca keduanya.
-5. **Verifikasi**: `codemux memory check` → file ada, `instructions` memuat dua
-   entri, `memory.js` lolos `node --check`, digest menghasilkan `RECENT.md` tidak kosong.
+5. **Verifikasi**: modul `memory` (probe = verify) memeriksa file ada,
+   `instructions` memuat `MEMORY.md` & `RECENT.md`, wrapper digest ada, dan
+   ukuran `MEMORY.md` < 24.000 byte. `tests/launcher-memory.sh` menguji fresh,
+   data pribadi tidak tertimpa, config kurang entri, adopsi blok lama, idempoten,
+   dan `~/.bashrc` rusak (dipulihkan, bukan ditinggalkan rusak).
 6. **`--no-memory`** melewati seluruh modul (untuk yang ingin config bersih).
 
 ### Perintah terkait
 
 ```
-codemux memory check        # status + ukuran MEMORY.md/RECENT.md
-codemux memory digest       # paksa regenerate RECENT.md sekarang
-codemux memory prune --dry-run  # saran entri usang (tidak menghapus)
+codemux memory              # status + ukuran MEMORY.md/RECENT.md (read-only)
+codemux memory --json       # untuk skrip
 ```
+
+`memory digest` dan `memory prune --dry-run` belum diimplementasikan;
+sementara ini digest berjalan otomatis lewat wrapper `~/.bashrc` dan plugin,
+pangkas memori dilakukan manual atas saran `doctor` (M5).
 
 ---
 
@@ -464,7 +470,7 @@ codemux upgrade --only opencode-v2
 | M1 | kerangka: `bin`, `lib/common`, `state`, `preflight`, `check` | `codemux check` jalan ✅ |
 | M2 | modul env: deps, mirror, storage, apt-toolset, glibc (+ resume/atomic §20) | Termux "siap alat" ✅ |
 | M3 | adapter V1 & V2 (panggil repo yang ada) | `opencode`, `opencode-v2` jalan [selesai] |
-| M4 | launcher: banner+menu panduan, dotfiles, **ingatan V1+V2** (§12A) | tampilan awal + ingatan jadi |
+| M4 | launcher: banner+menu panduan, dotfiles, **ingatan V1+V2** (§12A) | tampilan awal + ingatan jadi ✅ |
 | M5 | `doctor`, `upgrade`, `repair`, `uninstall`, **`update-check` + prompt update** (§12B) | pemeliharaan |
 | M6 | CI: shellcheck, uji sandbox HOME, release tarball | rilis 1.0 |
 
