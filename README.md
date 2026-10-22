@@ -4,9 +4,10 @@ Pemasang & pemelihara Termux: OpenCode **V1 + V2**, menu/banner startup, ingatan
 lintas sesi, toolset, dan cek update — satu perintah, idempotent (aman dijalankan
 berulang), non-destruktif.
 
-> **Status: M2.** Yang sudah jalan: `check`, `install` (resume-safe), `status`,
-> `repair`, `version`, `help`. `upgrade`, `doctor`, `memory`, `update-check`
-> menyusul. Rancangan lengkap ada di [PRD.md](PRD.md).
+> **Status: M3.** Yang sudah jalan: `check`, `install` (resume-safe, termasuk
+> adapter OpenCode V1+V2), `status`, `repair`, `version`, `help`. `upgrade`,
+> `doctor`, `memory`, `update-check` menyusul. Rancangan lengkap ada di
+> [PRD.md](PRD.md).
 
 ## Pakai (versi repo)
 
@@ -39,6 +40,23 @@ Setelah terpasang (M2+), perintahnya menjadi `codemux` di `$PREFIX/bin`.
 | `memory` | `MEMORY.md` (+ batas 24.000 byte), `RECENT.md`, plugin, instructions |
 | `update-cache` | umur cache cek update hulu |
 
+`install` menjalankan modul berurutan: `deps -> mirror -> storage -> toolset ->
+glibc -> v1 -> v2`.
+
+## Adapter OpenCode V1 & V2
+
+codemux tidak menyalin kode OpenCode. Untuk `v1` dan `v2` ia:
+
+1. mengunduh `install.sh` dari repo hulu lewat **API GitHub** (`Accept:
+   application/vnd.github.raw`) - bukan `raw.githubusercontent.com` yang sering
+   menyajikan cache basi di jaringan seluler;
+2. menolak unduhan yang bukan skrip shell (mis. halaman error/rate-limit);
+3. mencatat sha256 skrip, menjalankannya **terpisah dari shell** (`setsid`),
+   lalu memverifikasi hasilnya: payload, launcher, `apt-mark hold` (V1), dan shim
+   `lib/compat` (V2);
+4. kalau gagal, langkah dicatat `FAILED` dan `codemux install` bisa diulang -
+   tidak ada keadaan setengah jadi.
+
 Kode keluar `check`: `0` semua siap · `1` ada yang kurang · `2` prasyarat gagal.
 Kode keluar `install`: `0` selesai · `1` ada langkah gagal · `2` prasyarat gagal ·
 `3` ada install lain berjalan.
@@ -65,12 +83,14 @@ bin/codemux        entry point
 lib/common.sh      warna, log, util, deteksi
 lib/state.sh       state TSV, run.tsv (progres), lock pid+boot-id, log
 lib/exec.sh        spawn detached, wait, tulis atomik, backup
+lib/adapter.sh     unduh + validasi install.sh hulu
 lib/check.sh       runner check (read-only)
 lib/install.sh     install (resume) + status
 lib/repair.sh      repair (lock basi, dpkg, shim V2)
 lib/modules/*.sh   probe + apply + verify per modul
 tests/smoke.sh     uji cepat (syntax, help, json, shellcheck)
 tests/resume.sh    16 skenario "matikan di tengah"
+tests/adapter.sh   12 skenario adapter V1/V2 (hulu palsu)
 versions.env       versi dipin + daftar paket
 PRD.md             rancangan lengkap (tujuan, mekanisme, milestone)
 ```
@@ -79,7 +99,7 @@ PRD.md             rancangan lengkap (tujuan, mekanisme, milestone)
 
 - **M1** kerangka + `check` ✅
 - **M2** `install` (deps, mirror, storage, toolset, glibc) + resume ✅
-- **M3** adapter OpenCode V1 + V2
+- **M3** adapter OpenCode V1 + V2 [selesai]
 - **M4** launcher + ingatan lintas sesi
 - **M5** `doctor`, `upgrade`, `repair`, `uninstall`, cek update
 - **M6** CI + rilis tarball + installer satu perintah

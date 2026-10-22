@@ -41,3 +41,6 @@ jobs:
 
       - name: resume (install mati di tengah)
         run: bash tests/resume.sh
+
+      - name: adapter V1/V2
+        run: bash tests/adapter.sh

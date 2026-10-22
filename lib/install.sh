@@ -2,7 +2,7 @@
 # lib/install.sh — `codemux install` (M2) + `codemux status`.
 # Sifat: idempoten, atomik, bisa dilanjutkan setelah mati di tengah.
 
-CODEMUX_INSTALL_MODULES=(deps mirror storage toolset glibc)
+CODEMUX_INSTALL_MODULES=(deps mirror storage toolset glibc v1 v2)
 CODEMUX_INSTALL_CRITICAL="deps glibc"
 
 codemux_in_list() {
@@ -75,7 +75,7 @@ codemux_cmd_install() {
   printf '\n'
 
   if [ "$need" -eq 0 ]; then
-    log_ok "semua modul M2 sudah siap — tidak ada yang perlu dipasang."
+    log_ok "semua modul sudah siap — tidak ada yang perlu dipasang."
     if [ "$dry" -eq 0 ]; then
       codemux_state_init
       codemux_run_reset "${CODEMUX_INSTALL_MODULES[@]}"
