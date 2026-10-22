@@ -45,9 +45,9 @@ fi
 
 # 6. install --dry-run: rencana 5 modul, tanpa mengubah apa pun
 out="$(bash bin/codemux install --dry-run 2>&1 || true)"
-rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/7 ' || true)"
-if [ "$rows" -eq 7 ] && printf '%s' "$out" | grep -q 'dry-run'; then
-  ok "install --dry-run (7 modul)"
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/10 ' || true)"
+if [ "$rows" -eq 10 ] && printf '%s' "$out" | grep -q 'dry-run'; then
+  ok "install --dry-run (10 modul)"
 else
   bad "install --dry-run (baris rencana=$rows)"
 fi

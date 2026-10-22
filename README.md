@@ -4,9 +4,10 @@ Pemasang & pemelihara Termux: OpenCode **V1 + V2**, menu/banner startup, ingatan
 lintas sesi, toolset, dan cek update — satu perintah, idempotent (aman dijalankan
 berulang), non-destruktif.
 
-> **Status: M3.** Yang sudah jalan: `check`, `install` (resume-safe, termasuk
-> adapter OpenCode V1+V2), `status`, `repair`, `version`, `help`. `upgrade`,
-> `doctor`, `memory`, `update-check` menyusul. Rancangan lengkap ada di
+> **Status: M4.** Yang sudah jalan: `check`, `install` (resume-safe, 10 modul:
+> deps → mirror → storage → toolset → glibc → V1 → V2 → launcher → dotfiles →
+> ingatan), `status`, `repair`, `memory`, `version`, `help`. `upgrade`, `doctor`,
+> `uninstall`, `update-check` menyusul. Rancangan lengkap ada di
 > [PRD.md](PRD.md).
 
 ## Pakai (versi repo)
@@ -19,6 +20,7 @@ bash codemux/bin/codemux install            # pasang / lanjutkan yang terputus
 bash codemux/bin/codemux status             # progres, lock, log terakhir
 bash codemux/bin/codemux repair             # bereskan sisa proses yang mati di tengah
 bash codemux/bin/codemux check --json       # untuk skrip
+bash codemux/bin/codemux memory             # status ingatan lintas sesi (read-only)
 ```
 
 Setelah terpasang (M2+), perintahnya menjadi `codemux` di `$PREFIX/bin`.
@@ -41,7 +43,23 @@ Setelah terpasang (M2+), perintahnya menjadi `codemux` di `$PREFIX/bin`.
 | `update-cache` | umur cache cek update hulu |
 
 `install` menjalankan modul berurutan: `deps -> mirror -> storage -> toolset ->
-glibc -> v1 -> v2`.
+glibc -> v1 -> v2 -> launcher -> dotfiles -> memory`.
+
+### Launcher & ingatan (M4)
+
+- **launcher**: menulis blok bertanda `# codemux:launcher begin … end` di
+  `~/.bashrc` (banner, menu panah V1/V2/shell, perintah `menu`, `version`,
+  `doctor`, `codemux`, `keluar`). Blok lama tanpa penanda **diadopsi**: dipotong
+  hanya kalau strukturnya dikenali (ada `_oc_launcher`, baris terakhir `fi`);
+  isi lain `~/.bashrc` tidak disentuh. `.bashrc` di-backup, blok baru diuji
+  `bash -n`, gagal → backup dipulihkan.
+- **dotfiles**: `.bash_profile` (memuat `.bashrc`) dan `.hushlogin`.
+- **memory**: `MEMORY.md`, `AGENTS.md`, `RECENT.md`, `plugins/memory.js`,
+  `bin/session-digest.py`, dan entri `instructions` di `opencode.jsonc`.
+  **File memori yang sudah ada tidak pernah ditimpa**; `instructions` hanya
+  ditambah kalau belum ada; wrapper `_oc_refresh_digest` masuk blok
+  `# codemux:memory begin … end` (hanya kalau belum ada). Mekanisme plugin/digest
+  diunduh dari repo hulu, bukan disalin ke repo ini.
 
 ## Adapter OpenCode V1 & V2
 
@@ -91,6 +109,8 @@ lib/modules/*.sh   probe + apply + verify per modul
 tests/smoke.sh     uji cepat (syntax, help, json, shellcheck)
 tests/resume.sh    16 skenario "matikan di tengah"
 tests/adapter.sh   12 skenario adapter V1/V2 (hulu palsu)
+tests/launcher-memory.sh  22 skenario launcher/dotfiles/ingatan (sandbox HOME)
+templates/         blok bashrc + template ingatan + penyunting opencode.jsonc
 versions.env       versi dipin + daftar paket
 PRD.md             rancangan lengkap (tujuan, mekanisme, milestone)
 ```
@@ -100,7 +120,7 @@ PRD.md             rancangan lengkap (tujuan, mekanisme, milestone)
 - **M1** kerangka + `check` ✅
 - **M2** `install` (deps, mirror, storage, toolset, glibc) + resume ✅
 - **M3** adapter OpenCode V1 + V2 [selesai]
-- **M4** launcher + ingatan lintas sesi
+- **M4** launcher + ingatan lintas sesi ✅
 - **M5** `doctor`, `upgrade`, `repair`, `uninstall`, cek update
 - **M6** CI + rilis tarball + installer satu perintah
 

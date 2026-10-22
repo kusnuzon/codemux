@@ -49,3 +49,31 @@ codemux_adapter_sha() {
   local f="$1"
   [ -f "$f.sha256" ] && cut -c1-12 "$f.sha256"
 }
+
+# codemux_fetch_raw <url> <dest> — unduh file teks apa pun (plugin, digest).
+# Menolak halaman HTML (rate-limit/error) supaya tidak tersimpan sebagai kode.
+codemux_fetch_raw() {
+  local url="$1" dest="$2" dir
+  dir="$(dirname "$dest")"
+  mkdir -p "$dir" || return 1
+  rm -f "$dest.part"
+  case "$url" in
+    http://* | https://*)
+      curl -fsSL -H 'Accept: application/vnd.github.raw' "$url" -o "$dest.part" || {
+        rm -f "$dest.part"
+        return 1
+      }
+      ;;
+    file://*) cp "${url#file://}" "$dest.part" || return 1 ;;
+    /*) cp "$url" "$dest.part" || return 1 ;;
+    *) return 1 ;;
+  esac
+  if [ ! -s "$dest.part" ]; then
+    rm -f "$dest.part"
+    return 1
+  fi
+  case "$(head -c 1 "$dest.part" 2>/dev/null)" in
+    '<') rm -f "$dest.part"; return 1 ;;
+  esac
+  mv -f "$dest.part" "$dest"
+}
