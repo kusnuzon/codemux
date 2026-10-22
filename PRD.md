@@ -461,8 +461,8 @@ codemux upgrade --only opencode-v2
 
 | # | Isi | Keluaran |
 |---|---|---|
-| M1 | kerangka: `bin`, `lib/common`, `state`, `preflight`, `check` | `codemux check` jalan |
-| M2 | modul env: deps, mirror, storage, apt-toolset, glibc | Termux "siap alat" |
+| M1 | kerangka: `bin`, `lib/common`, `state`, `preflight`, `check` | `codemux check` jalan ✅ |
+| M2 | modul env: deps, mirror, storage, apt-toolset, glibc (+ resume/atomic §20) | Termux "siap alat" ✅ |
 | M3 | adapter V1 & V2 (panggil repo yang ada) | `opencode`, `opencode-v2` jalan |
 | M4 | launcher: banner+menu panduan, dotfiles, **ingatan V1+V2** (§12A) | tampilan awal + ingatan jadi |
 | M5 | `doctor`, `upgrade`, `repair`, `uninstall`, **`update-check` + prompt update** (§12B) | pemeliharaan |

@@ -38,3 +38,6 @@ jobs:
 
       - name: smoke
         run: bash tests/smoke.sh
+
+      - name: resume (install mati di tengah)
+        run: bash tests/resume.sh
