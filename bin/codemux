@@ -21,6 +21,10 @@ codemux_colors
 . "$CODEMUX_ROOT/lib/repair.sh"
 # shellcheck source=../lib/memory.sh
 . "$CODEMUX_ROOT/lib/memory.sh"
+# shellcheck source=../lib/update.sh
+. "$CODEMUX_ROOT/lib/update.sh"
+# shellcheck source=../lib/maintenance.sh
+. "$CODEMUX_ROOT/lib/maintenance.sh"
 
 cmd="${1:-help}"
 if [ "$#" -gt 0 ]; then shift; fi
@@ -31,9 +35,13 @@ case "$cmd" in
   status) codemux_cmd_status "$@" ;;
   repair) codemux_cmd_repair "$@" ;;
   memory) codemux_cmd_memory "$@" ;;
+  update-check) codemux_cmd_update_check "$@" ;;
+  doctor) codemux_cmd_doctor "$@" ;;
+  upgrade) codemux_cmd_upgrade "$@" ;;
+  uninstall) codemux_cmd_uninstall "$@" ;;
   version | --version | -V) codemux_versions ;;
   help | --help | -h) codemux_usage ;;
-  upgrade | doctor | uninstall | self-update | update-check)
+  self-update)
     codemux_not_ready "$cmd"
     ;;
   *)

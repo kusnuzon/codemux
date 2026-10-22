@@ -4,11 +4,10 @@ Pemasang & pemelihara Termux: OpenCode **V1 + V2**, menu/banner startup, ingatan
 lintas sesi, toolset, dan cek update — satu perintah, idempotent (aman dijalankan
 berulang), non-destruktif.
 
-> **Status: M4.** Yang sudah jalan: `check`, `install` (resume-safe, 10 modul:
-> deps → mirror → storage → toolset → glibc → V1 → V2 → launcher → dotfiles →
-> ingatan), `status`, `repair`, `memory`, `version`, `help`. `upgrade`, `doctor`,
-> `uninstall`, `update-check` menyusul. Rancangan lengkap ada di
-> [PRD.md](PRD.md).
+> **Status: M5.** Yang sudah jalan: `check`, `install` (resume-safe, 10 modul),
+> `status`, `repair`, `memory`, `update-check`, `doctor`, `upgrade`, `uninstall`,
+> `version`, `help`. Tinggal M6 (rilis + installer satu perintah). Rancangan
+> lengkap ada di [PRD.md](PRD.md).
 
 ## Pakai (versi repo)
 
@@ -21,6 +20,10 @@ bash codemux/bin/codemux status             # progres, lock, log terakhir
 bash codemux/bin/codemux repair             # bereskan sisa proses yang mati di tengah
 bash codemux/bin/codemux check --json       # untuk skrip
 bash codemux/bin/codemux memory             # status ingatan lintas sesi (read-only)
+bash codemux/bin/codemux update-check       # bandingkan versi lokal vs rilis hulu
+bash codemux/bin/codemux doctor             # diagnosa lengkap + saran perbaikan
+bash codemux/bin/codemux upgrade --dry-run  # rencana upgrade (apt + V1/V2 + launcher)
+bash codemux/bin/codemux uninstall --dry-run  # rencana lepas payload (memori tetap)
 ```
 
 Setelah terpasang (M2+), perintahnya menjadi `codemux` di `$PREFIX/bin`.
@@ -75,6 +78,24 @@ codemux tidak menyalin kode OpenCode. Untuk `v1` dan `v2` ia:
 4. kalau gagal, langkah dicatat `FAILED` dan `codemux install` bisa diulang -
    tidak ada keadaan setengah jadi.
 
+## Pemeliharaan (M5)
+
+- **`update-check`** — membandingkan versi lokal (codemux, V1, V2, paket apt)
+  dengan rilis hulu lewat redirect `/releases/latest` (tanpa kuota API). Hasil
+  disimpan di `~/.config/codemux/update-cache.tsv` (24 jam); menu startup
+  membacanya dan menjalankan cek di latar belakang kalau cache basi.
+- **`doctor`** — `check` + pemeriksaan tambahan: `bash -n ~/.bashrc`, wrapper
+  digest, ukuran `MEMORY.md`, `LD_PRELOAD` bionic, sisa disk, lock, umur cache.
+- **`upgrade`** — `apt-get update && apt-get upgrade` (opencode tetap di-hold),
+  payload V1/V2 lewat `upgrade.sh` hulu (fallback: adapter), lalu sinkron ulang
+  blok launcher + wrapper digest. `--only apt,v1,v2,launcher`, `--dry-run`,
+  `--yes`; memakai lock yang sama dengan `install`.
+- **`uninstall`** — memindahkan payload V1/V2 ke
+  `~/.config/codemux/backup/<ts>-uninstall/`, melepas blok
+  `# codemux:launcher` / `# codemux:memory` dari `~/.bashrc` (diuji `bash -n`,
+  gagal → dibiarkan utuh). **Tidak** menghapus `MEMORY.md`, `AGENTS.md`,
+  project, atau backup. `--purge` menghapus `~/.config/codemux`.
+
 Kode keluar `check`: `0` semua siap · `1` ada yang kurang · `2` prasyarat gagal.
 Kode keluar `install`: `0` selesai · `1` ada langkah gagal · `2` prasyarat gagal ·
 `3` ada install lain berjalan.
@@ -105,11 +126,14 @@ lib/adapter.sh     unduh + validasi install.sh hulu
 lib/check.sh       runner check (read-only)
 lib/install.sh     install (resume) + status
 lib/repair.sh      repair (lock basi, dpkg, shim V2)
+lib/update.sh      update-check + cache 24 jam
+lib/maintenance.sh doctor, upgrade, uninstall
 lib/modules/*.sh   probe + apply + verify per modul
 tests/smoke.sh     uji cepat (syntax, help, json, shellcheck)
 tests/resume.sh    16 skenario "matikan di tengah"
 tests/adapter.sh   12 skenario adapter V1/V2 (hulu palsu)
 tests/launcher-memory.sh  22 skenario launcher/dotfiles/ingatan (sandbox HOME)
+tests/maintenance.sh      13 skenario update-check/doctor/upgrade/uninstall
 templates/         blok bashrc + template ingatan + penyunting opencode.jsonc
 versions.env       versi dipin + daftar paket
 PRD.md             rancangan lengkap (tujuan, mekanisme, milestone)
@@ -121,7 +145,7 @@ PRD.md             rancangan lengkap (tujuan, mekanisme, milestone)
 - **M2** `install` (deps, mirror, storage, toolset, glibc) + resume ✅
 - **M3** adapter OpenCode V1 + V2 [selesai]
 - **M4** launcher + ingatan lintas sesi ✅
-- **M5** `doctor`, `upgrade`, `repair`, `uninstall`, cek update
+- **M5** `doctor`, `upgrade`, `repair`, `uninstall`, cek update ✅
 - **M6** CI + rilis tarball + installer satu perintah
 
 ## Catatan

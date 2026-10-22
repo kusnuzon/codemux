@@ -15,6 +15,12 @@ m_updatecache_probe() {
   if [ "$age" -lt 0 ] || [ "$age" -ge 24 ]; then
     PROBE=MISS; NOTE="cache ${age} jam (basi, > 24 jam)"
   else
-    PROBE=OK; NOTE="cache ${age} jam"
+    local n
+    n="$(awk -F'\t' '$4=="update"' "$f" 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "${n:-0}" -gt 0 ]; then
+      PROBE=OK; NOTE="cache ${age} jam · ${n} update tersedia (codemux upgrade)"
+    else
+      PROBE=OK; NOTE="cache ${age} jam · versi terbaru"
+    fi
   fi
 }
