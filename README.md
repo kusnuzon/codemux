@@ -4,10 +4,22 @@ Pemasang & pemelihara Termux: OpenCode **V1 + V2**, menu/banner startup, ingatan
 lintas sesi, toolset, dan cek update — satu perintah, idempotent (aman dijalankan
 berulang), non-destruktif.
 
-> **Status: M5.** Yang sudah jalan: `check`, `install` (resume-safe, 10 modul),
-> `status`, `repair`, `memory`, `update-check`, `doctor`, `upgrade`, `uninstall`,
-> `version`, `help`. Tinggal M6 (rilis + installer satu perintah). Rancangan
-> lengkap ada di [PRD.md](PRD.md).
+> **Status: M6 (rilis 1.0).** Semua perintah PRD sudah jalan: `check`, `install`
+> (resume-safe, 11 modul), `status`, `repair`, `memory`, `update-check`, `doctor`,
+> `upgrade`, `uninstall`, `self-update`, `version`, `help`. Rancangan lengkap ada
+> di [PRD.md](PRD.md).
+
+## Pasang satu perintah
+
+```bash
+curl -fsSL -H 'Accept: application/vnd.github.raw' \
+  https://api.github.com/repos/kusnuzon/codemux/contents/install.sh | bash
+```
+
+`install.sh` kecil: cek prasyarat → unduh tarball rilis + `sha256` → ekstrak ke
+`~/.cache/codemux/src/current` → jalankan `codemux install`. Kalau rilis belum
+ada, jatuh ke branch `main` (tanpa sha). Opsi diteruskan, mis.
+`| bash -s -- --dry-run` atau `| bash -s -- --skip toolset`.
 
 ## Pakai (versi repo)
 
@@ -128,12 +140,15 @@ lib/install.sh     install (resume) + status
 lib/repair.sh      repair (lock basi, dpkg, shim V2)
 lib/update.sh      update-check + cache 24 jam
 lib/maintenance.sh doctor, upgrade, uninstall
+lib/selfupdate.sh  self-update (tarball + sha256, backup, tukar kode)
+install.sh         bootstrap satu perintah (unduh rilis → install)
 lib/modules/*.sh   probe + apply + verify per modul
 tests/smoke.sh     uji cepat (syntax, help, json, shellcheck)
 tests/resume.sh    16 skenario "matikan di tengah"
 tests/adapter.sh   12 skenario adapter V1/V2 (hulu palsu)
 tests/launcher-memory.sh  22 skenario launcher/dotfiles/ingatan (sandbox HOME)
 tests/maintenance.sh      13 skenario update-check/doctor/upgrade/uninstall
+tests/release.sh          7 skenario bootstrap + self-update
 templates/         blok bashrc + template ingatan + penyunting opencode.jsonc
 versions.env       versi dipin + daftar paket
 PRD.md             rancangan lengkap (tujuan, mekanisme, milestone)
@@ -146,7 +161,7 @@ PRD.md             rancangan lengkap (tujuan, mekanisme, milestone)
 - **M3** adapter OpenCode V1 + V2 [selesai]
 - **M4** launcher + ingatan lintas sesi ✅
 - **M5** `doctor`, `upgrade`, `repair`, `uninstall`, cek update ✅
-- **M6** CI + rilis tarball + installer satu perintah
+- **M6** CI + rilis tarball + installer satu perintah ✅
 
 ## Catatan
 
@@ -157,3 +172,6 @@ PRD.md             rancangan lengkap (tujuan, mekanisme, milestone)
   Setelah di-install ke `$PREFIX/bin`, `codemux` jalan normal.
 - `raw.githubusercontent.com` bisa menyajikan cache lama di jaringan seluler —
   unduhan rilis memakai tarball + verifikasi sha256.
+- `codemux self-update` mengganti `bin/`, `lib/`, `templates/`, `VERSION`,
+  `versions.env`; kode lama di-backup ke `~/.config/codemux/backup/<ts>-selfupdate/`.
+  Memori, project, dan state tidak disentuh.

@@ -2,7 +2,7 @@
 # lib/install.sh — `codemux install` (M2) + `codemux status`.
 # Sifat: idempoten, atomik, bisa dilanjutkan setelah mati di tengah.
 
-CODEMUX_INSTALL_MODULES=(deps mirror storage toolset glibc v1 v2 launcher dotfiles memory)
+CODEMUX_INSTALL_MODULES=(deps mirror storage toolset glibc v1 v2 launcher dotfiles memory self)
 CODEMUX_INSTALL_CRITICAL="deps glibc"
 
 codemux_in_list() {

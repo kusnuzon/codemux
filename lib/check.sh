@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # lib/check.sh — runner `codemux check` (read-only, tanpa mengubah sistem).
 
-CODEMUX_MODULES=(preflight deps mirror storage toolset glibc v1 v2 launcher dotfiles memory updatecache)
+CODEMUX_MODULES=(preflight deps mirror storage toolset glibc v1 v2 launcher dotfiles memory self updatecache)
 
 codemux_label() {
   case "$1" in

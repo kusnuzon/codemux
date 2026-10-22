@@ -15,11 +15,11 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
 
       - name: shellcheck
-        run: shellcheck -S warning bin/codemux lib/*.sh lib/modules/*.sh
+        run: shellcheck -S warning install.sh bin/codemux lib/*.sh lib/modules/*.sh
 
       - name: syntax
         run: |
-          for f in bin/codemux lib/*.sh lib/modules/*.sh; do
+          for f in install.sh bin/codemux lib/*.sh lib/modules/*.sh; do
             bash -n "$f"
           done
 
@@ -30,9 +30,9 @@ jobs:
           import json
           d = json.load(open("/tmp/out.json"))
           assert d["codemux"] == "codemux"
-          assert len(d["modul"]) == 12
+          assert len(d["modul"]) == 13
           r = d["ringkasan"]
-          assert r["ok"] + r["warn"] + r["miss"] + r["fail"] == 12
+          assert r["ok"] + r["warn"] + r["miss"] + r["fail"] == 13
           print("json ok:", r)
           PY
 
@@ -48,3 +48,5 @@ jobs:
         run: bash tests/launcher-memory.sh
       - name: pemeliharaan (update/doctor/upgrade/uninstall)
         run: bash tests/maintenance.sh
+      - name: rilis (bootstrap + self-update)
+        run: bash tests/release.sh

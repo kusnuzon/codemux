@@ -478,7 +478,7 @@ per 6 jam), `tests/maintenance.sh`.
 | M3 | adapter V1 & V2 (panggil repo yang ada) | `opencode`, `opencode-v2` jalan [selesai] |
 | M4 | launcher: banner+menu panduan, dotfiles, **ingatan V1+V2** (§12A) | tampilan awal + ingatan jadi ✅ |
 | M5 | `doctor`, `upgrade`, `repair`, `uninstall`, **`update-check` + prompt update** (§12B) | pemeliharaan ✅ |
-| M6 | CI: shellcheck, uji sandbox HOME, release tarball | rilis 1.0 |
+| M6 | CI: shellcheck, uji sandbox HOME, release tarball | rilis 1.0 ✅ |
 
 ---
 
@@ -505,6 +505,11 @@ per 6 jam), `tests/maintenance.sh`.
 curl -fsSL -H 'Accept: application/vnd.github.raw' \
   https://api.github.com/repos/kusnuzon/codemux/contents/install.sh | bash -s -- --yes
 ```
+
+Aset rilis: `codemux.tar.gz` (+ `codemux.tar.gz.sha256`). Bootstrap mengunduh
+keduanya, memverifikasi sha256, mengekstrak ke `~/.cache/codemux/src/current`
+(atomik: `current.new` → tukar), lalu `exec bin/codemux install`. Kalau rilis
+belum ada → fallback `codeload …/refs/heads/main` tanpa sha.
 
 Varian hemat (tanpa browser/python berat):
 

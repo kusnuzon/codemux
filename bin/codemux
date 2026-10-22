@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# codemux — pemasang & pemelihara Termux (M4: install + launcher + ingatan).
+# codemux — pemasang & pemelihara Termux (M6: install + pemeliharaan + rilis).
 # shellcheck shell=bash
 set -Eeuo pipefail
 
@@ -25,6 +25,8 @@ codemux_colors
 . "$CODEMUX_ROOT/lib/update.sh"
 # shellcheck source=../lib/maintenance.sh
 . "$CODEMUX_ROOT/lib/maintenance.sh"
+# shellcheck source=../lib/selfupdate.sh
+. "$CODEMUX_ROOT/lib/selfupdate.sh"
 
 cmd="${1:-help}"
 if [ "$#" -gt 0 ]; then shift; fi
@@ -41,9 +43,7 @@ case "$cmd" in
   uninstall) codemux_cmd_uninstall "$@" ;;
   version | --version | -V) codemux_versions ;;
   help | --help | -h) codemux_usage ;;
-  self-update)
-    codemux_not_ready "$cmd"
-    ;;
+  self-update) codemux_cmd_self_update "$@" ;;
   *)
     log_fail "perintah tidak dikenal: $cmd"
     codemux_usage >&2
