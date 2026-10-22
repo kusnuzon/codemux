@@ -89,6 +89,33 @@ _oc_read_key() {
   esac
 }
 
+# Baris notifikasi update (baca cache codemux; tidak menahan prompt).
+_oc_update_notice() {
+  local dir="$HOME/.config/codemux"
+  local cache="$dir/update-cache.tsv" stamp="$dir/.update-check.stamp"
+  local age=-1 s_age=999999 n=0
+  if [ -f "$cache" ]; then
+    age=$(( ( $(date +%s) - $(stat -c %Y "$cache" 2>/dev/null || echo 0) ) / 3600 ))
+    n=$(awk -F'\t' '$4=="update"' "$cache" 2>/dev/null | wc -l)
+    n="${n// /}"
+    if [ "${n:-0}" -gt 0 ]; then
+      printf '   %supdate tersedia:%s %s\n' "$ACC" "$R" \
+        "$(awk -F'\t' '$4=="update" {printf "%s%s", sep, ($1=="apt" ? $2 " paket apt" : $1 " " $3); sep=" · "}' "$cache" 2>/dev/null)"
+      printf '   %sjalankan: codemux upgrade%s\n\n' "$DIM" "$R"
+    fi
+  fi
+  # cek di latar belakang kalau cache basi; maksimal sekali per 6 jam
+  command -v codemux >/dev/null 2>&1 || return 0
+  if [ -f "$stamp" ]; then
+    s_age=$(( ( $(date +%s) - $(stat -c %Y "$stamp" 2>/dev/null || echo 0) ) / 3600 ))
+  fi
+  if { [ ! -f "$cache" ] || [ "$age" -ge 24 ]; } && [ "$s_age" -ge 6 ]; then
+    mkdir -p "$dir" 2>/dev/null
+    : >"$stamp" 2>/dev/null
+    ( codemux update-check --quiet >/dev/null 2>&1 & ) >/dev/null 2>&1
+  fi
+}
+
 # Mengembalikan 0 = lanjut ke shell, 1 = keluar dari Termux.
 _oc_menu_loop() {
   local sel=0 full=1 choice_file="$HOME/.local/state/opencode-choice"
@@ -102,6 +129,7 @@ _oc_menu_loop() {
     if [ "$full" = "1" ]; then
       printf '\033[2J\033[H'
       _oc_banner
+      _oc_update_notice
       full=0
     else
       # menu = 9 baris; kembali ke awal blok menu lalu gambar ulang

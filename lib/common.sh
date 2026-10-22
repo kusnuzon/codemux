@@ -94,11 +94,11 @@ perintah:
   repair             bereskan sisa proses yang mati di tengah
   version            versi codemux + komponen terpasang
   help               bantuan ini
-  update-check       cek rilis baru di hulu       (M5, belum tersedia)
-  upgrade            perbarui semua komponen      (M5, belum tersedia)
-  doctor             diagnosa lengkap             (M5, belum tersedia)
+  update-check       bandingkan versi lokal vs rilis hulu (cache 24 jam)
+  upgrade            perbarui apt + payload V1/V2 + launcher
+  doctor             diagnosa lengkap + saran perbaikan
   memory             status ingatan lintas sesi (read-only)
-  uninstall          lepas komponen               (M5, belum tersedia)
+  uninstall          lepas payload V1/V2 + blok launcher (memori tetap)
 
 opsi check:
   --json             keluaran mesin

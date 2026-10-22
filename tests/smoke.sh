@@ -57,11 +57,16 @@ if bash bin/codemux status >/dev/null 2>&1; then ok "status"; else bad "status";
 if bash bin/codemux repair --dry-run >/dev/null 2>&1; then ok "repair --dry-run"; else bad "repair --dry-run"; fi
 
 # 8. perintah yang belum ada harus gagal rapi (bukan crash)
-if bash bin/codemux upgrade >/dev/null 2>&1; then
-  bad "upgrade seharusnya belum tersedia"
+if bash bin/codemux self-update >/dev/null 2>&1; then
+  bad "self-update seharusnya belum tersedia"
 else
-  ok "upgrade belum tersedia (exit != 0)"
+  ok "self-update belum tersedia (exit != 0)"
 fi
+out="$(bash bin/codemux upgrade --dry-run 2>&1 || true)"
+case "$out" in
+  *"apt-get update"*) ok "upgrade --dry-run (rencana)" ;;
+  *) bad "upgrade --dry-run" ;;
+esac
 
 # 7. shellcheck kalau tersedia
 if command -v shellcheck >/dev/null 2>&1; then

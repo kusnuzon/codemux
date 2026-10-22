@@ -46,3 +46,5 @@ jobs:
         run: bash tests/adapter.sh
       - name: launcher + ingatan
         run: bash tests/launcher-memory.sh
+      - name: pemeliharaan (update/doctor/upgrade/uninstall)
+        run: bash tests/maintenance.sh
