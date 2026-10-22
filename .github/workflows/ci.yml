@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+
+      - name: shellcheck
+        run: shellcheck -S warning bin/codemux lib/*.sh lib/modules/*.sh
+
+      - name: syntax
+        run: |
+          for f in bin/codemux lib/*.sh lib/modules/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: check --json valid
+        run: |
+          bash bin/codemux check --json > /tmp/out.json || true
+          python3 - <<'PY'
+          import json
+          d = json.load(open("/tmp/out.json"))
+          assert d["codemux"] == "codemux"
+          assert len(d["modul"]) == 12
+          r = d["ringkasan"]
+          assert r["ok"] + r["warn"] + r["miss"] + r["fail"] == 12
+          print("json ok:", r)
+          PY
+
+      - name: smoke
+        run: bash tests/smoke.sh
