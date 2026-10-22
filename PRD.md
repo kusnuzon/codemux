@@ -501,3 +501,93 @@ curl -fsSL -H 'Accept: application/vnd.github.raw' \
   https://api.github.com/repos/kusnuzon/codemux/contents/install.sh \
   | bash -s -- --yes --skip browser,python
 ```
+
+---
+
+## 20. Anti-mati di tengah proses (resume & rollback)
+
+Pertanyaan yang harus dijawab sebelum M2: **kalau proses mati di tengah, siapa yang
+membereskan?** Jawabannya: codemux sendiri, tanpa langkah manual.
+
+Prinsipnya: setiap langkah harus **idempoten atau atomik**, dan state ditulis
+**sebelum** langkah mulai (`RUNNING`) lalu `DONE`/`FAILED` setelah verifikasi.
+Maka proses yang mati kapan pun selalu ketahuan sedang di mana.
+
+### 20.1 Tiga lapis pertahanan
+
+| Lapis | Untuk langkah | Cara |
+|---|---|---|
+| Idempoten | apt install, mkdir, tulis blok config | cek dulu; kalau sudah benar → `SKIP`, tidak diulang |
+| Atomik | unduh payload, ganti file config | `.part` → sha256 → `mv` (rename atomik), file lama jadi `.old` |
+| Terpisah dari shell | apt, unduh ±200 MB | `setsid nohup` + pidfile + log; shell/opencode mati ≠ proses mati |
+
+### 20.2 State yang bisa dibaca manusia
+
+`state.tsv` + penanda `install.run`:
+
+```
+# langkah       status     mulai  selesai  catatan
+1 preflight     DONE       19:40  19:40    android/aarch64
+2 deps          DONE       19:40  19:41    7 alat ada
+3 toolset       RUNNING    19:41  -        apt pid 12345
+```
+
+`codemux status` menampilkan: langkah ke berapa dari berapa, pid aktif, 10 baris log
+terakhir. Kalau proses mati, status tetap `RUNNING` tapi pid sudah tidak hidup →
+codemux tahu itu **terputus**, bukan selesai.
+
+### 20.3 Deteksi proses mati
+
+- Lock berisi `pid` + `boot-id`; kalau pid mati atau boot-id beda (HP reboot) →
+  lock basi dibuang otomatis. Master tidak perlu `rm` apa pun.
+- Langkah `RUNNING` tanpa proses hidup → ditandai `INTERRUPTED` → dijalankan ulang
+  **dari langkah itu**, bukan dari awal.
+
+### 20.4 Langkah yang tidak boleh diulang sembarangan
+
+- **apt**: `DEBIAN_FRONTEND=noninteractive`, `-o Dpkg::Options::=--force-confold`,
+  `--no-install-recommends`. Sebelum mulai: `dpkg --audit` + `apt-get check`; kalau
+  ada sisa proses sebelumnya → `dpkg --configure -a` + `apt-get -f install` dulu.
+- **payload OpenCode**: unduh → sha256 → extract ke `opencode.new` → uji
+  `--version` lewat loader → **baru** tukar (`mv` lama → `.old`, `mv` baru → final).
+  Kalau uji gagal, yang lama tetap utuh; `codemux repair` mengembalikan `.old`.
+- **`.bashrc`/config**: backup ke `backup/<ts>/`, tulis blok bertanda
+  `# codemux:launcher begin` … `# codemux:launcher end`. Blok tak lengkap dibuang
+  dan backup dipulihkan oleh `codemux repair`.
+
+### 20.5 Tidak pernah merusak yang sudah jalan
+
+- Modul yang sudah `OK` tidak disentuh sama sekali.
+- Tidak ada `rm -rf` pada path pengguna; yang dihapus hanya file sementara codemux.
+- Langkah kritis (preflight, glibc, payload) pakai `--stop-on-error`: gagal = berhenti,
+  tidak melanjutkan ke langkah yang bergantung padanya.
+
+### 20.6 Bisa dilanjutkan tanpa Master
+
+1. Buka Termux lagi → menu membaca `install.run` dan menampilkan baris paling atas:
+   `! instalasi terputus di langkah 3/9 — Enter untuk melanjutkan`.
+2. `codemux install` tanpa argumen = **resume otomatis**; `--fresh` untuk mulai nol.
+3. Perbaikan darurat satu perintah: `codemux repair` (dpkg configure, lock basi,
+   shim hilang, blok config rusak).
+
+### 20.7 Uji "matikan di tengah"
+
+`tests/resume.sh` — sandbox dengan `apt`/`curl` palsu, tidak menyentuh sistem:
+
+| Skenario | Harapan |
+|---|---|
+| SIGKILL di tengah langkah apt | run berikutnya melanjutkan, tidak ada duplikat |
+| jaringan putus saat unduh | `.part` dibuang, run berikutnya unduh ulang |
+| lock basi (pid mati) | otomatis dibuang, bukan error |
+| payload sha256 salah | `.new` dibuang, payload lama tetap jalan |
+| SIGKILL saat tulis `.bashrc` | blok tak lengkap dibersihkan, backup dipulihkan |
+
+Kriteria lulus: **tidak ada satu pun skenario yang butuh langkah manual** selain
+menjalankan `codemux install` atau `codemux repair` satu kali.
+
+### 20.8 Yang jujur tidak bisa dijamin
+
+Kalau Android mematikan Termux tepat saat dpkg menulis database, DB dpkg bisa
+setengah jadi. Itu **terdeteksi** di run berikutnya (`dpkg --audit`) dan diperbaiki
+otomatis (`dpkg --configure -a`, `apt-get -f install`) — tetap tanpa intervensi
+manual, hanya butuh jaringan lagi.
