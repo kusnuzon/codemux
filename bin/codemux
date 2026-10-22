@@ -1,0 +1,30 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# codemux — pemasang & pemelihara Termux (M1: kerangka + check).
+# shellcheck shell=bash
+set -Eeuo pipefail
+
+CODEMUX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+. "$CODEMUX_ROOT/lib/common.sh"
+codemux_colors
+# shellcheck source=../lib/state.sh
+. "$CODEMUX_ROOT/lib/state.sh"
+# shellcheck source=../lib/check.sh
+. "$CODEMUX_ROOT/lib/check.sh"
+
+cmd="${1:-help}"
+if [ "$#" -gt 0 ]; then shift; fi
+
+case "$cmd" in
+  check) codemux_cmd_check "$@" ;;
+  version | --version | -V) codemux_versions ;;
+  help | --help | -h) codemux_usage ;;
+  install | upgrade | repair | doctor | uninstall | self-update | update-check | memory)
+    codemux_not_ready "$cmd"
+    ;;
+  *)
+    log_fail "perintah tidak dikenal: $cmd"
+    codemux_usage >&2
+    exit 1
+    ;;
+esac

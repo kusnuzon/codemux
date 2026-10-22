@@ -1,0 +1,11 @@
+# sampah lokal
+*.log
+logs/
+.cache/
+*.tmp
+*.bak-*
+*.orig
+
+# OS
+.DS_Store
+Thumbs.db
