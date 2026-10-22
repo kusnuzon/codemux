@@ -98,10 +98,28 @@ opsi check:
 EOF
 }
 
+# Versi V1 yang SEBENARNYA (payload), bukan versi paket dpkg.
+# dpkg bisa tertinggal: paket 1.19.0 tapi payload sudah 1.19.3.
+opencode_v1_version() {
+  local v="" dpkg_v=""
+  if have opencode; then
+    v="$(timeout 15 opencode --version 2>/dev/null | head -n 1 | tr -d '[:space:]')"
+  fi
+  dpkg_v="$(dpkg-query -W -f='${Version}' opencode 2>/dev/null || true)"
+  case "$v" in
+    [0-9]*) printf '%s' "$v" ;;
+    *) printf '%s' "${dpkg_v:-?}" ;;
+  esac
+}
+
+opencode_v2_version() {
+  cat "$PREFIX/share/opencode-v2/VERSION" 2>/dev/null || printf '?'
+}
+
 codemux_versions() {
   printf '%-16s %s\n' "codemux" "$CODEMUX_VERSION"
-  printf '%-16s %s\n' "opencode-v1" "$(dpkg-query -W -f='${Version}' opencode 2>/dev/null || echo "-")"
-  printf '%-16s %s\n' "opencode-v2" "$(cat "$PREFIX/share/opencode-v2/VERSION" 2>/dev/null || echo "-")"
+  printf '%-16s %s\n' "opencode-v1" "$(opencode_v1_version)"
+  printf '%-16s %s\n' "opencode-v2" "$(opencode_v2_version)"
 }
 
 codemux_not_ready() {
