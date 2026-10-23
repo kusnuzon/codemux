@@ -56,11 +56,11 @@ fi
 if bash bin/codemux status >/dev/null 2>&1; then ok "status"; else bad "status"; fi
 if bash bin/codemux repair --dry-run >/dev/null 2>&1; then ok "repair --dry-run"; else bad "repair --dry-run"; fi
 
-# 8. perintah yang belum ada harus gagal rapi (bukan crash)
-if bash bin/codemux self-update >/dev/null 2>&1; then
-  bad "self-update seharusnya belum tersedia"
+# 8. perintah tak dikenal harus gagal rapi (bukan crash)
+if bash bin/codemux perintah-ngawur >/dev/null 2>&1; then
+  bad "perintah tak dikenal seharusnya exit != 0"
 else
-  ok "self-update belum tersedia (exit != 0)"
+  ok "perintah tak dikenal ditolak rapi"
 fi
 out="$(bash bin/codemux upgrade --dry-run 2>&1 || true)"
 case "$out" in
