@@ -50,19 +50,25 @@ _oc_row() {
     arrow=" "; pad=""
   fi
   printf -v namepad '%-13s' "$name"
-  printf '  %s %s%s%s%s %s%s%s%s  %s%s%s\n' \
+  printf '  %s %s%s%s%s %s%s%s%s  %s%s%s\033[K\n' \
     "$arrow" "$pad" "$BOLD" "$key" "$R" \
     "$pad" "$BOLD" "$namepad" "$R" \
     "$pad" "$DIM" "$desc$R"
 }
 
-_oc_menu() {
+# Hanya 4 baris pilihan (tanpa garis & petunjuk) — dipakai untuk gambar ulang
+# saat tombol panah ditekan, supaya layar tidak berkedip.
+_oc_rows() {
   local sel="$1"
-  printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
   _oc_row 0 "$sel" 1 "OpenCode V1" "stabil · DB lama"
   _oc_row 1 "$sel" 2 "OpenCode V2" "baru · DB terpisah"
   _oc_row 2 "$sel" 3 "Shell saja" "tanpa opencode"
   _oc_row 3 "$sel" q "Keluar" "tutup Termux"
+}
+
+_oc_menu() {
+  printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
+  _oc_rows "$1"
   printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
   printf '  %s↑/↓ pilih%s   %sEnter jalankan%s   %s1/2/3/q%s   %sCtrl+C batal%s\n\n' \
     "$DIM" "$R" "$DIM" "$R" "$DIM" "$R" "$DIM" "$R"
@@ -70,11 +76,23 @@ _oc_menu() {
 
 _oc_read_key() {
   KEY=""
-  IFS= read -rsn1 KEY || KEY=""
+  _oc_int=0
+  # Tunggu tombol maksimal 0,2 dtk per putaran: dengan begitu sinyal Ctrl+C
+  # sempat ditangani sebelum tombol berikutnya, jadi tidak ada tombol yang
+  # "termakan" (dan kursor tidak tertinggal tersembunyi).
+  while :; do
+    IFS= read -rsn1 -t 0.2 KEY && break
+    if [ "${_oc_int:-0}" = "1" ]; then KEY="cancel"; return 0; fi
+  done
   case "$KEY" in
     $'\033')
-      local rest=""
-      IFS= read -rsn2 -t 0.05 rest || rest=""
+      local rest="" ch=""
+      # Baca sisa escape sequence byte per byte: kalau byte-nya datang
+      # terpisah (mis. setelah Ctrl+C), jangan sampai tombol panah hilang.
+      while [ "${#rest}" -lt 2 ]; do
+        IFS= read -rsn1 -t 0.25 ch || break
+        rest+="$ch"
+      done
       case "$rest" in
         '[A') KEY="up" ;;
         '[B') KEY="down" ;;
@@ -116,6 +134,9 @@ _oc_update_notice() {
   fi
 }
 
+_oc_cursor_hide() { printf '\033[?25l'; }
+_oc_cursor_show() { printf '\033[?25h'; }
+
 # Mengembalikan 0 = lanjut ke shell, 1 = keluar dari Termux.
 _oc_menu_loop() {
   local sel=0 full=1 choice_file="$HOME/.local/state/opencode-choice"
@@ -125,17 +146,27 @@ _oc_menu_loop() {
     *) sel=0 ;;
   esac
 
+  # Kursor disembunyikan selama menu: kalau tampil, dia berkedip di baris
+  # bawah menu dan terlihat seperti glitch saat naik/turun. Ctrl+C hanya
+  # membatalkan tombol (tidak mematikan menu), jadi kursor tidak tertinggal
+  # dalam keadaan tersembunyi.
+  trap '_oc_int=1' INT
+  _oc_cursor_hide
   while :; do
     if [ "$full" = "1" ]; then
       printf '\033[2J\033[H'
       _oc_banner
       _oc_update_notice
+      _oc_menu "$sel"
       full=0
     else
-      # menu = 9 baris; kembali ke awal blok menu lalu gambar ulang
-      printf '\033[8A'
+      # gambar ulang 4 baris pilihan saja (garis & petunjuk dibiarkan):
+      # dari baris kosong di bawah menu naik 7 baris ke pilihan pertama,
+      # tulis 4 baris, lalu turun 3 baris (garis + petunjuk + baris kosong).
+      printf '\033[7A'
+      _oc_rows "$sel"
+      printf '\033[3B'
     fi
-    _oc_menu "$sel"
     _oc_read_key
 
     case "$KEY" in
@@ -147,6 +178,8 @@ _oc_menu_loop() {
             mkdir -p "$HOME/.local/state" 2>/dev/null
             printf '%s\n' "$((sel + 1))" >"$choice_file" 2>/dev/null
             printf '\n'
+            # opencode butuh kursor terlihat; sembunyikan lagi saat balik ke menu
+            _oc_cursor_show
             if [ "$sel" -eq 0 ]; then
               printf '  %s→ OpenCode V1%s\n\n' "$DIM" "$R"
               if command -v opencode >/dev/null 2>&1; then
@@ -163,6 +196,7 @@ _oc_menu_loop() {
               fi
             fi
             # setelah opencode ditutup (mis. ketik exit), balik ke menu
+            _oc_cursor_hide
             full=1
             ;;
           2) printf '\n'; return 0 ;;
@@ -173,7 +207,7 @@ _oc_menu_loop() {
       2) sel=1 ;;
       3) sel=2 ;;
       q|Q) sel=3; return 1 ;;
-      esc|ctrl-c) ;;
+      esc|cancel|ctrl-c) ;;
     esac
   done
 }
@@ -202,9 +236,13 @@ _oc_guide() {
 _oc_launcher() {
   _oc_colors
   if _oc_menu_loop; then
+    trap - INT
+    _oc_cursor_show
     printf '  %sKembali ke shell.%s\n\n' "$DIM" "$R"
     _oc_guide
   else
+    trap - INT
+    _oc_cursor_show
     printf '  %sSampai jumpa.%s\n\n' "$DIM" "$R"
     exit 0
   fi
