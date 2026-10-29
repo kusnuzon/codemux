@@ -236,6 +236,31 @@ else
   fi
 fi
 
+# =============================================================================
+# 5. anti-kedip menu: kursor disembunyikan + gambar ulang hanya 4 baris
+# =============================================================================
+TPL="$ROOT/templates/bashrc-block.sh"
+if grep -qF '\033[?25l' "$TPL" && grep -qF '\033[?25h' "$TPL"; then
+  ok "menu: kursor disembunyikan & dipulihkan"
+else
+  bad "menu: escape kursor (?25l/?25h) tidak lengkap"
+fi
+if grep -qF '\033[7A' "$TPL" && ! grep -qF '\033[8A' "$TPL"; then
+  ok "menu: gambar ulang hanya baris pilihan (\\033[7A)"
+else
+  bad "menu: masih menulis ulang seluruh blok (\\033[8A)"
+fi
+if grep -q '_oc_rows()' "$TPL" && grep -q '033\[K' "$TPL"; then
+  ok "menu: baris pilihan dibersihkan sampai ujung (\\033[K)"
+else
+  bad "menu: baris pilihan tidak membersihkan sisa karakter"
+fi
+if grep -q '_oc_int' "$TPL" && grep -q 'cancel' "$TPL"; then
+  ok "menu: Ctrl+C hanya membatalkan tombol"
+else
+  bad "menu: Ctrl+C tidak ditangani (kursor bisa tertinggal)"
+fi
+
 rm -rf "$SANDBOX_ROOT"
 printf '\n%s lulus · %s gagal\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
