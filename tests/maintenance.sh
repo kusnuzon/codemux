@@ -126,6 +126,14 @@ else
 fi
 grep -q 'export EDITOR="nano"' "$SB3/home/.bashrc" &&
   ok "upgrade: isi bashrc lain dipertahankan" || bad "upgrade: isi bashrc hilang"
+# Cache update ditulis ulang setelah upgrade (kalau tidak, menu terus
+# menyarankan upgrade yang barusan selesai).
+if [ -f "$SB3/state/update-cache.tsv" ] &&
+  [ "$(awk -F'\t' '$1=="opencode-v2"{print $2}' "$SB3/state/update-cache.tsv")" = "2.1.2" ]; then
+  ok "upgrade: cache update disegarkan (versi lokal terbaru)"
+else
+  bad "upgrade: cache update masih memuat versi lama"
+fi
 
 # =============================================================================
 # 4. uninstall: payload dilepas, memori & bashrc pribadi tetap

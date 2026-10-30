@@ -261,6 +261,50 @@ else
   bad "menu: Ctrl+C tidak ditangani (kursor bisa tertinggal)"
 fi
 
+# =============================================================================
+# 6. notifikasi update: baris cache basi disembunyikan
+# =============================================================================
+SB6="$(new_sandbox notice)"
+mkdir -p "$SB6/home/.config/codemux" "$SB6/prefix/share/opencode" "$SB6/prefix/share/opencode-v2"
+printf '1.19.5' >"$SB6/prefix/share/opencode/VERSION"
+printf '2.2.3' >"$SB6/prefix/share/opencode-v2/VERSION"
+: >"$SB6/home/.config/codemux/.update-check.stamp" # jangan cek ulang ke jaringan
+
+notice() { # <isi cache> → cetak baris notifikasi
+  local sb="$1"
+  env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
+    ACC=""; DIM=""; R=""
+    eval "$(cat "$1")"
+    _oc_update_notice
+  ' _ "$TPL" 2>/dev/null
+}
+
+# cache bilang 2.2.2 → 2.2.3 padahal terpasang 2.2.3 (kasus setelah upgrade)
+printf 'codemux\t0.6.1\t0.6.1\tok\nopencode-v1\t1.19.5\t1.19.5\tok\nopencode-v2\t2.2.2\t2.2.3\tupdate\n' \
+  >"$SB6/home/.config/codemux/update-cache.tsv"
+out="$(notice "$SB6")"
+if [ -z "$out" ]; then
+  ok "notifikasi: cache basi (versi sudah terpasang) tidak ditampilkan"
+else
+  bad "notifikasi: masih menyarankan update yang sudah selesai"
+fi
+
+# benar-benar ada rilis baru → harus tampil
+printf 'opencode-v2\t2.2.3\t2.2.4\tupdate\n' >"$SB6/home/.config/codemux/update-cache.tsv"
+out="$(notice "$SB6")"
+case "$out" in
+  *"opencode-v2 2.2.4"*) ok "notifikasi: update sungguhan tetap tampil" ;;
+  *) bad "notifikasi: update sungguhan ikut disembunyikan" ;;
+esac
+
+# tanpa VERSION terpasang (tak terdeteksi) → jangan sembunyikan apa pun
+rm -f "$SB6/prefix/share/opencode-v2/VERSION"
+out="$(notice "$SB6")"
+case "$out" in
+  *"opencode-v2 2.2.4"*) ok "notifikasi: versi tak terdeteksi → baris tetap tampil" ;;
+  *) bad "notifikasi: baris hilang saat versi tak terdeteksi" ;;
+esac
+
 rm -rf "$SANDBOX_ROOT"
 printf '\n%s lulus · %s gagal\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

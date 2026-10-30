@@ -146,8 +146,8 @@ lib/modules/*.sh   probe + apply + verify per modul
 tests/smoke.sh     uji cepat (syntax, help, json, shellcheck)
 tests/resume.sh    16 skenario "matikan di tengah"
 tests/adapter.sh   12 skenario adapter V1/V2 (hulu palsu)
-tests/launcher-memory.sh  22 skenario launcher/dotfiles/ingatan (sandbox HOME)
-tests/maintenance.sh      13 skenario update-check/doctor/upgrade/uninstall
+tests/launcher-memory.sh  29 skenario launcher/dotfiles/ingatan (sandbox HOME)
+tests/maintenance.sh      14 skenario update-check/doctor/upgrade/uninstall
 tests/release.sh          7 skenario bootstrap + self-update
 templates/         blok bashrc + template ingatan + penyunting opencode.jsonc
 versions.env       versi dipin + daftar paket
@@ -175,3 +175,7 @@ PRD.md             rancangan lengkap (tujuan, mekanisme, milestone)
 - `codemux self-update` mengganti `bin/`, `lib/`, `templates/`, `VERSION`,
   `versions.env`; kode lama di-backup ke `~/.config/codemux/backup/<ts>-selfupdate/`.
   Memori, project, dan state tidak disentuh.
+- `codemux upgrade` menyegarkan cache `update-check` setelah selesai, dan menu
+  startup menyembunyikan baris cache yang versi lokalnya tak cocok dengan payload
+  terpasang — jadi "update tersedia" tak muncul lagi untuk versi yang baru saja
+  dipasang.
