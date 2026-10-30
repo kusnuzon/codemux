@@ -267,6 +267,16 @@ codemux_cmd_upgrade() {
   codemux_lock_release
   trap - EXIT INT TERM
 
+  # Cache update hulu ditulis SEBELUM payload diganti, jadi masih memuat versi
+  # lama. Tanpa ini, menu terus menyarankan upgrade yang barusan selesai.
+  if [ "$ok_n" -gt 0 ] && [ "$dry" -eq 0 ]; then
+    if codemux_cmd_update_check --quiet >/dev/null 2>&1; then
+      log_dim "cache update disegarkan · sisa update: $(codemux_update_count)"
+    else
+      log_dim "cache update tak bisa disegarkan — jalankan: codemux update-check"
+    fi
+  fi
+
   printf '\n'
   if [ "$fail_n" -eq 0 ]; then
     log_ok "upgrade selesai: $ok_n langkah."

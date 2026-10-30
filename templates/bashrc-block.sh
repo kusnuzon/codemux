@@ -107,20 +107,43 @@ _oc_read_key() {
   esac
 }
 
+# Versi yang benar-benar terpasang sekarang (kosong kalau tak terdeteksi).
+# Dipakai untuk menyaring baris cache yang sudah basi.
+_oc_live_ver() {
+  local pre="${PREFIX:-/data/data/com.termux/files/usr}"
+  case "$1" in
+    opencode-v1) cat "$pre/share/opencode/VERSION" 2>/dev/null ;;
+    opencode-v2) cat "$pre/share/opencode-v2/VERSION" 2>/dev/null ;;
+    *) : ;;
+  esac
+}
+
 # Baris notifikasi update (baca cache codemux; tidak menahan prompt).
 _oc_update_notice() {
   local dir="$HOME/.config/codemux"
   local cache="$dir/update-cache.tsv" stamp="$dir/.update-check.stamp"
-  local age=-1 s_age=999999 n=0
+  local age=-1 s_age=999999 n=0 v1 v2 rows stale=0
+  v1="$(_oc_live_ver opencode-v1)"
+  v2="$(_oc_live_ver opencode-v2)"
   if [ -f "$cache" ]; then
     age=$(( ( $(date +%s) - $(stat -c %Y "$cache" 2>/dev/null || echo 0) ) / 3600 ))
-    n=$(awk -F'\t' '$4=="update"' "$cache" 2>/dev/null | wc -l)
+    # Baris dianggap basi kalau versi "lokal" di cache ≠ versi terpasang
+    # (mis. payload baru diganti di luar menu). Yang basi disembunyikan,
+    # lalu cache dipaksa dicek ulang.
+    { read -r n; read -r rows; read -r stale; } < <(awk -F'\t' -v v1="$v1" -v v2="$v2" '
+      $4=="update" {
+        if (($1=="opencode-v1" && v1!="" && $2!=v1) ||
+            ($1=="opencode-v2" && v2!="" && $2!=v2)) { stale=1; next }
+        out = out sep (($1=="apt") ? $2 " paket apt" : $1 " " $3); sep = " · "
+        n++
+      }
+      END { print n+0; print out; print (stale?1:0) }' "$cache" 2>/dev/null)
     n="${n// /}"
-    if [ "${n:-0}" -gt 0 ]; then
-      printf '   %supdate tersedia:%s %s\n' "$ACC" "$R" \
-        "$(awk -F'\t' '$4=="update" {printf "%s%s", sep, ($1=="apt" ? $2 " paket apt" : $1 " " $3); sep=" · "}' "$cache" 2>/dev/null)"
+    if [ "${n:-0}" -gt 0 ] && [ -n "$rows" ]; then
+      printf '   %supdate tersedia:%s %s\n' "$ACC" "$R" "$rows"
       printf '   %sjalankan: codemux upgrade%s\n\n' "$DIM" "$R"
     fi
+    [ "${stale:-0}" = "1" ] && age=999999 # cache tak cocok → cek ulang
   fi
   # cek di latar belakang kalau cache basi; maksimal sekali per 6 jam
   command -v codemux >/dev/null 2>&1 || return 0
