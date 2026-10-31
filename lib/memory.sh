@@ -26,7 +26,7 @@ codemux_cmd_memory() {
   base="$(codemux_memory_base)"
 
   local -a files=("MEMORY.md" "AGENTS.md" "RECENT.md" "plugins/memory.js"
-    "bin/session-digest.py" "opencode.jsonc")
+    "plugins/session-title.js" "bin/session-digest.py" "opencode.jsonc")
   local f path s mark
 
   for f in "${files[@]}"; do

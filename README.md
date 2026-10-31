@@ -54,7 +54,7 @@ Setelah terpasang (M2+), perintahnya menjadi `codemux` di `$PREFIX/bin`.
 | `opencode-v2` | payload V2 + shim `lib/compat` |
 | `launcher` | blok banner/menu di `~/.bashrc` (mendeteksi blok lama) |
 | `dotfiles` | `.bash_profile`, `.hushlogin` |
-| `memory` | `MEMORY.md` (+ batas 24.000 byte), `RECENT.md`, plugin, instructions |
+| `memory` | `MEMORY.md` (+ batas 24.000 byte), `RECENT.md`, plugin memori + judul sesi, instructions |
 | `update-cache` | umur cache cek update hulu |
 
 `install` menjalankan modul berurutan: `deps -> mirror -> storage -> toolset ->
@@ -70,7 +70,8 @@ glibc -> v1 -> v2 -> launcher -> dotfiles -> memory`.
   `bash -n`, gagal → backup dipulihkan.
 - **dotfiles**: `.bash_profile` (memuat `.bashrc`) dan `.hushlogin`.
 - **memory**: `MEMORY.md`, `AGENTS.md`, `RECENT.md`, `plugins/memory.js`,
-  `bin/session-digest.py`, dan entri `instructions` di `opencode.jsonc`.
+  `plugins/session-title.js`, `bin/session-digest.py`, dan entri `instructions`
+  di `opencode.jsonc`.
   **File memori yang sudah ada tidak pernah ditimpa**; `instructions` hanya
   ditambah kalau belum ada; wrapper `_oc_refresh_digest` masuk blok
   `# codemux:memory begin … end` (hanya kalau belum ada). Mekanisme plugin/digest

@@ -25,6 +25,10 @@ cat >"$FIXTURE/plugin.js" <<'EOS'
 // memory.js (fixture uji)
 export default { id: "memory", setup() {} };
 EOS
+cat >"$FIXTURE/title.js" <<'EOS'
+// session-title.js (fixture uji)
+export default { id: "session-title", async server() { return {} }, setup() {} };
+EOS
 cat >"$FIXTURE/digest.py" <<'EOS'
 #!/usr/bin/env python3
 import os
@@ -48,6 +52,7 @@ run_cm() { # <sandbox> <perintah...>
   env HOME="$sb/home" CODEMUX_HOME="$sb/state" PREFIX="$sb/prefix" TMPDIR="$BASE" \
     CODEMUX_ALLOW_NONANDROID=1 \
     CODEMUX_MEMORY_PLUGIN_URL="$FIXTURE/plugin.js" \
+    CODEMUX_MEMORY_TITLE_URL="$FIXTURE/title.js" \
     CODEMUX_MEMORY_DIGEST_URL="$FIXTURE/digest.py" \
     bash "$ROOT/bin/codemux" "$@"
 }
@@ -105,6 +110,7 @@ else
 fi
 [ -f "$SB/home/.config/opencode/RECENT.md" ] && ok "fresh: RECENT.md dibuat" || bad "fresh: RECENT.md tidak ada"
 [ -s "$SB/home/.config/opencode/plugins/memory.js" ] && ok "fresh: plugins/memory.js terunduh" || bad "fresh: plugins/memory.js tidak ada"
+[ -s "$SB/home/.config/opencode/plugins/session-title.js" ] && ok "fresh: plugins/session-title.js terunduh" || bad "fresh: plugins/session-title.js tidak ada"
 [ -x "$SB/home/.config/opencode/bin/session-digest.py" ] && ok "fresh: session-digest.py executable" || bad "fresh: session-digest.py tidak executable"
 
 # check: tiga modul M4 harus OK
