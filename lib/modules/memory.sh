@@ -5,6 +5,7 @@
 
 # Sumber mekanisme (kode, bukan data pribadi). Bisa ditimpa lewat env untuk tes.
 CODEMUX_MEMORY_PLUGIN_URL="${CODEMUX_MEMORY_PLUGIN_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/memory.js}"
+CODEMUX_MEMORY_TITLE_URL="${CODEMUX_MEMORY_TITLE_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/session-title.js}"
 CODEMUX_MEMORY_DIGEST_URL="${CODEMUX_MEMORY_DIGEST_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/session-digest.py}"
 CODEMUX_MEMORY_LIMIT="${CODEMUX_MEMORY_LIMIT:-24000}"
 
@@ -18,7 +19,7 @@ codemux_memory_wrapper_present() {
 m_memory_probe() {
   local base need miss=() f size pct
   base="$(codemux_memory_base)"
-  need=("MEMORY.md" "AGENTS.md" "RECENT.md" "plugins/memory.js" "bin/session-digest.py")
+  need=("MEMORY.md" "AGENTS.md" "RECENT.md" "plugins/memory.js" "plugins/session-title.js" "bin/session-digest.py")
 
   for f in "${need[@]}"; do
     [ -f "$base/$f" ] || miss+=("$f")
@@ -128,6 +129,13 @@ m_memory_apply() {
     }
     chmod 600 "$base/plugins/memory.js" 2>/dev/null || true
     made+=("plugins/memory.js")
+  fi
+  if [ ! -s "$base/plugins/session-title.js" ]; then
+    codemux_fetch_raw "$CODEMUX_MEMORY_TITLE_URL" "$base/plugins/session-title.js" || {
+      APPLY_NOTE="gagal mengunduh plugins/session-title.js"; return 1
+    }
+    chmod 600 "$base/plugins/session-title.js" 2>/dev/null || true
+    made+=("plugins/session-title.js")
   fi
   if [ ! -s "$base/bin/session-digest.py" ]; then
     codemux_fetch_raw "$CODEMUX_MEMORY_DIGEST_URL" "$base/bin/session-digest.py" || {
