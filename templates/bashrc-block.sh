@@ -256,6 +256,8 @@ _oc_guide() {
   _oc_cmd_row opencode-v2   'jalankan OpenCode V2 langsung'
   _oc_cmd_row doctor        'cek kesehatan instalasi OpenCode V2'
   _oc_cmd_row version       'tampilkan versi V1 dan V2'
+  command -v kuota >/dev/null 2>&1 &&
+    _oc_cmd_row kuota       'lihat perkiraan sisa kuota model gratis'
   _oc_cmd_row codemux       'cek & rawat Termux (check / install / status)'
   _oc_cmd_row 'keluar|exit' 'tutup Termux'
   printf '\n  %sKetik %smenu%s kapan pun untuk balik ke menu ini.%s\n' "$DIM" "$BOLD" "$R" "$R"
