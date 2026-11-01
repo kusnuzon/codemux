@@ -55,16 +55,32 @@ codemux_local_version() {
   esac
 }
 
+# Versi "terbaru" yang sudah diketahui dari cache sebelumnya.
+# Dipakai kalau jaringan gagal sesaat: hasil cek lama jangan sampai tertimpa
+# "na", sebab baris "na" tidak dinotifikasi di menu dan cache-nya 24 jam —
+# akibatnya update yang sudah diketahui jadi tak terlihat sehari penuh.
+codemux_prev_latest() { # <komponen>
+  local f v
+  f="$(codemux_update_cache)"
+  [ -f "$f" ] || return 0
+  v="$(awk -F'\t' -v c="$1" '$1==c && $3!="-" && $3!="" {print $3}' "$f" 2>/dev/null | tail -n 1)"
+  [ -n "$v" ] || return 0
+  printf '%s' "$v"
+}
+
 codemux_update_rows() { # cetak baris TSV hasil cek sekarang
   local c_local="$CODEMUX_VERSION" c_latest="" v1 v1_latest v2 v2_latest apt_n
   local state
 
   c_local="$(codemux_local_version codemux)"
   c_latest="$(codemux_norm_ver "$(codemux_latest_tag "${UPSTREAM_CODEMUX:-kusnuzon/codemux}" 2>/dev/null || true)")"
+  [ -n "$c_latest" ] || c_latest="$(codemux_prev_latest codemux)"
   v1="$(codemux_local_version opencode-v1)"
   v1_latest="$(codemux_norm_ver "$(codemux_latest_tag "${UPSTREAM_V1:-kusnuzon/opencode-termux}" 2>/dev/null || true)")"
+  [ -n "$v1_latest" ] || v1_latest="$(codemux_prev_latest opencode-v1)"
   v2="$(codemux_local_version opencode-v2)"
   v2_latest="$(codemux_norm_ver "$(codemux_latest_tag "${UPSTREAM_V2:-kusnuzon/opencode-termux-v2}" 2>/dev/null || true)")"
+  [ -n "$v2_latest" ] || v2_latest="$(codemux_prev_latest opencode-v2)"
 
   case "$c_local" in [!0-9]*) state="na" ;; *) state="" ;; esac
   if [ -z "$c_latest" ] || [ "$state" = na ]; then

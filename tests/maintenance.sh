@@ -91,6 +91,26 @@ else
   bad "update-check: salah menganggap ada update"
 fi
 
+# cek hulu gagal sesaat (jaringan putus) tidak boleh menghapus update yang
+# sudah diketahui: hasil cek lama dipakai lagi, bukan ditimpa "na".
+SB="$(new_sandbox offline)"
+run_cm "$SB" update-check --quiet >/dev/null 2>&1
+env HOME="$SB/home" CODEMUX_HOME="$SB/state" PREFIX="$SB/prefix" TMPDIR="$BASE" \
+  CODEMUX_ALLOW_NONANDROID=1 CODEMUX_NO_APT_CHECK=1 \
+  CODEMUX_GITHUB_BASE=https://127.0.0.1:9 \
+  CODEMUX_FAKE_LOCAL_CODEMUX=0.4.0 CODEMUX_FAKE_LOCAL_V1=1.19.3 CODEMUX_FAKE_LOCAL_V2=2.1.2 \
+  bash "$ROOT/bin/codemux" update-check --quiet >/dev/null 2>&1
+if [ "$(awk -F'\t' '$1=="opencode-v2"{print $4}' "$SB/state/update-cache.tsv")" = "update" ]; then
+  ok "update-check: gagal jaringan tidak menghapus update yang diketahui"
+else
+  bad "update-check: update hilang setelah gagal jaringan ($(tr '\t' ' ' <"$SB/state/update-cache.tsv" | tr '\n' ';'))"
+fi
+if [ "$(awk -F'\t' '$1=="codemux"{print $4}' "$SB/state/update-cache.tsv")" = "update" ]; then
+  ok "update-check: codemux juga bertahan saat gagal jaringan"
+else
+  bad "update-check: baris codemux jadi na setelah gagal jaringan"
+fi
+
 # =============================================================================
 # 2. upgrade --dry-run tidak mengubah apa pun
 # =============================================================================

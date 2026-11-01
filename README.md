@@ -97,6 +97,8 @@ codemux tidak menyalin kode OpenCode. Untuk `v1` dan `v2` ia:
   dengan rilis hulu lewat redirect `/releases/latest` (tanpa kuota API). Hasil
   disimpan di `~/.config/codemux/update-cache.tsv` (24 jam); menu startup
   membacanya dan menjalankan cek di latar belakang kalau cache basi.
+  Kalau jaringan gagal sesaat, nilai "terbaru" dari cache lama dipakai lagi
+  (tidak ditimpa `na`), dan menu mengulang cek paling cepat 1 jam kemudian.
 - **`doctor`** — `check` + pemeriksaan tambahan: `bash -n ~/.bashrc`, wrapper
   digest, ukuran `MEMORY.md`, `LD_PRELOAD` bionic, sisa disk, lock, umur cache.
 - **`upgrade`** — `apt-get update && apt-get upgrade` (opencode tetap di-hold),
