@@ -278,7 +278,7 @@ printf '2.2.3' >"$SB6/prefix/share/opencode-v2/VERSION"
 
 notice() { # <isi cache> → cetak baris notifikasi
   local sb="$1"
-  env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
+  env HOME="$sb/home" PREFIX="$sb/prefix" PATH="$sb/prefix/bin:$PATH" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
     ACC=""; DIM=""; R=""
     eval "$(cat "$1")"
     _oc_update_notice
@@ -310,6 +310,34 @@ case "$out" in
   *"opencode-v2 2.2.4"*) ok "notifikasi: versi tak terdeteksi → baris tetap tampil" ;;
   *) bad "notifikasi: baris hilang saat versi tak terdeteksi" ;;
 esac
+
+# cek hulu pernah gagal (status na) → jangan dikunci 24 jam, ulangi ≤1 jam
+mkdir -p "$SB6/prefix/bin"
+cat >"$SB6/prefix/bin/codemux" <<'EOS'
+#!/data/data/com.termux/files/usr/bin/bash
+: >"$HOME/retry-marker"
+EOS
+chmod 700 "$SB6/prefix/bin/codemux"
+printf 'codemux\t0.6.3\t-\tna\nopencode-v1\t1.19.5\t-\tna\nopencode-v2\t2.2.3\t-\tna\n' \
+  >"$SB6/home/.config/codemux/update-cache.tsv"
+touch -t "$(date -d '2 hours ago' +%Y%m%d%H%M)" "$SB6/home/.config/codemux/.update-check.stamp"
+rm -f "$SB6/home/retry-marker"
+notice "$SB6" >/dev/null
+sleep 0.3
+[ -f "$SB6/home/retry-marker" ] &&
+  ok "notifikasi: hasil cek 'na' memicu cek ulang <1 jam" ||
+  bad "notifikasi: hasil cek 'na' tidak dicek ulang"
+
+# sebaliknya: hasil lengkap (tanpa na) tetap menunggu 24 jam
+printf 'codemux\t0.6.3\t0.6.3\tok\nopencode-v2\t2.2.3\t2.2.5\tupdate\n' \
+  >"$SB6/home/.config/codemux/update-cache.tsv"
+touch -t "$(date -d '2 hours ago' +%Y%m%d%H%M)" "$SB6/home/.config/codemux/.update-check.stamp"
+rm -f "$SB6/home/retry-marker"
+notice "$SB6" >/dev/null
+sleep 0.3
+[ ! -f "$SB6/home/retry-marker" ] &&
+  ok "notifikasi: cache lengkap tidak memicu cek ulang berlebihan" ||
+  bad "notifikasi: cache lengkap memicu cek ulang terlalu cepat"
 
 rm -rf "$SANDBOX_ROOT"
 printf '\n%s lulus · %s gagal\n' "$pass" "$fail"
