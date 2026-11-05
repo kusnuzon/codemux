@@ -23,6 +23,8 @@ unset _CODEMUX_ENV_APT _CODEMUX_ENV_MIRROR
 OPENCODE_V1_VERSION="${OPENCODE_V1_VERSION:-?}"
 OPENCODE_V2_VERSION="${OPENCODE_V2_VERSION:-?}"
 CODEMUX_APT_PACKAGES="${CODEMUX_APT_PACKAGES:-}"
+CODEMUX_APT_EXTRA="${CODEMUX_APT_EXTRA:-}"
+CODEMUX_APT_REPOS="${CODEMUX_APT_REPOS:-}"
 
 # --- warna -------------------------------------------------------------------
 codemux_colors() {
@@ -78,6 +80,120 @@ codemux_safe_path() {
 # json_escape: escape minimal untuk output --json.
 json_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/ /g'
+}
+
+# --- apt & unduhan tahan-lingkungan ------------------------------------------
+# Dua kegagalan nyata saat instalasi Termux dari nol (log 2026-11-02):
+#   1. apt dipakai tanpa `apt-get update` -> "E: Unable to locate package …"
+#      (nodejs/tesseract/chromium) sehingga modul toolset FAIL.
+#   2. paket glibc menimpa libcurl -> curl mati dengan
+#      `cannot locate symbol "SSL_set_quic_tls_early_data_enabled"`, sehingga
+#      SEMUA unduhan sesudahnya (adapter V1/V2, plugin memori) ikut gagal.
+# Helper di bawah menutup keduanya dan dipakai semua modul.
+
+CODEMUX_NET_TIMEOUT="${CODEMUX_NET_TIMEOUT:-300}"
+CODEMUX_NET_PROBE="${CODEMUX_NET_PROBE:-https://api.github.com/}"
+
+codemux_apt_update() {
+  local i
+  have apt-get || return 1
+  for i in 1 2 3; do
+    DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 && return 0
+    sleep $((i * 2))
+  done
+  return 1
+}
+
+# codemux_apt_install <paket...> — pasang; kalau daftar paket basi, update lalu ulangi.
+codemux_apt_install() {
+  local pkgs=("$@") out rc=0
+  [ "${#pkgs[@]}" -gt 0 ] || return 0
+  have apt-get || return 1
+  if out="$(DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    -o Dpkg::Options::=--force-confold "${pkgs[@]}" 2>&1)"; then
+    return 0
+  fi
+  rc=$?
+  case "$out" in
+    *"Unable to locate package"*|*"has no installation candidate"*|*"404"*)
+      codemux_apt_update || true
+      if out="$(DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        -o Dpkg::Options::=--force-confold --fix-missing "${pkgs[@]}" 2>&1)"; then
+        return 0
+      fi
+      rc=$?
+      ;;
+  esac
+  printf '%s\n' "$out" | tail -n 3 >&2
+  return "$rc"
+}
+
+codemux_curl_ok() {
+  have curl || return 1
+  curl -fsS --max-time 10 -o /dev/null "$CODEMUX_NET_PROBE" >/dev/null 2>&1
+}
+
+# Perbaiki curl yang dirusak paket glibc (libcurl salah versi).
+codemux_heal_curl() {
+  codemux_curl_ok && return 0
+  log_warn "curl tidak sehat (biasanya efek paket glibc) — memasang ulang curl/libcurl/openssl"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall \
+    -o Dpkg::Options::=--force-confold curl libcurl openssl ca-certificates \
+    >/dev/null 2>&1 || codemux_apt_install curl libcurl openssl ca-certificates || true
+  hash -r 2>/dev/null || true
+  codemux_curl_ok
+}
+
+# Satu percobaan unduh. <url> <dest> [accept]
+codemux_dl_once() {
+  local url="$1" dest="$2" accept="${3:-}"
+  if have curl; then
+    if [ -n "$accept" ]; then
+      curl -fsSL --max-time "$CODEMUX_NET_TIMEOUT" -H "Accept: $accept" "$url" -o "$dest" 2>/dev/null
+    else
+      curl -fsSL --max-time "$CODEMUX_NET_TIMEOUT" "$url" -o "$dest" 2>/dev/null
+    fi
+    [ -s "$dest" ] && return 0
+    rm -f "$dest"
+  fi
+  if have wget; then
+    wget -q --timeout=60 -O "$dest" "$url" >/dev/null 2>&1
+    [ -s "$dest" ] && return 0
+    rm -f "$dest"
+  fi
+  if have python; then
+    python - "$url" "$dest" "$accept" <<'PY' >/dev/null 2>&1
+import sys, urllib.request
+url, dest, accept = sys.argv[1], sys.argv[2], (sys.argv[3] if len(sys.argv) > 3 else "")
+req = urllib.request.Request(url, headers={"User-Agent": "codemux"})
+if accept:
+    req.add_header("Accept", accept)
+data = urllib.request.urlopen(req, timeout=60).read()
+if not data:
+    raise SystemExit(1)
+open(dest, "wb").write(data)
+PY
+    [ -s "$dest" ] && return 0
+    rm -f "$dest"
+  fi
+  return 1
+}
+
+# codemux_download <url> <dest> [accept] — curl, lalu perbaiki curl, lalu wget/python.
+codemux_download() {
+  local url="$1" dest="$2" accept="${3:-}" part="$2.part"
+  mkdir -p "$(dirname "$dest")" || return 1
+  rm -f "$part"
+  if codemux_dl_once "$url" "$part" "$accept"; then
+    mv -f "$part" "$dest" && return 0
+  fi
+  rm -f "$part"
+  codemux_heal_curl >/dev/null 2>&1 || true
+  if codemux_dl_once "$url" "$part" "$accept"; then
+    mv -f "$part" "$dest" && return 0
+  fi
+  rm -f "$part"
+  return 1
 }
 
 codemux_usage() {

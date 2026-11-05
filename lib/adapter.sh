@@ -14,7 +14,7 @@ codemux_adapter_fetch() {
 
   case "$url" in
     http://* | https://*)
-      curl -fsSL -H 'Accept: application/vnd.github.raw' "$url" -o "$dest.part" || {
+      codemux_download "$url" "$dest.part" 'application/vnd.github.raw' || {
         rm -f "$dest.part"
         return 1
       }
@@ -59,7 +59,7 @@ codemux_fetch_raw() {
   rm -f "$dest.part"
   case "$url" in
     http://* | https://*)
-      curl -fsSL -H 'Accept: application/vnd.github.raw' "$url" -o "$dest.part" || {
+      codemux_download "$url" "$dest.part" 'application/vnd.github.raw' || {
         rm -f "$dest.part"
         return 1
       }
