@@ -35,12 +35,36 @@ if [ "${#missing[@]}" -gt 0 ]; then
   if command -v pkg >/dev/null 2>&1; then
     say "memasang prasyarat: ${missing[*]}"
     pkg update -y >/dev/null 2>&1 || true
-    pkg install -y curl tar coreutils gzip >/dev/null 2>&1 ||
-      die "gagal memasang prasyarat (curl tar coreutils gzip)"
+    pkg install -y curl tar coreutils gzip wget >/dev/null 2>&1 ||
+      die "gagal memasang prasyarat (curl tar coreutils gzip wget)"
   else
     die "prasyarat kurang: ${missing[*]} (bukan Termux? pasang manual)"
   fi
 fi
+
+# 1b) curl ada tapi bisa rusak oleh paket glibc:
+#     "cannot locate symbol SSL_set_quic_tls_early_data_enabled".
+#     Tanpa ini, unduhan tarball gagal dengan pesan yang menyesatkan.
+if ! curl -fsS --max-time 10 -o /dev/null "https://github.com" >/dev/null 2>&1; then
+  say "curl tidak sehat — memasang ulang curl/libcurl/openssl"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall \
+    -o Dpkg::Options::=--force-confold curl libcurl openssl ca-certificates >/dev/null 2>&1 || \
+    pkg install -y curl libcurl openssl ca-certificates >/dev/null 2>&1 || true
+  hash -r 2>/dev/null || true
+fi
+
+# unduh: curl, lalu wget, lalu python (kalau curl tetap rusak)
+download() { # <url> <dest>
+  if curl -fsSL --max-time 300 "$1" -o "$2.part" 2>/dev/null && [ -s "$2.part" ]; then
+    mv -f "$2.part" "$2"; return 0
+  fi
+  rm -f "$2.part"
+  if command -v wget >/dev/null 2>&1 && wget -q --timeout=60 -O "$2.part" "$1" >/dev/null 2>&1 && [ -s "$2.part" ]; then
+    mv -f "$2.part" "$2"; return 0
+  fi
+  rm -f "$2.part"
+  return 1
+}
 
 # 2) tarball: env (tes/offline) atau rilis terbaru, fallback main
 tarball="${CODEMUX_BOOTSTRAP_TARBALL:-}"
@@ -67,13 +91,10 @@ if [ -z "$tarball" ]; then
   tarball="$CACHE/codemux-download.tar.gz"
   rm -f "$tarball.part"
   say "mengunduh $url"
-  curl -fsSL --max-time 300 "$url" -o "$tarball.part" || {
-    rm -f "$tarball.part"
-    die "gagal mengunduh tarball"
-  }
-  mv -f "$tarball.part" "$tarball" || die "gagal menyimpan tarball"
+  download "$url" "$tarball" || die "gagal mengunduh tarball"
   if [ -n "$sha_url" ]; then
-    expect_sha="$(curl -fsSL --max-time 20 "$sha_url" 2>/dev/null | awk '{print $1}' || true)"
+    download "$sha_url" "$CACHE/codemux-download.sha256" 2>/dev/null || true
+    expect_sha="$(awk '{print $1}' "$CACHE/codemux-download.sha256" 2>/dev/null || true)"
   fi
 fi
 

@@ -45,10 +45,10 @@ Setelah terpasang (M2+), perintahnya menjadi `codemux` di `$PREFIX/bin`.
 | Modul | Isi |
 |---|---|
 | `preflight` | Android, aarch64, bukan root, disk ≥ 3 GB |
-| `deps` | curl, tar, sha256sum, gzip, unzip, awk, sed |
+| `deps` | curl, tar, sha256sum, gzip, unzip, awk, sed, jq (+ curl dipulihkan bila rusak) |
 | `mirror` | repo apt aktif (peringatan kalau mirror lambat) |
 | `storage` | `termux-setup-storage` sudah jalan |
-| `toolset` | 20 paket apt wajib (git, gh, python, chromium, …) |
+| `toolset` | 20 paket apt wajib (git, gh, python, nodejs, sqlite, …) + opsional `tesseract chromium` (x11-repo) |
 | `glibc` | loader + libc.so.6 untuk payload OpenCode |
 | `opencode-v1` | payload V1 + `apt-mark hold` |
 | `opencode-v2` | payload V2 + shim `lib/compat` |
@@ -59,6 +59,15 @@ Setelah terpasang (M2+), perintahnya menjadi `codemux` di `$PREFIX/bin`.
 
 `install` menjalankan modul berurutan: `deps -> mirror -> storage -> toolset ->
 glibc -> v1 -> v2 -> launcher -> dotfiles -> memory`.
+
+Semua dependensi dipasang di awal (modul `deps` + `toolset`) supaya Termux
+baru tidak error di tengah jalan. Dua jebakan yang ditangani otomatis:
+
+- `apt-get install` tanpa `update` → `E: Unable to locate package` (paket
+  di-update lalu diulang sekali);
+- paket `glibc` menimpa `libcurl` → `curl: cannot locate symbol
+  "SSL_set_quic_tls_early_data_enabled"`. Modul `glibc` memasang ulang
+  `curl libcurl openssl`, dan semua unduhan punya cadangan `wget`/`python`.
 
 ### Launcher & ingatan (M4)
 

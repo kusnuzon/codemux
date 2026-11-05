@@ -42,11 +42,11 @@ codemux_self_download() {
 
   tarball="$cache/codemux-download.tar.gz"
   rm -f "$tarball.part"
-  curl -fsSL --max-time 180 "$url" -o "$tarball.part" || { rm -f "$tarball.part"; return 1; }
-  mv -f "$tarball.part" "$tarball" || return 1
+  codemux_download "$url" "$tarball" || return 1
 
   if [ -n "$sha_url" ]; then
-    expected="$(curl -fsSL --max-time 20 "$sha_url" 2>/dev/null | awk '{print $1}')" || expected=""
+    expected="$(codemux_download "$sha_url" "$cache/codemux-download.sha256" &&
+      awk '{print $1}' "$cache/codemux-download.sha256" 2>/dev/null)" || expected=""
   fi
   if [ -n "$expected" ]; then
     got="$(sha256sum "$tarball" | awk '{print $1}')"

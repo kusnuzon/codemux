@@ -2,7 +2,7 @@
 # shellcheck disable=SC2034  # PROBE/NOTE/global dipakai lintas file
 # modul: deps — alat dasar yang harus ada sebelum apa pun.
 
-CODEMUX_DEP_BINS="curl tar sha256sum gzip unzip awk sed"
+CODEMUX_DEP_BINS="curl tar sha256sum gzip unzip awk sed jq"
 
 # nama paket untuk sebuah binary (beberapa binary beda paket)
 m_deps_pkg() {
@@ -20,14 +20,21 @@ m_deps_missing() {
   done
 }
 
+# curl bisa ADA tapi mati (efek paket glibc): bedakan dari "tidak terpasang".
+m_deps_curl_broken() {
+  have curl && ! codemux_curl_ok
+}
+
 m_deps_probe() {
   local miss
   miss="$(m_deps_missing | tr '\n' ' ' | sed 's/ *$//')"
-  if [ -z "$miss" ]; then
-    PROBE=OK; NOTE="$CODEMUX_DEP_BINS"
-  else
-    PROBE=MISS; NOTE="kurang: $miss"
+  if [ -n "$miss" ]; then
+    PROBE=MISS; NOTE="kurang: $miss"; return
   fi
+  if m_deps_curl_broken; then
+    PROBE=MISS; NOTE="curl terpasang tapi rusak (libcurl/openssl) — akan dipasang ulang"; return
+  fi
+  PROBE=OK; NOTE="$CODEMUX_DEP_BINS"
 }
 
 m_deps_verify() { m_deps_probe; }
@@ -40,20 +47,24 @@ m_deps_apply() {
     pkgs="$pkgs $p"
   done
   pkgs="$(printf '%s' "$pkgs" | sed 's/^ *//')"
-  if [ -z "$pkgs" ]; then
-    APPLY_NOTE="tidak ada yang perlu dipasang"
-    return 0
+
+  if [ -n "$pkgs" ]; then
+    # shellcheck disable=SC2086
+    if ! codemux_apt_install $pkgs; then
+      APPLY_NOTE="apt gagal: $pkgs"
+      return 1
+    fi
+    APPLY_NOTE="dipasang: $pkgs"
   fi
 
-  # shellcheck disable=SC2086
-  codemux_spawn deps env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    -o Dpkg::Options::=--force-confold $pkgs || return 1
-  local rc=0
-  codemux_wait deps 1800 || rc=$?
-  if [ "$rc" -ne 0 ]; then
-    APPLY_NOTE="apt gagal (rc $rc): $(codemux_step_tail deps)"
-    return "$rc"
+  if m_deps_curl_broken; then
+    codemux_heal_curl || {
+      APPLY_NOTE="curl tetap rusak setelah pemasangan ulang"
+      return 1
+    }
+    APPLY_NOTE="${APPLY_NOTE:+$APPLY_NOTE · }curl dipulihkan"
   fi
-  APPLY_NOTE="dipasang:$pkgs"
+
+  [ -n "$APPLY_NOTE" ] || APPLY_NOTE="tidak ada yang perlu dipasang"
   return 0
 }
