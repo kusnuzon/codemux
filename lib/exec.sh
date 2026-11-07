@@ -1,10 +1,10 @@
 # shellcheck shell=bash
-# lib/exec.sh — eksekusi tahan-mati: spawn detached, wait, tulis atomik, backup.
+# lib/exec.sh — crash-proof execution: detached spawn, wait, atomic write, backup.
 
 codemux_run_dir() { printf '%s/run' "$CODEMUX_HOME"; }
 
-# --- tulis atomik ------------------------------------------------------------
-# Pakai: printf 'isi\n' | codemux_atomic_write /path/file
+# --- atomic write ------------------------------------------------------------
+# Usage: printf 'content\n' | codemux_atomic_write /path/file
 codemux_atomic_write() {
   local dest="$1" dir tmp
   dir="$(dirname "$dest")"
@@ -20,7 +20,7 @@ codemux_atomic_write() {
 }
 
 # --- backup -----------------------------------------------------------------
-# Pakai: bak="$(codemux_backup mirror /path/file)"
+# Usage: bak="$(codemux_backup mirror /path/file)"
 codemux_backup() {
   local tag="$1" src="$2" dir dest
   [ -e "$src" ] || { printf ''; return 0; }
@@ -31,10 +31,10 @@ codemux_backup() {
   printf '%s\n' "$dest"
 }
 
-# --- proses terpisah dari shell ---------------------------------------------
-# codemux_spawn <langkah> <perintah...>
-# Anak menulis pid sendiri, lalu rc ke <langkah>.rc. Shell/opencode mati
-# tidak membunuh anak (setsid + nohup).
+# --- process detached from the shell ----------------------------------------
+# codemux_spawn <step> <command...>
+# The child writes its own pid, then rc to <step>.rc. Killing the shell or
+# opencode does not kill the child (setsid + nohup).
 codemux_spawn() {
   local step="$1"
   shift
@@ -80,8 +80,8 @@ codemux_step_alive() {
   [ -n "$p" ] && kill -0 "$p" 2>/dev/null
 }
 
-# codemux_wait <langkah> [detik_maks]
-# 0..255 = kode keluar anak · 124 = timeout · 125 = anak mati tanpa rc
+# codemux_wait <step> [max_seconds]
+# 0..255 = child exit code · 124 = timeout · 125 = child died without rc
 codemux_wait() {
   local step="$1" max="${2:-900}" rc="" i=0
   while :; do
@@ -98,24 +98,24 @@ codemux_wait() {
   done
 }
 
-# Tunggu proses sisa dari run sebelumnya (mis. apt masih jalan saat induk mati).
+# Wait for leftovers from a previous run (e.g. apt still running after the parent died).
 codemux_step_settle() {
   local step="$1" pid wait_s=0
   pid="$(codemux_step_pid "$step")"
   [ -n "$pid" ] || return 0
   if kill -0 "$pid" 2>/dev/null; then
-    log_info "menunggu proses '$step' dari run sebelumnya (pid $pid)…"
+    log_info "waiting for step '$step' from the previous run (pid $pid)…"
     while kill -0 "$pid" 2>/dev/null; do
       sleep 2
       wait_s=$((wait_s + 2))
-      [ "$wait_s" -ge 1800 ] && { log_warn "masih jalan setelah 30 menit; dilewati"; return 1; }
+      [ "$wait_s" -ge 1800 ] && { log_warn "still running after 30 minutes; skipped"; return 1; }
     done
-    log_info "proses '$step' sebelumnya selesai (rc $(codemux_step_rc "$step"))"
+    log_info "previous step '$step' finished (rc $(codemux_step_rc "$step"))"
   fi
   return 0
 }
 
-# Ekor log terakhir sebagai catatan kegagalan.
+# Tail of the last log lines, used as the failure note.
 codemux_step_tail() {
   local f
   f="$(codemux_step_log "$1")"

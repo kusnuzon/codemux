@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# install.sh — bootstrap codemux: ambil rilis (tarball + sha256) lalu jalankan install.
-# Aman dipakai lewat `curl … | bash`: tidak ada pipe script kedua.
+# install.sh — codemux bootstrap: fetch the release (tarball + sha256) then run install.
+# Safe to use via `curl … | bash`: there is no second piped script.
 #   curl -fsSL -H 'Accept: application/vnd.github.raw' \
 #     https://api.github.com/repos/kusnuzon/codemux/contents/install.sh | bash
 set -Eeuo pipefail
@@ -16,44 +16,44 @@ die() {
   exit 1
 }
 
-# 0) dijalankan dari checkout utuh (mis. `bash install.sh` di repo) → pakai itu.
+# 0) run from a complete checkout (e.g. `bash install.sh` in the repo) → use that.
 SELF="${BASH_SOURCE[0]:-}"
 if [ -n "$SELF" ] && [ -f "$SELF" ]; then
   SELF_DIR="$(cd "$(dirname "$SELF")" && pwd)"
   if [ -f "$SELF_DIR/bin/codemux" ]; then
-    say "menjalankan codemux dari $SELF_DIR"
+    say "running codemux from $SELF_DIR"
     exec bash "$SELF_DIR/bin/codemux" install "${ARGS[@]}"
   fi
 fi
 
-# 1) prasyarat minimum
+# 1) minimum prerequisites
 missing=()
 for c in curl tar sha256sum gzip; do
   command -v "$c" >/dev/null 2>&1 || missing+=("$c")
 done
 if [ "${#missing[@]}" -gt 0 ]; then
   if command -v pkg >/dev/null 2>&1; then
-    say "memasang prasyarat: ${missing[*]}"
+    say "installing prerequisites: ${missing[*]}"
     pkg update -y >/dev/null 2>&1 || true
     pkg install -y curl tar coreutils gzip wget >/dev/null 2>&1 ||
-      die "gagal memasang prasyarat (curl tar coreutils gzip wget)"
+      die "failed to install prerequisites (curl tar coreutils gzip wget)"
   else
-    die "prasyarat kurang: ${missing[*]} (bukan Termux? pasang manual)"
+    die "missing prerequisites: ${missing[*]} (not Termux? install manually)"
   fi
 fi
 
-# 1b) curl ada tapi bisa rusak oleh paket glibc:
+# 1b) curl exists but the glibc package can break it:
 #     "cannot locate symbol SSL_set_quic_tls_early_data_enabled".
-#     Tanpa ini, unduhan tarball gagal dengan pesan yang menyesatkan.
+#     Without this, the tarball download fails with a misleading message.
 if ! curl -fsS --max-time 10 -o /dev/null "https://github.com" >/dev/null 2>&1; then
-  say "curl tidak sehat — memasang ulang curl/libcurl/openssl"
+  say "curl is unhealthy — reinstalling curl/libcurl/openssl"
   DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall \
     -o Dpkg::Options::=--force-confold curl libcurl openssl ca-certificates >/dev/null 2>&1 || \
     pkg install -y curl libcurl openssl ca-certificates >/dev/null 2>&1 || true
   hash -r 2>/dev/null || true
 fi
 
-# unduh: curl, lalu wget, lalu python (kalau curl tetap rusak)
+# download: curl, then wget, then python (if curl is still broken)
 download() { # <url> <dest>
   if curl -fsSL --max-time 300 "$1" -o "$2.part" 2>/dev/null && [ -s "$2.part" ]; then
     mv -f "$2.part" "$2"; return 0
@@ -66,7 +66,7 @@ download() { # <url> <dest>
   return 1
 }
 
-# 2) tarball: env (tes/offline) atau rilis terbaru, fallback main
+# 2) tarball: env (tests/offline) or latest release, fallback to main
 tarball="${CODEMUX_BOOTSTRAP_TARBALL:-}"
 expect_sha="${CODEMUX_BOOTSTRAP_SHA256:-}"
 verified=1
@@ -80,46 +80,46 @@ if [ -z "$tarball" ]; then
   if [ -n "$tag" ]; then
     url="$BASE/$REPO/releases/download/$tag/codemux.tar.gz"
     sha_url="$url.sha256"
-    say "rilis terbaru: $tag"
+    say "latest release: $tag"
   else
     url="https://codeload.github.com/$REPO/tar.gz/refs/heads/main"
     sha_url=""
     verified=0
-    say "! belum ada rilis — memakai branch main (tanpa sha256)"
+    say "! no release yet — using branch main (no sha256)"
   fi
-  mkdir -p "$CACHE" || die "tidak bisa menulis $CACHE"
+  mkdir -p "$CACHE" || die "cannot write $CACHE"
   tarball="$CACHE/codemux-download.tar.gz"
   rm -f "$tarball.part"
-  say "mengunduh $url"
-  download "$url" "$tarball" || die "gagal mengunduh tarball"
+  say "downloading $url"
+  download "$url" "$tarball" || die "failed to download tarball"
   if [ -n "$sha_url" ]; then
     download "$sha_url" "$CACHE/codemux-download.sha256" 2>/dev/null || true
     expect_sha="$(awk '{print $1}' "$CACHE/codemux-download.sha256" 2>/dev/null || true)"
   fi
 fi
 
-[ -s "$tarball" ] || die "tarball kosong: $tarball"
+[ -s "$tarball" ] || die "empty tarball: $tarball"
 if [ -n "$expect_sha" ]; then
   got="$(sha256sum "$tarball" | awk '{print $1}')"
-  [ "$got" = "$expect_sha" ] || die "sha256 tidak cocok (file rusak/diubah)"
-  say "sha256 cocok: $got"
+  [ "$got" = "$expect_sha" ] || die "sha256 does not match (file corrupt/modified)"
+  say "sha256 matches: $got"
 elif [ "$verified" -eq 1 ]; then
-  say "! sha256 tidak tersedia — lanjut (tarball dari env)"
+  say "! sha256 not available — continuing (tarball from env)"
 fi
 
-# 3) ekstrak ke current (atomik: new → tukar)
+# 3) extract to current (atomic: new → swap)
 dest="$CACHE/current"
 rm -rf "$dest.new"
-mkdir -p "$dest.new" || die "tidak bisa membuat $dest.new"
-tar -xzf "$tarball" -C "$dest.new" --strip-components=1 || die "gagal mengekstrak tarball"
-[ -f "$dest.new/bin/codemux" ] || die "tarball tidak berisi bin/codemux"
-bash -n "$dest.new/bin/codemux" 2>/dev/null || die "bin/codemux rusak"
+mkdir -p "$dest.new" || die "cannot create $dest.new"
+tar -xzf "$tarball" -C "$dest.new" --strip-components=1 || die "failed to extract tarball"
+[ -f "$dest.new/bin/codemux" ] || die "tarball does not contain bin/codemux"
+bash -n "$dest.new/bin/codemux" 2>/dev/null || die "bin/codemux is broken"
 new_ver="$(cat "$dest.new/VERSION" 2>/dev/null || echo '?')"
 
 rm -rf "$dest.old"
-if [ -d "$dest" ]; then mv "$dest" "$dest.old" || die "gagal menukar $dest"; fi
-mv "$dest.new" "$dest" || die "gagal memasang $dest"
+if [ -d "$dest" ]; then mv "$dest" "$dest.old" || die "failed to swap $dest"; fi
+mv "$dest.new" "$dest" || die "failed to install $dest"
 rm -rf "$dest.old"
 
-say "codemux $new_ver siap di $dest"
+say "codemux $new_ver ready at $dest"
 exec bash "$dest/bin/codemux" install "${ARGS[@]}"

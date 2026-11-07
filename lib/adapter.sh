@@ -1,9 +1,9 @@
 # shellcheck shell=bash
-# lib/adapter.sh — unduh skrip installer hulu (adapter, bukan salinan kode).
-# Sumber: API GitHub dengan Accept raw (raw.githubusercontent sering cache basi).
+# lib/adapter.sh — download upstream installer scripts (adapter, not a code copy).
+# Source: GitHub API with Accept raw (raw.githubusercontent often serves a stale cache).
 
-# codemux_adapter_fetch <nama> <url> -> cetak path skrip lokal
-# url boleh: https://… (API raw) · file:///path · /path (untuk tests)
+# codemux_adapter_fetch <name> <url> -> print the local script path
+# url may be: https://… (API raw) · file:///path · /path (for tests)
 codemux_adapter_fetch() {
   local name="$1" url="$2"
   local dir="$CODEMUX_HOME/cache"
@@ -34,7 +34,7 @@ codemux_adapter_fetch() {
     rm -f "$dest.part"
     return 1
   fi
-  # harus skrip shell, bukan halaman error HTML
+  # must be a shell script, not an HTML error page
   if ! head -c 2 "$dest.part" 2>/dev/null | grep -q '#!'; then
     rm -f "$dest.part"
     return 1
@@ -50,8 +50,8 @@ codemux_adapter_sha() {
   [ -f "$f.sha256" ] && cut -c1-12 "$f.sha256"
 }
 
-# codemux_fetch_raw <url> <dest> — unduh file teks apa pun (plugin, digest).
-# Menolak halaman HTML (rate-limit/error) supaya tidak tersimpan sebagai kode.
+# codemux_fetch_raw <url> <dest> — download any text file (plugin, digest).
+# Rejects HTML pages (rate-limit/error) so they are never stored as code.
 codemux_fetch_raw() {
   local url="$1" dest="$2" dir
   dir="$(dirname "$dest")"

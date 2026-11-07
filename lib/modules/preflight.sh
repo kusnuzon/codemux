@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034  # PROBE/NOTE/global dipakai lintas file
-# modul: preflight — syarat minimum lingkungan.
+# shellcheck disable=SC2034  # PROBE/NOTE/globals are shared across files
+# module: preflight — minimum environment requirements.
 
 m_preflight_probe() {
   local os arch uid free notes
@@ -11,17 +11,17 @@ m_preflight_probe() {
   free="${free:-0}"
 
   if [ "$os" != "Android" ] && [ "${CODEMUX_ALLOW_NONANDROID:-0}" != "1" ]; then
-    PROBE=FAIL; NOTE="bukan Android (uname -o = $os)"; return
+    PROBE=FAIL; NOTE="not Android (uname -o = $os)"; return
   fi
   if [ "$arch" != "aarch64" ]; then
     if [ "${CODEMUX_ALLOW_NONANDROID:-0}" = "1" ]; then
-      PROBE=WARN; NOTE="arsitektur $arch (mode uji: tidak dipaksakan)"
+      PROBE=WARN; NOTE="architecture $arch (test mode: not enforced)"
       return
     fi
-    PROBE=FAIL; NOTE="arsitektur $arch (codemux v1 hanya aarch64)"; return
+    PROBE=FAIL; NOTE="architecture $arch (codemux v1 is aarch64 only)"; return
   fi
   if [ "$uid" -eq 0 ]; then
-    PROBE=FAIL; NOTE="dijalankan sebagai root (tidak didukung)"; return
+    PROBE=FAIL; NOTE="running as root (not supported)"; return
   fi
 
   notes="$os/$arch · user $(id -un)"

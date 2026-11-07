@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# lib/check.sh — runner `codemux check` (read-only, tanpa mengubah sistem).
+# lib/check.sh — `codemux check` runner (read-only, does not modify the system).
 
 CODEMUX_MODULES=(preflight deps mirror storage toolset glibc v1 v2 launcher dotfiles memory self updatecache)
 
@@ -29,14 +29,14 @@ codemux_cmd_check() {
   for a in "$@"; do
     case "$a" in
       --json) json=1 ;;
-      *) log_warn "opsi tidak dikenal untuk check: $a" ;;
+      *) log_warn "unknown option for check: $a" ;;
     esac
   done
 
   codemux_load_modules
 
   if [ "$json" -eq 0 ]; then
-    printf '%s%s %s%s · mode check (tidak mengubah apa pun)\n\n' \
+    printf '%s%s %s%s · check mode (changes nothing)\n\n' \
       "$C_B" "$CODEMUX_NAME" "$CODEMUX_VERSION" "$C_R"
   fi
 
@@ -80,11 +80,11 @@ codemux_cmd_check() {
       "$C_OK" "$ok" "$C_R" "$C_WARN" "$warn" "$C_R" "$C_MISS" "$miss" "$C_R" "$C_MISS" "$fail" "$C_R"
 
     if [ "$fail" -gt 0 ]; then
-      log_fail "ada komponen yang belum memenuhi syarat — lihat baris FAIL di atas."
+      log_fail "some components do not meet the requirements yet — see the FAIL lines above."
     elif [ "$miss" -gt 0 ] || [ "$warn" -gt 0 ]; then
-      log_info "yang belum lengkap akan dipasang oleh \`codemux install\`."
+      log_info "whatever is still missing will be installed by \`codemux install\`."
     else
-      log_ok "semua komponen siap."
+      log_ok "all components are ready."
     fi
   fi
 

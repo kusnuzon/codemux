@@ -1,34 +1,34 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034  # PROBE/NOTE/global dipakai lintas file
-# modul: launcher — banner + menu di ~/.bashrc (blok bertanda codemux).
+# shellcheck disable=SC2034  # PROBE/NOTE/globals are shared across files
+# module: launcher — banner + menu in ~/.bashrc (codemux-marked block).
 
 m_launcher_probe() {
   local rc="$HOME/.bashrc"
 
   if [ ! -f "$rc" ]; then
-    PROBE=MISS; NOTE='bashrc tidak ada (~/.bashrc)'; return
+    PROBE=MISS; NOTE='no bashrc (~/.bashrc)'; return
   fi
   if grep -q 'codemux:launcher begin' "$rc" 2>/dev/null &&
      grep -q 'codemux:launcher end' "$rc" 2>/dev/null; then
     if bash -n "$rc" 2>/dev/null; then
-      PROBE=OK; NOTE="blok bertanda ada"
+      PROBE=OK; NOTE="marked block present"
     else
-      PROBE=FAIL; NOTE="$HOME/.bashrc gagal bash -n"
+      PROBE=FAIL; NOTE="$HOME/.bashrc fails bash -n"
     fi
     return
   fi
   if grep -q '_oc_banner' "$rc" 2>/dev/null; then
-    PROBE=WARN; NOTE="menu ada tapi tanpa penanda codemux (akan diadopsi)"
+    PROBE=WARN; NOTE="menu present but without codemux markers (it will be adopted)"
     return
   fi
-  PROBE=MISS; NOTE="menu/banner belum dipasang"
+  PROBE=MISS; NOTE="menu/banner not installed yet"
 }
 
 m_launcher_verify() { m_launcher_probe; }
 
-# Ambil hanya bagian akhir yang merupakan blok lama (tanpa penanda).
-# Syarat adopsi: ada pemanggil _oc_launcher dan baris terakhir 'fi'
-# (struktur auto-launch di akhir ~/.bashrc). Kalau ragu → tidak menyentuh.
+# Take only the trailing region that is the old block (without markers).
+# Adoption requires an _oc_launcher call and a final 'fi' line
+# (the auto-launch structure at the end of ~/.bashrc). When in doubt → do not touch.
 codemux_launcher_legacy_region() {
   local file="$1" tail_part last
   tail_part="$(awk '/^# --- banner \+ menu launcher/{f=1} f' "$file")"
@@ -44,60 +44,60 @@ m_launcher_apply() {
   local bak tmp body new adopted=0 tdir
 
   if [ ! -f "$tpl" ]; then
-    APPLY_NOTE="template launcher tidak ada: $tpl"; return 1
+    APPLY_NOTE="launcher template missing: $tpl"; return 1
   fi
   mkdir -p "$HOME" || return 1
   [ -f "$rc" ] || : >"$rc" || return 1
 
-  bak="$(codemux_backup launcher "$rc")" || { APPLY_NOTE="gagal backup ~/.bashrc"; return 1; }
+  bak="$(codemux_backup launcher "$rc")" || { APPLY_NOTE="failed to back up ~/.bashrc"; return 1; }
   tdir="${TMPDIR:-$PREFIX/tmp}"
   mkdir -p "$tdir" 2>/dev/null || tdir="$HOME/.cache/codemux"
-  mkdir -p "$tdir" 2>/dev/null || { APPLY_NOTE="tidak bisa menulis direktori sementara"; return 1; }
+  mkdir -p "$tdir" 2>/dev/null || { APPLY_NOTE="cannot write the temporary directory"; return 1; }
   tmp="$(mktemp "$tdir/codemux-bashrc.XXXXXX" 2>/dev/null)" || {
-    APPLY_NOTE="mktemp gagal di $tdir"; return 1
+    APPLY_NOTE="mktemp failed in $tdir"; return 1
   }
   body="$tmp.body"
   new="$tmp.new"
 
-  # 1) buang blok bertanda lama (kalau ada) → idempoten
+  # 1) drop the old marked block (if any) → idempotent
   awk '/# codemux:launcher begin/{skip=1;next} /# codemux:launcher end/{skip=0;next} !skip' \
-    "$rc" >"$body" || { rm -f "$tmp" "$body"; APPLY_NOTE="gagal membaca ~/.bashrc"; return 1; }
+    "$rc" >"$body" || { rm -f "$tmp" "$body"; APPLY_NOTE="failed to read ~/.bashrc"; return 1; }
 
-  # 2) adopsi blok lama tanpa penanda (hanya kalau strukturnya dikenali)
+  # 2) adopt an old block without markers (only when its structure is recognised)
   if ! grep -q 'codemux:launcher begin' "$rc" 2>/dev/null; then
     if codemux_launcher_legacy_region "$body" >/dev/null 2>&1; then
       awk '/^# --- banner \+ menu launcher/{f=1} !f' "$body" >"$body.cut" &&
-        mv -f "$body.cut" "$body" || { rm -f "$tmp" "$body"; APPLY_NOTE="gagal memotong blok lama"; return 1; }
+        mv -f "$body.cut" "$body" || { rm -f "$tmp" "$body"; APPLY_NOTE="failed to cut the old block"; return 1; }
       adopted=1
     fi
   fi
 
-  # 3) susun: isi lama (tanpa baris kosong ekor) + blok template
+  # 3) assemble: old contents (without trailing blank lines) + template block
   {
     awk 'NF{l=NR} {line[NR]=$0} END{for (i=1; i<=(l?l:0); i++) print line[i]}' "$body"
     printf '\n'
     cat "$tpl"
-  } >"$new" || { rm -f "$tmp" "$body" "$new"; APPLY_NOTE="gagal menyusun ~/.bashrc baru"; return 1; }
+  } >"$new" || { rm -f "$tmp" "$body" "$new"; APPLY_NOTE="failed to assemble the new ~/.bashrc"; return 1; }
 
-  # 4) validasi sintaks; gagal → pulihkan backup, jangan tinggalkan bashrc rusak
+  # 4) syntax check; on failure → restore the backup, never leave a broken bashrc
   if ! bash -n "$new" 2>/dev/null; then
     rm -f "$tmp" "$body" "$new"
     [ -n "$bak" ] && cp -a "$bak" "$rc" 2>/dev/null
-    APPLY_NOTE="blok baru gagal bash -n — ~/.bashrc dipulihkan"; return 1
+    APPLY_NOTE="the new block fails bash -n — ~/.bashrc restored"; return 1
   fi
 
   codemux_atomic_write "$rc" <"$new" || {
     rm -f "$tmp" "$body" "$new"
     [ -n "$bak" ] && cp -a "$bak" "$rc" 2>/dev/null
-    APPLY_NOTE="gagal menulis ~/.bashrc"; return 1
+    APPLY_NOTE="failed to write ~/.bashrc"; return 1
   }
   chmod 600 "$rc" 2>/dev/null || true
   rm -f "$tmp" "$body" "$new"
 
   if [ "$adopted" -eq 1 ]; then
-    APPLY_NOTE="blok lama diadopsi (backup: ${bak:-none})"
+    APPLY_NOTE="old block adopted (backup: ${bak:-none})"
   else
-    APPLY_NOTE="blok banner+menu dipasang"
+    APPLY_NOTE="banner+menu block installed"
   fi
   return 0
 }

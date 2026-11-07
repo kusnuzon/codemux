@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# tests/launcher-memory.sh — uji modul launcher, dotfiles, memory (M4).
-# Sandbox penuh: HOME, PREFIX, CODEMUX_HOME sendiri. Sistem TIDAK disentuh.
+# tests/launcher-memory.sh — test the launcher, dotfiles, and memory modules (M4).
+# Full sandbox: dedicated HOME, PREFIX, CODEMUX_HOME. The system is NOT touched.
 # shellcheck shell=bash
 set -uo pipefail
 
@@ -18,15 +18,15 @@ fail=0
 ok() { pass=$((pass + 1)); printf 'ok   %s\n' "$1"; }
 bad() { fail=$((fail + 1)); printf 'FAIL %s\n' "$1"; }
 
-# --- fixture mekanisme memori (pengganti unduhan dari GitHub) ----------------
+# --- memory mechanism fixtures (replace the GitHub downloads) ----------------
 FIXTURE="$SANDBOX_ROOT/fixture"
 mkdir -p "$FIXTURE"
 cat >"$FIXTURE/plugin.js" <<'EOS'
-// memory.js (fixture uji)
+// memory.js (test fixture)
 export default { id: "memory", setup() {} };
 EOS
 cat >"$FIXTURE/title.js" <<'EOS'
-// session-title.js (fixture uji)
+// session-title.js (test fixture)
 export default { id: "session-title", async server() { return {} }, setup() {} };
 EOS
 cat >"$FIXTURE/digest.py" <<'EOS'
@@ -35,7 +35,7 @@ import os
 base = os.path.join(os.path.expanduser("~"), ".config", "opencode")
 os.makedirs(base, exist_ok=True)
 with open(os.path.join(base, "RECENT.md"), "w", encoding="utf-8") as fh:
-    fh.write("# RECENT\n\n- dibuat oleh digest fixture\n")
+    fh.write("# RECENT\n\n- created by the digest fixture\n")
 EOS
 chmod 700 "$FIXTURE/digest.py"
 
@@ -46,7 +46,7 @@ new_sandbox() {
   printf '%s' "$d"
 }
 
-run_cm() { # <sandbox> <perintah...>
+run_cm() { # <sandbox> <command...>
   local sb="$1"
   shift
   env HOME="$sb/home" CODEMUX_HOME="$sb/state" PREFIX="$sb/prefix" TMPDIR="$BASE" \
@@ -61,33 +61,33 @@ SKIP_ALL_BUT_M4="deps,mirror,storage,toolset,glibc,v1,v2"
 SKIP_ONLY_LAUNCHER="deps,mirror,storage,toolset,glibc,v1,v2,dotfiles,memory"
 
 # =============================================================================
-# 1. Fresh: seluruh modul M4 dipasang dari nol
+# 1. Fresh: every M4 module installed from scratch
 # =============================================================================
 SB="$(new_sandbox fresh)"
 run_cm "$SB" install --skip "$SKIP_ALL_BUT_M4" >"$SB/install.log" 2>&1
 rc=$?
-if [ "$rc" -eq 0 ]; then ok "fresh: install selesai (exit 0)"; else
+if [ "$rc" -eq 0 ]; then ok "fresh: install finished (exit 0)"; else
   bad "fresh: install exit $rc"
   sed 's/^/     /' "$SB/install.log" | tail -20
 fi
 
 rc_file="$SB/home/.bashrc"
-if bash -n "$rc_file" 2>/dev/null; then ok "fresh: .bashrc lolos bash -n"; else bad "fresh: .bashrc rusak"; fi
+if bash -n "$rc_file" 2>/dev/null; then ok "fresh: .bashrc passes bash -n"; else bad "fresh: .bashrc is broken"; fi
 if [ "$(grep -c 'codemux:launcher begin' "$rc_file")" -eq 1 ] &&
   [ "$(grep -c 'codemux:launcher end' "$rc_file")" -eq 1 ]; then
-  ok "fresh: penanda blok launcher tepat satu pasang"
+  ok "fresh: exactly one launcher marker pair"
 else
-  bad "fresh: penanda blok launcher tidak tepat"
+  bad "fresh: launcher markers are not exactly one pair"
 fi
 if grep -q '_oc_banner()' "$rc_file" && grep -q '_oc_menu_loop()' "$rc_file"; then
-  ok "fresh: fungsi banner + menu ada"
+  ok "fresh: banner + menu functions present"
 else
-  bad "fresh: fungsi banner/menu tidak lengkap"
+  bad "fresh: banner/menu functions incomplete"
 fi
-if grep -q '_oc_refresh_digest()' "$rc_file"; then ok "fresh: wrapper digest ada"; else bad "fresh: wrapper digest tidak ada"; fi
+if grep -q '_oc_refresh_digest()' "$rc_file"; then ok "fresh: digest wrapper present"; else bad "fresh: digest wrapper missing"; fi
 
-[ -f "$SB/home/.bash_profile" ] && ok "fresh: .bash_profile dibuat" || bad "fresh: .bash_profile tidak ada"
-[ -f "$SB/home/.hushlogin" ] && ok "fresh: .hushlogin dibuat" || bad "fresh: .hushlogin tidak ada"
+[ -f "$SB/home/.bash_profile" ] && ok "fresh: .bash_profile created" || bad "fresh: .bash_profile missing"
+[ -f "$SB/home/.hushlogin" ] && ok "fresh: .hushlogin created" || bad "fresh: .hushlogin missing"
 
 cfg="$SB/home/.config/opencode/opencode.jsonc"
 if python3 - <<PY 2>/dev/null
@@ -98,22 +98,23 @@ assert any(p.endswith("MEMORY.md") for p in ins), ins
 assert any(p.endswith("RECENT.md") for p in ins), ins
 PY
 then
-  ok "fresh: opencode.jsonc valid + instructions lengkap"
+  ok "fresh: opencode.jsonc valid + instructions complete"
 else
-  bad "fresh: opencode.jsonc tidak valid / entri kurang"
+  bad "fresh: opencode.jsonc invalid / entries missing"
 fi
 
+# The template itself stays in Indonesian (personal-data template, not translated).
 if grep -q 'Memori lintas sesi' "$SB/home/.config/opencode/MEMORY.md" 2>/dev/null; then
-  ok "fresh: MEMORY.md dari template"
+  ok "fresh: MEMORY.md from the template"
 else
-  bad "fresh: MEMORY.md tidak dibuat dari template"
+  bad "fresh: MEMORY.md not created from the template"
 fi
-[ -f "$SB/home/.config/opencode/RECENT.md" ] && ok "fresh: RECENT.md dibuat" || bad "fresh: RECENT.md tidak ada"
-[ -s "$SB/home/.config/opencode/plugins/memory.js" ] && ok "fresh: plugins/memory.js terunduh" || bad "fresh: plugins/memory.js tidak ada"
-[ -s "$SB/home/.config/opencode/plugins/session-title.js" ] && ok "fresh: plugins/session-title.js terunduh" || bad "fresh: plugins/session-title.js tidak ada"
-[ -x "$SB/home/.config/opencode/bin/session-digest.py" ] && ok "fresh: session-digest.py executable" || bad "fresh: session-digest.py tidak executable"
+[ -f "$SB/home/.config/opencode/RECENT.md" ] && ok "fresh: RECENT.md created" || bad "fresh: RECENT.md missing"
+[ -s "$SB/home/.config/opencode/plugins/memory.js" ] && ok "fresh: plugins/memory.js downloaded" || bad "fresh: plugins/memory.js missing"
+[ -s "$SB/home/.config/opencode/plugins/session-title.js" ] && ok "fresh: plugins/session-title.js downloaded" || bad "fresh: plugins/session-title.js missing"
+[ -x "$SB/home/.config/opencode/bin/session-digest.py" ] && ok "fresh: session-digest.py executable" || bad "fresh: session-digest.py not executable"
 
-# check: tiga modul M4 harus OK
+# check: the three M4 modules must be OK
 if run_cm "$SB" check --json >"$SB/check.json" 2>/dev/null; then :; fi
 if python3 - <<PY 2>/dev/null
 import json
@@ -125,29 +126,29 @@ PY
 then
   ok "fresh: check → launcher/dotfiles/memory OK"
 else
-  bad "fresh: check masih tidak OK ($(python3 -c '
+  bad "fresh: check still not OK ($(python3 -c '
 import json;d=json.load(open("'"$SB"'/check.json"));print({m["modul"]:m["status"] for m in d["modul"]})' 2>/dev/null))"
 fi
 
-if run_cm "$SB" memory >"$SB/memory.log" 2>&1 && grep -q 'ingatan lintas sesi' "$SB/memory.log" &&
+if run_cm "$SB" memory >"$SB/memory.log" 2>&1 && grep -q 'cross-session memory' "$SB/memory.log" &&
   grep -q 'MEMORY.md' "$SB/memory.log"; then
-  ok "fresh: codemux memory menampilkan status"
+  ok "fresh: codemux memory shows the status"
 else
-  bad "fresh: codemux memory gagal"
+  bad "fresh: codemux memory failed"
 fi
 
-# idempoten: jalankan install lagi, tidak boleh menduplikasi
+# idempotent: run install again, it must not duplicate anything
 run_cm "$SB" install --skip "$SKIP_ALL_BUT_M4" >"$SB/install2.log" 2>&1
 if [ "$(grep -c 'codemux:launcher begin' "$rc_file")" -eq 1 ] &&
   [ "$(grep -c '_oc_refresh_digest()' "$rc_file")" -eq 1 ] &&
   [ "$(grep -c 'RECENT.md' "$cfg")" -eq 1 ] && bash -n "$rc_file" 2>/dev/null; then
-  ok "fresh: install kedua idempoten (tidak duplikat)"
+  ok "fresh: second install is idempotent (no duplicates)"
 else
-  bad "fresh: install kedua menduplikasi blok/entri"
+  bad "fresh: second install duplicated blocks/entries"
 fi
 
 # =============================================================================
-# 2. Data pribadi tidak boleh ditimpa; config kurang entri → dilengkapi
+# 2. Personal data must not be overwritten; a config missing entries is completed
 # =============================================================================
 SB2="$(new_sandbox personal)"
 mkdir -p "$SB2/home/.config/opencode"
@@ -168,9 +169,9 @@ after="$(wc -c <"$SB2/home/.config/opencode/MEMORY.md")"
 
 if [ "$rc" -eq 0 ] && [ "$before" -eq "$after" ] &&
   grep -q 'PRIBADI-JANGAN-HILANG' "$SB2/home/.config/opencode/MEMORY.md"; then
-  ok "personal: MEMORY.md tidak ditimpa"
+  ok "personal: MEMORY.md not overwritten"
 else
-  bad "personal: MEMORY.md berubah/tertimpa (rc=$rc)"
+  bad "personal: MEMORY.md changed/overwritten (rc=$rc)"
 fi
 
 cfg2="$SB2/home/.config/opencode/opencode.jsonc"
@@ -182,21 +183,21 @@ assert len(ins) == 2, ins
 assert ins[0].endswith("MEMORY.md") and ins[1].endswith("RECENT.md"), ins
 PY
 then
-  ok "personal: config dilengkapi RECENT.md, entri lama tetap"
+  ok "personal: config completed with RECENT.md, old entries kept"
 else
-  bad "personal: config tidak dilengkapi dengan benar"
+  bad "personal: config not completed correctly"
 fi
 
 # =============================================================================
-# 3. Adopsi blok lama tanpa penanda
+# 3. Adopting an old block without markers
 # =============================================================================
 SB3="$(new_sandbox legacy)"
 cat >"$SB3/home/.bashrc" <<'EOS'
-# ~/.bashrc lama
+# old ~/.bashrc
 export EDITOR="nano"
 
 # --- banner + menu launcher (2026-10-22) ---
-_oc_banner() { printf 'banner lama\n'; }
+_oc_banner() { printf 'old banner\n'; }
 _oc_launcher() { _oc_banner; }
 if [ -z "${OPENCODE_NO_AUTO:-}" ]; then
   _oc_launcher
@@ -206,77 +207,77 @@ run_cm "$SB3" install --skip "$SKIP_ONLY_LAUNCHER" >"$SB3/install.log" 2>&1
 rc=$?
 rc3="$SB3/home/.bashrc"
 
-if [ "$rc" -eq 0 ]; then ok "legacy: install launcher selesai"; else bad "legacy: install exit $rc"; fi
+if [ "$rc" -eq 0 ]; then ok "legacy: launcher install finished"; else bad "legacy: install exit $rc"; fi
 if ! grep -q '^# --- banner + menu launcher' "$rc3"; then
-  ok "legacy: blok lama dibuang"
+  ok "legacy: old block removed"
 else
-  bad "legacy: blok lama masih ada"
+  bad "legacy: old block still present"
 fi
 if [ "$(grep -c '_oc_launcher()' "$rc3")" -eq 1 ] &&
   [ "$(grep -c 'codemux:launcher begin' "$rc3")" -eq 1 ] &&
   bash -n "$rc3" 2>/dev/null; then
-  ok "legacy: blok baru tunggal + valid"
+  ok "legacy: single new block + valid"
 else
-  bad "legacy: adopsi menghasilkan blok ganda/rusak"
+  bad "legacy: adoption produced a duplicate/broken block"
 fi
 if grep -q 'export EDITOR="nano"' "$rc3"; then
-  ok "legacy: isi non-launcher dipertahankan"
+  ok "legacy: non-launcher content preserved"
 else
-  bad "legacy: isi lama hilang"
+  bad "legacy: old content lost"
 fi
 
 # =============================================================================
-# 4. bashrc rusak → dipulihkan, tidak ditinggalkan dalam keadaan rusak
+# 4. Broken bashrc → restored, never left in a broken state
 # =============================================================================
 SB4="$(new_sandbox broken)"
 printf 'if [ ; then\n' >"$SB4/home/.bashrc"
 before_sum="$(cksum <"$SB4/home/.bashrc")"
 run_cm "$SB4" install --skip "$SKIP_ONLY_LAUNCHER" >"$SB4/install.log" 2>&1 || true
 if [ "$(cksum <"$SB4/home/.bashrc")" = "$before_sum" ]; then
-  ok "broken: bashrc rusak tidak diubah (gagal rapi, bukan makin rusak)"
+  ok "broken: broken bashrc left unchanged (clean failure, not worse)"
 else
   if bash -n "$SB4/home/.bashrc" 2>/dev/null && grep -q 'codemux:launcher begin' "$SB4/home/.bashrc"; then
-    ok "broken: bashrc rusak diperbaiki jadi valid"
+    ok "broken: broken bashrc repaired into a valid one"
   else
-    bad "broken: bashrc ditinggalkan dalam keadaan rusak"
+    bad "broken: bashrc left in a broken state"
   fi
 fi
 
 # =============================================================================
-# 5. anti-kedip menu: kursor disembunyikan + gambar ulang hanya 4 baris
+# 5. menu flicker guard: cursor hidden + only 4 rows redrawn
 # =============================================================================
 TPL="$ROOT/templates/bashrc-block.sh"
 if grep -qF '\033[?25l' "$TPL" && grep -qF '\033[?25h' "$TPL"; then
-  ok "menu: kursor disembunyikan & dipulihkan"
+  ok "menu: cursor hidden & restored"
 else
-  bad "menu: escape kursor (?25l/?25h) tidak lengkap"
+  bad "menu: cursor escapes (?25l/?25h) incomplete"
 fi
 if grep -qF '\033[7A' "$TPL" && ! grep -qF '\033[8A' "$TPL"; then
-  ok "menu: gambar ulang hanya baris pilihan (\\033[7A)"
+  ok "menu: redraws only the option rows (\\033[7A)"
 else
-  bad "menu: masih menulis ulang seluruh blok (\\033[8A)"
+  bad "menu: still rewrites the whole block (\\033[8A)"
 fi
 if grep -q '_oc_rows()' "$TPL" && grep -q '033\[K' "$TPL"; then
-  ok "menu: baris pilihan dibersihkan sampai ujung (\\033[K)"
+  ok "menu: option rows cleared to the end (\\033[K)"
 else
-  bad "menu: baris pilihan tidak membersihkan sisa karakter"
+  bad "menu: option rows do not clear leftover characters"
 fi
 if grep -q '_oc_int' "$TPL" && grep -q 'cancel' "$TPL"; then
-  ok "menu: Ctrl+C hanya membatalkan tombol"
+  ok "menu: Ctrl+C only cancels the key press"
 else
-  bad "menu: Ctrl+C tidak ditangani (kursor bisa tertinggal)"
+  bad "menu: Ctrl+C not handled (cursor may be left hidden)"
 fi
 
 # =============================================================================
-# 6. notifikasi update: baris cache basi disembunyikan
+# 6. update notice: stale cache rows are hidden
 # =============================================================================
 SB6="$(new_sandbox notice)"
 mkdir -p "$SB6/home/.config/codemux" "$SB6/prefix/share/opencode" "$SB6/prefix/share/opencode-v2"
 printf '1.19.5' >"$SB6/prefix/share/opencode/VERSION"
 printf '2.2.3' >"$SB6/prefix/share/opencode-v2/VERSION"
-: >"$SB6/home/.config/codemux/.update-check.stamp" # jangan cek ulang ke jaringan
+: >"$SB6/home/.config/codemux/.update-check.stamp" # do not re-check over the network
 
-notice() { # <isi cache> → cetak baris notifikasi
+notice() { # <cache content> → print the notice line
   local sb="$1"
   env HOME="$sb/home" PREFIX="$sb/prefix" PATH="$sb/prefix/bin:$PATH" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
     ACC=""; DIM=""; R=""
@@ -285,33 +286,33 @@ notice() { # <isi cache> → cetak baris notifikasi
   ' _ "$TPL" 2>/dev/null
 }
 
-# cache bilang 2.2.2 → 2.2.3 padahal terpasang 2.2.3 (kasus setelah upgrade)
+# cache says 2.2.2 → 2.2.3 while 2.2.3 is installed (the state right after an upgrade)
 printf 'codemux\t0.6.1\t0.6.1\tok\nopencode-v1\t1.19.5\t1.19.5\tok\nopencode-v2\t2.2.2\t2.2.3\tupdate\n' \
   >"$SB6/home/.config/codemux/update-cache.tsv"
 out="$(notice "$SB6")"
 if [ -z "$out" ]; then
-  ok "notifikasi: cache basi (versi sudah terpasang) tidak ditampilkan"
+  ok "notice: stale cache (version already installed) is not shown"
 else
-  bad "notifikasi: masih menyarankan update yang sudah selesai"
+  bad "notice: still suggests an update that already finished"
 fi
 
-# benar-benar ada rilis baru → harus tampil
+# a genuinely new release → must be shown
 printf 'opencode-v2\t2.2.3\t2.2.4\tupdate\n' >"$SB6/home/.config/codemux/update-cache.tsv"
 out="$(notice "$SB6")"
 case "$out" in
-  *"opencode-v2 2.2.4"*) ok "notifikasi: update sungguhan tetap tampil" ;;
-  *) bad "notifikasi: update sungguhan ikut disembunyikan" ;;
+  *"opencode-v2 2.2.4"*) ok "notice: a real update is still shown" ;;
+  *) bad "notice: a real update got hidden too" ;;
 esac
 
-# tanpa VERSION terpasang (tak terdeteksi) → jangan sembunyikan apa pun
+# no installed VERSION (not detected) → hide nothing
 rm -f "$SB6/prefix/share/opencode-v2/VERSION"
 out="$(notice "$SB6")"
 case "$out" in
-  *"opencode-v2 2.2.4"*) ok "notifikasi: versi tak terdeteksi → baris tetap tampil" ;;
-  *) bad "notifikasi: baris hilang saat versi tak terdeteksi" ;;
+  *"opencode-v2 2.2.4"*) ok "notice: undetected version → the row is still shown" ;;
+  *) bad "notice: row vanished when the version was undetected" ;;
 esac
 
-# cek hulu pernah gagal (status na) → jangan dikunci 24 jam, ulangi ≤1 jam
+# an upstream check once failed (status na) → do not lock for 24h, retry within ≤1h
 mkdir -p "$SB6/prefix/bin"
 cat >"$SB6/prefix/bin/codemux" <<'EOS'
 #!/data/data/com.termux/files/usr/bin/bash
@@ -325,10 +326,10 @@ rm -f "$SB6/home/retry-marker"
 notice "$SB6" >/dev/null
 sleep 0.3
 [ -f "$SB6/home/retry-marker" ] &&
-  ok "notifikasi: hasil cek 'na' memicu cek ulang <1 jam" ||
-  bad "notifikasi: hasil cek 'na' tidak dicek ulang"
+  ok "notice: a 'na' result triggers a re-check within 1h" ||
+  bad "notice: a 'na' result is not re-checked"
 
-# sebaliknya: hasil lengkap (tanpa na) tetap menunggu 24 jam
+# conversely: a complete result (no na) still waits 24 hours
 printf 'codemux\t0.6.3\t0.6.3\tok\nopencode-v2\t2.2.3\t2.2.5\tupdate\n' \
   >"$SB6/home/.config/codemux/update-cache.tsv"
 touch -t "$(date -d '2 hours ago' +%Y%m%d%H%M)" "$SB6/home/.config/codemux/.update-check.stamp"
@@ -336,9 +337,9 @@ rm -f "$SB6/home/retry-marker"
 notice "$SB6" >/dev/null
 sleep 0.3
 [ ! -f "$SB6/home/retry-marker" ] &&
-  ok "notifikasi: cache lengkap tidak memicu cek ulang berlebihan" ||
-  bad "notifikasi: cache lengkap memicu cek ulang terlalu cepat"
+  ok "notice: a complete cache does not trigger excessive re-checks" ||
+  bad "notice: a complete cache re-checks too soon"
 
 rm -rf "$SANDBOX_ROOT"
-printf '\n%s lulus · %s gagal\n' "$pass" "$fail"
+printf '\n%s passed · %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

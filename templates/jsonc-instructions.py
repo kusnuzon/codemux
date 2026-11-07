@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Tambahkan path ke array "instructions" di opencode.jsonc tanpa merusak file.
+"""Add paths to the "instructions" array in opencode.jsonc without breaking the file.
 
-Pakai: jsonc-instructions.py <config> <path1> [path2 ...]
-Keluar: 0 = berubah/sudah ada · 3 = tidak ada key instructions (dibuat) · 1 = error
+Usage: jsonc-instructions.py <config> <path1> [path2 ...]
+Exit: 0 = changed/already present · 3 = no instructions key (created) · 1 = error
 
-Sengaja hanya mengubah satu array; bagian lain file dibiarkan apa adanya
-(komentar // dan , ekor tetap utuh).
+Deliberately touches only one array; the rest of the file is left as-is
+(// comments and trailing commas stay intact).
 """
 import os
 import re
@@ -19,14 +19,14 @@ def fail(msg, code=1):
 
 def main():
     if len(sys.argv) < 3:
-        fail("pemakaian: jsonc-instructions.py <config> <path...>")
+        fail("usage: jsonc-instructions.py <config> <path...>")
     conf = sys.argv[1]
     paths = sys.argv[2:]
 
     try:
         src = open(conf, encoding="utf-8").read()
     except FileNotFoundError:
-        fail("file tidak ada: " + conf)
+        fail("file not found: " + conf)
 
     m = re.search(r'"instructions"\s*:\s*\[(.*?)\]', src, re.S)
     if m:
@@ -46,10 +46,10 @@ def main():
         print("ADDED:" + ",".join(missing))
         return 0
 
-    # belum ada key instructions → sisipkan sebelum '}' terakhir
+    # no instructions key yet → insert it before the last '}'
     idx = src.rstrip().rfind("}")
     if idx < 0:
-        fail("bukan objek JSON: " + conf)
+        fail("not a JSON object: " + conf)
     head = src[:idx].rstrip()
     tail = src[idx:]
     entry = '  "instructions": [\n' + ",\n".join('    "%s"' % p for p in paths) + "\n  ]\n"

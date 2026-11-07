@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# lib/memory.sh — `codemux memory`: status ingatan lintas sesi (read-only).
+# lib/memory.sh — `codemux memory`: cross-session memory status (read-only).
 
 codemux_cmd_memory() {
   local json=0 a base size pct st total=0
@@ -11,14 +11,14 @@ codemux_cmd_memory() {
       status | list | check) : ;;
       -h | --help)
         printf '%s\n' \
-          'penggunaan: codemux memory [--json]' \
+          'usage: codemux memory [--json]' \
           '' \
-          'Menampilkan isi folder ingatan (~/.config/opencode): ukuran file,' \
-          'entri instructions, plugin, dan wrapper digest di ~/.bashrc.' \
-          'Tidak mengubah apa pun. Untuk memasang/memperbaiki: codemux install'
+          'Show the contents of the memory folder (~/.config/opencode): file sizes,' \
+          'instructions entries, plugins, and the digest wrapper in ~/.bashrc.' \
+          'Changes nothing. To install/repair: codemux install'
         return 0
         ;;
-      *) log_warn "opsi tidak dikenal untuk memory: $a" ;;
+      *) log_warn "unknown option for memory: $a" ;;
     esac
   done
 
@@ -33,9 +33,9 @@ codemux_cmd_memory() {
     path="$base/$f"
     if [ -f "$path" ]; then
       s="$(wc -c <"$path" 2>/dev/null || echo 0)"; s="${s// /}"
-      mark=ada
+      mark=yes
     else
-      s=0; mark=tidak
+      s=0; mark=no
     fi
     total=$((total + s))
     if [ "$json" -eq 0 ]; then
@@ -63,7 +63,7 @@ codemux_cmd_memory() {
     return 0
   fi
 
-  printf '%s%s %s%s · ingatan lintas sesi (read-only)\n\n' \
+  printf '%s%s %s%s · cross-session memory (read-only)\n\n' \
     "$C_B" "$CODEMUX_NAME" "$CODEMUX_VERSION" "$C_R"
   printf '  folder: %s\n\n' "$base"
   printf '%s\n' "${rows[@]}"
@@ -72,7 +72,7 @@ codemux_cmd_memory() {
     "$(human_bytes "$size")" "$(human_bytes "$CODEMUX_MEMORY_LIMIT")" "$pct" "$st"
   printf '  total      : %s\n' "$(human_bytes "$total")"
   printf '  wrapper    : %s\n' "$(codemux_memory_wrapper_present &&
-    echo 'ada di ~/.bashrc' || echo 'BELUM ada — jalankan: codemux install')"
+    echo 'present in ~/.bashrc' || echo 'MISSING — run: codemux install')"
 
   if [ -f "$base/opencode.jsonc" ]; then
     printf '\n  instructions:\n'
@@ -80,12 +80,12 @@ codemux_cmd_memory() {
   fi
   printf '\n'
   if [ "$st" = FAIL ]; then
-    log_fail "MEMORY.md sudah melewati batas — memory_save akan gagal; pangkas entri usang."
+    log_fail "MEMORY.md is over the limit — memory_save will fail; trim stale entries."
   elif [ "$st" = WARN ]; then
-    log_warn "MEMORY.md hampir penuh — pertimbangkan memangkas entri usang."
+    log_warn "MEMORY.md is almost full — consider trimming stale entries."
   else
-    log_ok "ingatan sehat."
+    log_ok "memory is healthy."
   fi
-  log_dim "pasang/perbaiki: codemux install · cek semua modul: codemux check"
+  log_dim "install/repair: codemux install · check all modules: codemux check"
   return 0
 }
