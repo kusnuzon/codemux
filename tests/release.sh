@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# tests/release.sh — uji bootstrap install.sh + codemux self-update (M6).
-# Tarball dibuat dari checkout ini (git archive); tidak menyentuh sistem.
+# tests/release.sh — test the install.sh bootstrap + codemux self-update (M6).
+# The tarball is built from this checkout (git archive); nothing touches the system.
 # shellcheck shell=bash
 set -uo pipefail
 
@@ -18,18 +18,18 @@ fail=0
 ok() { pass=$((pass + 1)); printf 'ok   %s\n' "$1"; }
 bad() { fail=$((fail + 1)); printf 'FAIL %s\n' "$1"; }
 
-# --- tarball rilis dari checkout ini -----------------------------------------
+# --- release tarball from this checkout --------------------------------------
 TARBALL="$SANDBOX/codemux.tar.gz"
 if git archive --format=tar.gz --prefix=codemux/ -o "$TARBALL" HEAD 2>"$SANDBOX/tar.err"; then
-  ok "tarball dibuat dari HEAD"
+  ok "tarball built from HEAD"
 else
-  bad "git archive gagal ($(cat "$SANDBOX/tar.err" | head -2))"
-  printf '\n%s lulus · %s gagal\n' "$pass" "$fail"
+  bad "git archive failed ($(cat "$SANDBOX/tar.err" | head -2))"
+  printf '\n%s passed · %s failed\n' "$pass" "$fail"
   exit 1
 fi
 SHA="$(sha256sum "$TARBALL" | awk '{print $1}')"
 
-run_bootstrap() { # <opsi...>
+run_bootstrap() { # <options...>
   env HOME="$SANDBOX/home" XDG_CACHE_HOME="$SANDBOX/home/.cache" PREFIX="$SANDBOX/prefix" CODEMUX_HOME="$SANDBOX/state" \
     TMPDIR="$BASE" CODEMUX_ALLOW_NONANDROID=1 CODEMUX_NO_APT_CHECK=1 \
     CODEMUX_BOOTSTRAP_TARBALL="$TARBALL" CODEMUX_BOOTSTRAP_SHA256="$SHA" \
@@ -37,40 +37,40 @@ run_bootstrap() { # <opsi...>
 }
 
 # =============================================================================
-# 1. bootstrap: ekstrak + lanjut ke install
+# 1. bootstrap: extract + continue into install
 # =============================================================================
 out="$(run_bootstrap --dry-run 2>&1)"
-if printf '%s' "$out" | grep -q 'sha256 cocok' &&
+if printf '%s' "$out" | grep -q 'sha256 matches' &&
   printf '%s' "$out" | grep -q 'dry-run' &&
   printf '%s' "$out" | grep -q 'install (dry-run)'; then
-  ok "bootstrap: sha256 diverifikasi + install dilanjutkan"
+  ok "bootstrap: sha256 verified + install continued"
 else
-  bad "bootstrap: alur tidak sesuai"
+  bad "bootstrap: unexpected flow"
   printf '%s\n' "$out" | tail -6 | sed 's/^/     /'
 fi
 cache="$SANDBOX/home/.cache/codemux/src/current"
 if [ -f "$cache/bin/codemux" ] && [ -f "$cache/VERSION" ] && bash -n "$cache/bin/codemux" 2>/dev/null; then
-  ok "bootstrap: kode diekstrak ke cache/current"
+  ok "bootstrap: code extracted to cache/current"
 else
-  bad "bootstrap: cache/current tidak valid"
+  bad "bootstrap: cache/current is not valid"
 fi
 
-# sha mismatch harus ditolak
+# a sha mismatch must be rejected
 if env HOME="$SANDBOX/home2" XDG_CACHE_HOME="$SANDBOX/home2/.cache" PREFIX="$SANDBOX/prefix" CODEMUX_HOME="$SANDBOX/state2" \
   TMPDIR="$BASE" CODEMUX_ALLOW_NONANDROID=1 CODEMUX_NO_APT_CHECK=1 \
   CODEMUX_BOOTSTRAP_TARBALL="$TARBALL" CODEMUX_BOOTSTRAP_SHA256="deadbeef" \
   bash -s -- --dry-run <"$ROOT/install.sh" >"$SANDBOX/bad.out" 2>&1; then
-  bad "bootstrap: sha256 salah seharusnya ditolak"
+  bad "bootstrap: a wrong sha256 should be rejected"
 else
-  if grep -q 'sha256 tidak cocok' "$SANDBOX/bad.out"; then
-    ok "bootstrap: sha256 salah ditolak dengan pesan jelas"
+  if grep -q 'sha256 does not match' "$SANDBOX/bad.out"; then
+    ok "bootstrap: wrong sha256 rejected with a clear message"
   else
-    bad "bootstrap: pesan sha256 salah tidak jelas"
+    bad "bootstrap: the wrong-sha256 message is not clear"
   fi
 fi
 
 # =============================================================================
-# 2. self-update: tukar kode, backup, dan tetap bisa dijalankan
+# 2. self-update: swap the code, back it up, and stay runnable
 # =============================================================================
 DEST="$SANDBOX/root"
 mkdir -p "$DEST"
@@ -86,22 +86,22 @@ out="$(env HOME="$SANDBOX/home" XDG_CACHE_HOME="$SANDBOX/home/.cache" PREFIX="$S
 rc=$?
 want="$(cat "$ROOT/VERSION")"
 if [ "$rc" -eq 0 ] && [ "$(cat "$DEST/VERSION")" = "$want" ]; then
-  ok "self-update: kode ditukar ke versi rilis ($want)"
+  ok "self-update: code swapped to the release version ($want)"
 else
-  bad "self-update: gagal (rc=$rc, VERSION=$(cat "$DEST/VERSION" 2>/dev/null))"
+  bad "self-update: failed (rc=$rc, VERSION=$(cat "$DEST/VERSION" 2>/dev/null))"
   printf '%s\n' "$out" | tail -6 | sed 's/^/     /'
 fi
 if ls -d "$SANDBOX/state"/backup/*-selfupdate >/dev/null 2>&1; then
-  ok "self-update: kode lama di-backup"
+  ok "self-update: old code backed up"
 else
-  bad "self-update: backup tidak dibuat"
+  bad "self-update: no backup created"
 fi
 if bash "$DEST/bin/codemux" version >/dev/null 2>&1; then
-  ok "self-update: hasil bisa dijalankan"
+  ok "self-update: the result runs"
 else
-  bad "self-update: hasil tidak bisa dijalankan"
+  bad "self-update: the result does not run"
 fi
 
 rm -rf "$SANDBOX"
-printf '\n%s lulus · %s gagal\n' "$pass" "$fail"
+printf '\n%s passed · %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -1,12 +1,12 @@
 # shellcheck shell=bash
-# lib/update.sh — `codemux update-check`: bandingkan versi lokal vs rilis hulu.
-# Murah: pakai redirect /releases/latest (tanpa kuota API), cache 24 jam.
-# Offline/gagal → senyap: cache lama dipertahankan.
+# lib/update.sh — `codemux update-check`: compare local versions with upstream releases.
+# Cheap: uses the /releases/latest redirect (no API quota), 24h cache.
+# Offline/failure → silent: the old cache is kept.
 
 codemux_update_cache() { printf '%s/update-cache.tsv' "$CODEMUX_HOME"; }
 
-# Ambil tag rilis terakhir dari redirect GitHub (tanpa API, tanpa kuota).
-# Test bisa memaksa hasil lewat CODEMUX_FAKE_TAG_*.
+# Read the latest release tag from the GitHub redirect (no API, no quota).
+# Tests can force the result via CODEMUX_FAKE_TAG_*.
 codemux_latest_tag() {
   local repo="$1" envname eff base
   envname="CODEMUX_FAKE_TAG_$(printf '%s' "${repo##*/}" | tr '[:lower:]-' '[:upper:]_')"
@@ -27,7 +27,7 @@ codemux_norm_ver() {
   printf '%s' "$1" | sed -n 's/.*[^0-9.]\([0-9][0-9.]*\)$/\1/p'
 }
 
-codemux_ver_newer() { # <kandidat> <sekarang> → 0 kalau kandidat lebih baru
+codemux_ver_newer() { # <candidate> <current> → 0 when the candidate is newer
   [ -n "$1" ] && [ -n "$2" ] && [ "$1" != "$2" ] &&
     [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V 2>/dev/null | tail -n 1)" = "$1" ]
 }
@@ -38,7 +38,7 @@ codemux_apt_upgradable() {
   timeout 20 apt-get -s -q upgrade 2>/dev/null | grep -c '^Inst ' || true
 }
 
-# Tulis cache: komponen<TAB>lokal<TAB>terbaru<TAB>status
+# Write the cache: component<TAB>local<TAB>latest<TAB>status
 codemux_update_write_cache() {
   local file tmp_lines="$1"
   file="$(codemux_update_cache)"
@@ -46,7 +46,7 @@ codemux_update_write_cache() {
   printf '%s\n' "$tmp_lines" | codemux_atomic_write "$file"
 }
 
-# Versi lokal; env CODEMUX_FAKE_LOCAL_* dipakai tes (tanpa payload asli).
+# Local version; the CODEMUX_FAKE_LOCAL_* env vars are used by tests (no real payload).
 codemux_local_version() {
   case "$1" in
     codemux) printf '%s' "${CODEMUX_FAKE_LOCAL_CODEMUX:-$CODEMUX_VERSION}" ;;
@@ -55,11 +55,11 @@ codemux_local_version() {
   esac
 }
 
-# Versi "terbaru" yang sudah diketahui dari cache sebelumnya.
-# Dipakai kalau jaringan gagal sesaat: hasil cek lama jangan sampai tertimpa
-# "na", sebab baris "na" tidak dinotifikasi di menu dan cache-nya 24 jam —
-# akibatnya update yang sudah diketahui jadi tak terlihat sehari penuh.
-codemux_prev_latest() { # <komponen>
+# The "latest" version already known from the previous cache.
+# Used when the network fails briefly: an older result must not be overwritten
+# with "na", because "na" lines are not reported by the menu and the cache lasts
+# 24 hours — an update that was already known would stay invisible all day.
+codemux_prev_latest() { # <component>
   local f v
   f="$(codemux_update_cache)"
   [ -f "$f" ] || return 0
@@ -68,7 +68,7 @@ codemux_prev_latest() { # <komponen>
   printf '%s' "$v"
 }
 
-codemux_update_rows() { # cetak baris TSV hasil cek sekarang
+codemux_update_rows() { # print the TSV rows of the current check
   local c_local="$CODEMUX_VERSION" c_latest="" v1 v1_latest v2 v2_latest apt_n
   local state
 
@@ -108,20 +108,20 @@ codemux_update_rows() { # cetak baris TSV hasil cek sekarang
   printf 'apt\t%s\t-\t%s\n' "$apt_n" "$state"
 }
 
-codemux_update_count() { # berapa baris berstatus update di cache
+codemux_update_count() { # how many rows have status update in the cache
   local f
   f="$(codemux_update_cache)"
   [ -f "$f" ] || { printf 0; return 0; }
   awk -F'\t' '$4=="update"' "$f" 2>/dev/null | wc -l | tr -d ' '
 }
 
-codemux_update_summary_line() { # dipakai launcher (menu): satu baris ringkas
+codemux_update_summary_line() { # used by the launcher (menu): one short line
   local f n
   f="$(codemux_update_cache)"
   [ -f "$f" ] || return 1
   n="$(codemux_update_count)"
   [ "${n:-0}" -gt 0 ] || return 1
-  awk -F'\t' '$4=="update" {printf "%s%s", sep, ($1=="apt" ? $2 " paket apt" : $1 " " $3); sep=" · "}' "$f"
+  awk -F'\t' '$4=="update" {printf "%s%s", sep, ($1=="apt" ? $2 " apt packages" : $1 " " $3); sep=" · "}' "$f"
 }
 
 codemux_cmd_update_check() {
@@ -131,19 +131,19 @@ codemux_cmd_update_check() {
       --json) json=1 ;;
       --quiet | -q) quiet=1 ;;
       -h | --help)
-        printf '%s\n' 'penggunaan: codemux update-check [--json] [--quiet]' \
-          '' 'Bandingkan versi lokal (codemux, OpenCode V1/V2, paket apt) dengan' \
-          'rilis hulu. Hasil disimpan di cache 24 jam; tidak mengunduh apa pun.' \
-          '--quiet hanya memperbarui cache (dipakai menu di latar belakang).'
+        printf '%s\n' 'usage: codemux update-check [--json] [--quiet]' \
+          '' 'Compare local versions (codemux, OpenCode V1/V2, apt packages) with' \
+          'upstream releases. The result is cached for 24 hours; nothing is downloaded.' \
+          '--quiet only refreshes the cache (used by the menu in the background).'
         return 0
         ;;
-      *) log_warn "opsi tidak dikenal untuk update-check: $a" ;;
+      *) log_warn "unknown option for update-check: $a" ;;
     esac
   done
 
   rows="$(codemux_update_rows)"
   codemux_update_write_cache "$rows" || {
-    log_fail "tidak bisa menulis cache di $CODEMUX_HOME"; return 2
+    log_fail "cannot write the cache in $CODEMUX_HOME"; return 2
   }
   [ "$quiet" -eq 1 ] && return 0
   n="$(codemux_update_count)"
@@ -163,23 +163,23 @@ codemux_cmd_update_check() {
     return 0
   fi
 
-  printf '%s%s %s%s · cek update hulu\n\n' "$C_B" "$CODEMUX_NAME" "$CODEMUX_VERSION" "$C_R"
-  printf '  %-14s %-12s %-12s %s\n' komponen lokal terbaru status
+  printf '%s%s %s%s · upstream update check\n\n' "$C_B" "$CODEMUX_NAME" "$CODEMUX_VERSION" "$C_R"
+  printf '  %-14s %-12s %-12s %s\n' component local latest status
   local comp local_v latest_v st
   while IFS=$'\t' read -r comp local_v latest_v st; do
     [ -n "$comp" ] || continue
     case "$st" in
       update) printf '  %-14s %-12s %-12s %supdate%s\n' "$comp" "$local_v" "$latest_v" "$C_WARN" "$C_R" ;;
-      na) printf '  %-14s %-12s %-12s %s\n' "$comp" "$local_v" "$latest_v" "tak terdeteksi" ;;
-      *) printf '  %-14s %-12s %-12s %s\n' "$comp" "$local_v" "$latest_v" "terbaru" ;;
+      na) printf '  %-14s %-12s %-12s %s\n' "$comp" "$local_v" "$latest_v" "not detected" ;;
+      *) printf '  %-14s %-12s %-12s %s\n' "$comp" "$local_v" "$latest_v" "latest" ;;
     esac
   done <<<"$rows"
   printf '\n'
   if [ "${n:-0}" -gt 0 ]; then
-    log_warn "$n komponen bisa diperbarui — jalankan: codemux upgrade"
+    log_warn "$n components can be updated — run: codemux upgrade"
   else
-    log_ok "semua komponen sudah versi terbaru (sejauh yang bisa dicek)."
+    log_ok "all components are up to date (as far as we can tell)."
   fi
-  log_dim "cache: $(codemux_update_cache) · cek ulang otomatis setelah 24 jam"
+  log_dim "cache: $(codemux_update_cache) · re-checked automatically after 24 hours"
   return 0
 }

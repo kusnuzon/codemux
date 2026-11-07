@@ -1,10 +1,10 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034  # PROBE/NOTE/global dipakai lintas file
-# modul: deps — alat dasar yang harus ada sebelum apa pun.
+# shellcheck disable=SC2034  # PROBE/NOTE/globals are shared across files
+# module: deps — base tools that must exist before anything else.
 
 CODEMUX_DEP_BINS="curl tar sha256sum gzip unzip awk sed jq"
 
-# nama paket untuk sebuah binary (beberapa binary beda paket)
+# package name for a binary (some binaries come from a differently named package)
 m_deps_pkg() {
   case "$1" in
     awk) echo gawk ;;
@@ -20,7 +20,7 @@ m_deps_missing() {
   done
 }
 
-# curl bisa ADA tapi mati (efek paket glibc): bedakan dari "tidak terpasang".
+# curl can EXIST but be dead (an effect of the glibc package): tell it apart from "not installed".
 m_deps_curl_broken() {
   have curl && ! codemux_curl_ok
 }
@@ -29,10 +29,10 @@ m_deps_probe() {
   local miss
   miss="$(m_deps_missing | tr '\n' ' ' | sed 's/ *$//')"
   if [ -n "$miss" ]; then
-    PROBE=MISS; NOTE="kurang: $miss"; return
+    PROBE=MISS; NOTE="missing: $miss"; return
   fi
   if m_deps_curl_broken; then
-    PROBE=MISS; NOTE="curl terpasang tapi rusak (libcurl/openssl) — akan dipasang ulang"; return
+    PROBE=MISS; NOTE="curl is installed but broken (libcurl/openssl) — it will be reinstalled"; return
   fi
   PROBE=OK; NOTE="$CODEMUX_DEP_BINS"
 }
@@ -51,20 +51,20 @@ m_deps_apply() {
   if [ -n "$pkgs" ]; then
     # shellcheck disable=SC2086
     if ! codemux_apt_install $pkgs; then
-      APPLY_NOTE="apt gagal: $pkgs"
+      APPLY_NOTE="apt failed: $pkgs"
       return 1
     fi
-    APPLY_NOTE="dipasang: $pkgs"
+    APPLY_NOTE="installed: $pkgs"
   fi
 
   if m_deps_curl_broken; then
     codemux_heal_curl || {
-      APPLY_NOTE="curl tetap rusak setelah pemasangan ulang"
+      APPLY_NOTE="curl is still broken after reinstalling"
       return 1
     }
-    APPLY_NOTE="${APPLY_NOTE:+$APPLY_NOTE · }curl dipulihkan"
+    APPLY_NOTE="${APPLY_NOTE:+$APPLY_NOTE · }curl repaired"
   fi
 
-  [ -n "$APPLY_NOTE" ] || APPLY_NOTE="tidak ada yang perlu dipasang"
+  [ -n "$APPLY_NOTE" ] || APPLY_NOTE="nothing to install"
   return 0
 }

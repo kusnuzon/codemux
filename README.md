@@ -1,193 +1,200 @@
 # codemux
 
-Pemasang & pemelihara Termux: OpenCode **V1 + V2**, menu/banner startup, ingatan
-lintas sesi, toolset, dan cek update — satu perintah, idempotent (aman dijalankan
-berulang), non-destruktif.
+Termux installer & maintainer: OpenCode **V1 + V2**, a startup menu/banner,
+cross-session memory, a base toolset, and update checks — one command,
+idempotent (safe to repeat), non-destructive.
 
-> **Status: M6 (rilis 1.0).** Semua perintah PRD sudah jalan: `check`, `install`
-> (resume-safe, 11 modul), `status`, `repair`, `memory`, `update-check`, `doctor`,
-> `upgrade`, `uninstall`, `self-update`, `version`, `help`. Rancangan lengkap ada
-> di [PRD.md](PRD.md).
+> **Status: M6 (release 1.0).** Every PRD command works: `check`, `install`
+> (resume-safe, 11 modules), `status`, `repair`, `memory`, `update-check`,
+> `doctor`, `upgrade`, `uninstall`, `self-update`, `version`, `help`. The full
+> design lives in [PRD.md](PRD.md).
 
-## Pasang satu perintah
+## One-command install
 
 ```bash
 curl -fsSL -H 'Accept: application/vnd.github.raw' \
   https://api.github.com/repos/kusnuzon/codemux/contents/install.sh | bash
 ```
 
-`install.sh` kecil: cek prasyarat → unduh tarball rilis + `sha256` → ekstrak ke
-`~/.cache/codemux/src/current` → jalankan `codemux install`. Kalau rilis belum
-ada, jatuh ke branch `main` (tanpa sha). Opsi diteruskan, mis.
-`| bash -s -- --dry-run` atau `| bash -s -- --skip toolset`.
+`install.sh` is small: check prerequisites → download the release tarball +
+`sha256` → extract to `~/.cache/codemux/src/current` → run `codemux install`.
+When no release exists yet it falls back to the `main` branch (no sha). Options
+are passed through, e.g. `| bash -s -- --dry-run` or
+`| bash -s -- --skip toolset`.
 
-## Pakai (versi repo)
+## Usage (from the repo)
 
 ```bash
 git clone https://github.com/kusnuzon/codemux
-bash codemux/bin/codemux check              # status tiap modul, tanpa mengubah apa pun
-bash codemux/bin/codemux install --dry-run  # rencana pemasangan, tanpa mengubah apa pun
-bash codemux/bin/codemux install            # pasang / lanjutkan yang terputus
-bash codemux/bin/codemux status             # progres, lock, log terakhir
-bash codemux/bin/codemux repair             # bereskan sisa proses yang mati di tengah
-bash codemux/bin/codemux check --json       # untuk skrip
-bash codemux/bin/codemux memory             # status ingatan lintas sesi (read-only)
-bash codemux/bin/codemux update-check       # bandingkan versi lokal vs rilis hulu
-bash codemux/bin/codemux doctor             # diagnosa lengkap + saran perbaikan
-bash codemux/bin/codemux upgrade --dry-run  # rencana upgrade (apt + V1/V2 + launcher)
-bash codemux/bin/codemux uninstall --dry-run  # rencana lepas payload (memori tetap)
+bash codemux/bin/codemux check              # status of each module, changes nothing
+bash codemux/bin/codemux install --dry-run  # install plan, changes nothing
+bash codemux/bin/codemux install            # install / continue what was interrupted
+bash codemux/bin/codemux status             # progress, lock, last log
+bash codemux/bin/codemux repair             # clean up leftovers from a killed process
+bash codemux/bin/codemux check --json       # for scripts
+bash codemux/bin/codemux memory             # cross-session memory status (read-only)
+bash codemux/bin/codemux update-check       # compare local versions with upstream releases
+bash codemux/bin/codemux doctor             # full diagnosis + repair suggestions
+bash codemux/bin/codemux upgrade --dry-run  # upgrade plan (apt + V1/V2 + launcher)
+bash codemux/bin/codemux uninstall --dry-run  # payload removal plan (memory stays)
 ```
 
-Setelah terpasang (M2+), perintahnya menjadi `codemux` di `$PREFIX/bin`.
+Once installed (M2+), the command becomes `codemux` in `$PREFIX/bin`.
 
-## Yang dicek `codemux check`
+## What `codemux check` verifies
 
-| Modul | Isi |
+| Module | Contents |
 |---|---|
-| `preflight` | Android, aarch64, bukan root, disk ≥ 3 GB |
-| `deps` | curl, tar, sha256sum, gzip, unzip, awk, sed, jq (+ curl dipulihkan bila rusak) |
-| `mirror` | repo apt aktif (peringatan kalau mirror lambat) |
-| `storage` | `termux-setup-storage` sudah jalan |
-| `toolset` | 20 paket apt wajib (git, gh, python, nodejs, sqlite, …) + opsional `tesseract chromium` (x11-repo) |
-| `glibc` | loader + libc.so.6 untuk payload OpenCode |
-| `opencode-v1` | payload V1 + `apt-mark hold` |
-| `opencode-v2` | payload V2 + shim `lib/compat` |
-| `launcher` | blok banner/menu di `~/.bashrc` (mendeteksi blok lama) |
+| `preflight` | Android, aarch64, not root, disk ≥ 3 GB |
+| `deps` | curl, tar, sha256sum, gzip, unzip, awk, sed, jq (+ curl repaired when broken) |
+| `mirror` | active apt repo (warns when the mirror is slow) |
+| `storage` | `termux-setup-storage` has run |
+| `toolset` | 20 required apt packages (git, gh, python, nodejs, sqlite, …) + optional `tesseract chromium` (x11-repo) |
+| `glibc` | loader + libc.so.6 for the OpenCode payloads |
+| `opencode-v1` | V1 payload + `apt-mark hold` |
+| `opencode-v2` | V2 payload + the `lib/compat` shim |
+| `launcher` | banner/menu block in `~/.bashrc` (detects an old block) |
 | `dotfiles` | `.bash_profile`, `.hushlogin` |
-| `memory` | `MEMORY.md` (+ batas 24.000 byte), `RECENT.md`, plugin memori + judul sesi, instructions |
-| `update-cache` | umur cache cek update hulu |
+| `memory` | `MEMORY.md` (+ 24,000 byte limit), `RECENT.md`, memory + session-title plugins, instructions |
+| `update-cache` | age of the upstream update-check cache |
 
-`install` menjalankan modul berurutan: `deps -> mirror -> storage -> toolset ->
+`install` runs the modules in order: `deps -> mirror -> storage -> toolset ->
 glibc -> v1 -> v2 -> launcher -> dotfiles -> memory`.
 
-Semua dependensi dipasang di awal (modul `deps` + `toolset`) supaya Termux
-baru tidak error di tengah jalan. Dua jebakan yang ditangani otomatis:
+All dependencies are installed up front (`deps` + `toolset`) so a fresh Termux
+does not fail halfway. Two traps handled automatically:
 
-- `apt-get install` tanpa `update` → `E: Unable to locate package` (paket
-  di-update lalu diulang sekali);
-- paket `glibc` menimpa `libcurl` → `curl: cannot locate symbol
-  "SSL_set_quic_tls_early_data_enabled"`. Modul `glibc` memasang ulang
-  `curl libcurl openssl`, dan semua unduhan punya cadangan `wget`/`python`.
+- `apt-get install` without `update` → `E: Unable to locate package` (the
+  package list is refreshed and the install retried once);
+- the `glibc` package overwrites `libcurl` → `curl: cannot locate symbol
+  "SSL_set_quic_tls_early_data_enabled"`. The `glibc` module reinstalls
+  `curl libcurl openssl`, and every download has a `wget`/`python` fallback.
 
-### Launcher & ingatan (M4)
+### Launcher & memory (M4)
 
-- **launcher**: menulis blok bertanda `# codemux:launcher begin … end` di
-  `~/.bashrc` (banner, menu panah V1/V2/shell, perintah `menu`, `version`,
-  `doctor`, `codemux`, `keluar`). Blok lama tanpa penanda **diadopsi**: dipotong
-  hanya kalau strukturnya dikenali (ada `_oc_launcher`, baris terakhir `fi`);
-  isi lain `~/.bashrc` tidak disentuh. `.bashrc` di-backup, blok baru diuji
-  `bash -n`, gagal → backup dipulihkan.
-- **dotfiles**: `.bash_profile` (memuat `.bashrc`) dan `.hushlogin`.
+- **launcher**: writes a marked `# codemux:launcher begin … end` block into
+  `~/.bashrc` (banner, V1/V2/shell arrow menu, and the `menu`, `version`,
+  `doctor`, `codemux`, `keluar`/`exit` commands). An old block without markers is
+  **adopted**: it is cut only when its structure is recognised (an
+  `_oc_launcher` call, last line `fi`); the rest of `~/.bashrc` is untouched.
+  `.bashrc` is backed up, the new block is tested with `bash -n`, and on failure
+  the backup is restored.
+- **dotfiles**: `.bash_profile` (loads `.bashrc`) and `.hushlogin`.
 - **memory**: `MEMORY.md`, `AGENTS.md`, `RECENT.md`, `plugins/memory.js`,
-  `plugins/session-title.js`, `bin/session-digest.py`, dan entri `instructions`
-  di `opencode.jsonc`.
-  **File memori yang sudah ada tidak pernah ditimpa**; `instructions` hanya
-  ditambah kalau belum ada; wrapper `_oc_refresh_digest` masuk blok
-  `# codemux:memory begin … end` (hanya kalau belum ada). Mekanisme plugin/digest
-  diunduh dari repo hulu, bukan disalin ke repo ini.
+  `plugins/session-title.js`, `bin/session-digest.py`, and the `instructions`
+  entries in `opencode.jsonc`.
+  **Existing memory files are never overwritten**; `instructions` is only
+  appended when an entry is missing; the `_oc_refresh_digest` wrapper goes into
+  a `# codemux:memory begin … end` block (only when absent). The plugin/digest
+  mechanism is downloaded from the upstream repo, not copied into this repo.
 
-## Adapter OpenCode V1 & V2
+## OpenCode V1 & V2 adapters
 
-codemux tidak menyalin kode OpenCode. Untuk `v1` dan `v2` ia:
+codemux does not copy OpenCode code. For `v1` and `v2` it:
 
-1. mengunduh `install.sh` dari repo hulu lewat **API GitHub** (`Accept:
-   application/vnd.github.raw`) - bukan `raw.githubusercontent.com` yang sering
-   menyajikan cache basi di jaringan seluler;
-2. menolak unduhan yang bukan skrip shell (mis. halaman error/rate-limit);
-3. mencatat sha256 skrip, menjalankannya **terpisah dari shell** (`setsid`),
-   lalu memverifikasi hasilnya: payload, launcher, `apt-mark hold` (V1), dan shim
-   `lib/compat` (V2);
-4. kalau gagal, langkah dicatat `FAILED` dan `codemux install` bisa diulang -
-   tidak ada keadaan setengah jadi.
+1. downloads `install.sh` from the upstream repo through the **GitHub API**
+   (`Accept: application/vnd.github.raw`) — not `raw.githubusercontent.com`,
+   which often serves a stale cache on mobile networks;
+2. rejects downloads that are not shell scripts (e.g. an error/rate-limit page);
+3. records the script's sha256, runs it **detached from the shell** (`setsid`),
+   then verifies the result: payload, launcher, `apt-mark hold` (V1), and the
+   `lib/compat` shim (V2);
+4. on failure the step is recorded as `FAILED` and `codemux install` can be
+   repeated — there is never a half-finished state.
 
-## Pemeliharaan (M5)
+## Maintenance (M5)
 
-- **`update-check`** — membandingkan versi lokal (codemux, V1, V2, paket apt)
-  dengan rilis hulu lewat redirect `/releases/latest` (tanpa kuota API). Hasil
-  disimpan di `~/.config/codemux/update-cache.tsv` (24 jam); menu startup
-  membacanya dan menjalankan cek di latar belakang kalau cache basi.
-  Kalau jaringan gagal sesaat, nilai "terbaru" dari cache lama dipakai lagi
-  (tidak ditimpa `na`), dan menu mengulang cek paling cepat 1 jam kemudian.
-- **`doctor`** — `check` + pemeriksaan tambahan: `bash -n ~/.bashrc`, wrapper
-  digest, ukuran `MEMORY.md`, `LD_PRELOAD` bionic, sisa disk, lock, umur cache.
-- **`upgrade`** — `apt-get update && apt-get upgrade` (opencode tetap di-hold),
-  payload V1/V2 lewat `upgrade.sh` hulu (fallback: adapter), lalu sinkron ulang
-  blok launcher + wrapper digest. `--only apt,v1,v2,launcher`, `--dry-run`,
-  `--yes`; memakai lock yang sama dengan `install`.
-- **`uninstall`** — memindahkan payload V1/V2 ke
-  `~/.config/codemux/backup/<ts>-uninstall/`, melepas blok
-  `# codemux:launcher` / `# codemux:memory` dari `~/.bashrc` (diuji `bash -n`,
-  gagal → dibiarkan utuh). **Tidak** menghapus `MEMORY.md`, `AGENTS.md`,
-  project, atau backup. `--purge` menghapus `~/.config/codemux`.
+- **`update-check`** — compares local versions (codemux, V1, V2, apt packages)
+  with upstream releases through the `/releases/latest` redirect (no API
+  quota). The result is stored in `~/.config/codemux/update-cache.tsv` (24
+  hours); the startup menu reads it and runs a background check when the cache
+  is stale. If the network fails briefly, the "latest" value from the old cache
+  is reused (not overwritten with `na`), and the menu retries at most once an
+  hour later.
+- **`doctor`** — `check` + additional checks: `bash -n ~/.bashrc`, the digest
+  wrapper, `MEMORY.md` size, bionic `LD_PRELOAD`, free disk, lock, cache age.
+- **`upgrade`** — `apt-get update && apt-get upgrade` (opencode stays held),
+  V1/V2 payloads through the upstream `upgrade.sh` (fallback: the adapter), then
+  the launcher block + digest wrapper are re-synced. `--only apt,v1,v2,launcher`,
+  `--dry-run`, `--yes`; uses the same lock as `install`.
+- **`uninstall`** — moves the V1/V2 payloads to
+  `~/.config/codemux/backup/<ts>-uninstall/`, removes the
+  `# codemux:launcher` / `# codemux:memory` blocks from `~/.bashrc` (tested with
+  `bash -n`, on failure left untouched). It does **not** delete `MEMORY.md`,
+  `AGENTS.md`, projects, or backups. `--purge` deletes `~/.config/codemux`.
 
-Kode keluar `check`: `0` semua siap · `1` ada yang kurang · `2` prasyarat gagal.
-Kode keluar `install`: `0` selesai · `1` ada langkah gagal · `2` prasyarat gagal ·
-`3` ada install lain berjalan.
+`check` exit codes: `0` everything ready · `1` something missing · `2`
+prerequisite failed.
+`install` exit codes: `0` finished · `1` some step failed · `2` prerequisite
+failed · `3` another install is running.
 
-## Tahan mati di tengah
+## Surviving being killed midway
 
-`install` tidak pernah mengandalkan "sekali jalan":
+`install` never relies on "one clean run":
 
-- state `RUNNING` ditulis **sebelum** langkah; mati = kelihatan berhenti di mana;
-- unduhan/penulisan file pakai file sementara + `mv` (atomik), plus sha256;
-- proses panjang (apt, unduhan besar) jalan `setsid` + pidfile + log, jadi shell
-  atau opencode yang mati **tidak** membunuhnya;
-- lock berisi pid + boot-id: lock basi (proses mati / HP reboot) dibuang otomatis;
-- `codemux install` tanpa argumen = **melanjutkan**, bukan mulai dari nol;
-- `codemux repair` membereskan lock basi, dpkg setengah jadi, shim V2 hilang.
+- the `RUNNING` state is written **before** the step; a kill shows exactly where
+  it stopped;
+- downloads/file writes use a temp file + `mv` (atomic), plus sha256;
+- long processes (apt, big downloads) run `setsid` + pidfile + log, so a dying
+  shell or opencode does **not** kill them;
+- the lock holds a pid + boot-id: a stale lock (dead process / device reboot) is
+  dropped automatically;
+- `codemux install` with no arguments = **resume**, not start over;
+- `codemux repair` fixes stale locks, half-finished dpkg, and a missing V2 shim.
 
-Diuji oleh `tests/resume.sh` (16 skenario: SIGKILL induk, SIGKILL induk+anak,
-apt gagal, lock aktif, sisa file sementara).
+Tested by `tests/resume.sh` (16 scenarios: SIGKILL of the parent, SIGKILL of
+parent+child, apt failure, active lock, leftover temp files).
 
-## Struktur
+## Layout
 
 ```
 bin/codemux        entry point
-lib/common.sh      warna, log, util, deteksi
-lib/state.sh       state TSV, run.tsv (progres), lock pid+boot-id, log
-lib/exec.sh        spawn detached, wait, tulis atomik, backup
-lib/adapter.sh     unduh + validasi install.sh hulu
-lib/check.sh       runner check (read-only)
+lib/common.sh      colors, logging, utils, detection
+lib/state.sh       state TSV, run.tsv (progress), pid+boot-id lock, log
+lib/exec.sh        detached spawn, wait, atomic write, backup
+lib/adapter.sh     download + validate the upstream install.sh
+lib/check.sh       check runner (read-only)
 lib/install.sh     install (resume) + status
-lib/repair.sh      repair (lock basi, dpkg, shim V2)
-lib/update.sh      update-check + cache 24 jam
+lib/repair.sh      repair (stale lock, dpkg, V2 shim)
+lib/update.sh      update-check + 24h cache
 lib/maintenance.sh doctor, upgrade, uninstall
-lib/selfupdate.sh  self-update (tarball + sha256, backup, tukar kode)
-install.sh         bootstrap satu perintah (unduh rilis → install)
-lib/modules/*.sh   probe + apply + verify per modul
-tests/smoke.sh     uji cepat (syntax, help, json, shellcheck)
-tests/resume.sh    16 skenario "matikan di tengah"
-tests/adapter.sh   12 skenario adapter V1/V2 (hulu palsu)
-tests/launcher-memory.sh  29 skenario launcher/dotfiles/ingatan (sandbox HOME)
-tests/maintenance.sh      14 skenario update-check/doctor/upgrade/uninstall
-tests/release.sh          7 skenario bootstrap + self-update
-templates/         blok bashrc + template ingatan + penyunting opencode.jsonc
-versions.env       versi dipin + daftar paket
-PRD.md             rancangan lengkap (tujuan, mekanisme, milestone)
+lib/selfupdate.sh  self-update (tarball + sha256, backup, code swap)
+install.sh         one-command bootstrap (download release → install)
+lib/modules/*.sh   probe + apply + verify per module
+tests/smoke.sh     quick test (syntax, help, json, shellcheck)
+tests/resume.sh    16 "kill it midway" scenarios
+tests/adapter.sh   12 adapter scenarios for V1/V2 (fake upstream)
+tests/launcher-memory.sh  29 launcher/dotfiles/memory scenarios (sandbox HOME)
+tests/maintenance.sh      14 update-check/doctor/upgrade/uninstall scenarios
+tests/release.sh          7 bootstrap + self-update scenarios
+templates/         bashrc block + memory templates + opencode.jsonc editor
+versions.env       pinned versions + package lists
+PRD.md             full design (goals, mechanisms, milestones)
 ```
 
 ## Roadmap
 
-- **M1** kerangka + `check` ✅
+- **M1** skeleton + `check` ✅
 - **M2** `install` (deps, mirror, storage, toolset, glibc) + resume ✅
-- **M3** adapter OpenCode V1 + V2 [selesai]
-- **M4** launcher + ingatan lintas sesi ✅
-- **M5** `doctor`, `upgrade`, `repair`, `uninstall`, cek update ✅
-- **M6** CI + rilis tarball + installer satu perintah ✅
+- **M3** OpenCode V1 + V2 adapters [done]
+- **M4** launcher + cross-session memory ✅
+- **M5** `doctor`, `upgrade`, `repair`, `uninstall`, update checks ✅
+- **M6** CI + release tarball + one-command installer ✅
 
-## Catatan
+## Notes
 
-- Repo ini hanya berisi **mekanisme**; isi memori pribadi tidak pernah di-push.
-- Butuh Termux aarch64 (Android), bukan root.
-- Kalau repo di-clone ke `/storage/emulated/0` (FUSE), file di sana **tidak bisa
-  dieksekusi langsung** (`Permission denied`) → jalankan `bash bin/codemux …`.
-  Setelah di-install ke `$PREFIX/bin`, `codemux` jalan normal.
-- `raw.githubusercontent.com` bisa menyajikan cache lama di jaringan seluler —
-  unduhan rilis memakai tarball + verifikasi sha256.
-- `codemux self-update` mengganti `bin/`, `lib/`, `templates/`, `VERSION`,
-  `versions.env`; kode lama di-backup ke `~/.config/codemux/backup/<ts>-selfupdate/`.
-  Memori, project, dan state tidak disentuh.
-- `codemux upgrade` menyegarkan cache `update-check` setelah selesai, dan menu
-  startup menyembunyikan baris cache yang versi lokalnya tak cocok dengan payload
-  terpasang — jadi "update tersedia" tak muncul lagi untuk versi yang baru saja
-  dipasang.
+- This repo contains **mechanism only**; personal memory contents are never pushed.
+- Requires Termux aarch64 (Android), not root.
+- If the repo is cloned to `/storage/emulated/0` (FUSE), files there **cannot be
+  executed directly** (`Permission denied`) → run `bash bin/codemux …`.
+  After installing to `$PREFIX/bin`, `codemux` runs normally.
+- `raw.githubusercontent.com` can serve a stale cache on mobile networks —
+  release downloads use a tarball + sha256 verification.
+- `codemux self-update` replaces `bin/`, `lib/`, `templates/`, `VERSION`,
+  `versions.env`; the old code is backed up to
+  `~/.config/codemux/backup/<ts>-selfupdate/`. Memory, projects, and state are
+  untouched.
+- `codemux upgrade` refreshes the `update-check` cache when it finishes, and the
+  startup menu hides cache rows whose local version no longer matches the
+  installed payload — so "update available" does not reappear for a version that
+  was just installed.

@@ -1,15 +1,15 @@
 # shellcheck shell=bash
-# lib/state.sh — state modul, progress install (run.tsv), lock, log.
-# Semua penulisan lewat file sementara + mv (atomik).
+# lib/state.sh — module state, install progress (run.tsv), lock, log.
+# All writes go through a temp file + mv (atomic).
 
-CODEMUX_STATE_HEADER='# ts	modul	status	versi	catatan'
+CODEMUX_STATE_HEADER='# ts	module	status	version	note'
 
 codemux_state_init() {
   mkdir -p "$CODEMUX_HOME" "$CODEMUX_HOME/logs" "$CODEMUX_HOME/backup" "$CODEMUX_HOME/run" 2>/dev/null || return 1
   [ -f "$CODEMUX_HOME/state.tsv" ] || printf '%s\n' "$CODEMUX_STATE_HEADER" >"$CODEMUX_HOME/state.tsv"
 }
 
-# codemux_state_set <modul> <status> <versi> <catatan...>
+# codemux_state_set <module> <status> <version> <note...>
 codemux_state_set() {
   local mod="$1" status="$2" ver="${3:--}" note="${4:-}"
   [ -f "$CODEMUX_HOME/state.tsv" ] || return 0
@@ -23,7 +23,7 @@ codemux_state_get() {
   awk -F'\t' -v m="$1" '!/^#/ && $2==m {s=$3} END{print s}' "$CODEMUX_HOME/state.tsv"
 }
 
-# --- identitas boot (deteksi HP reboot saat proses mati) ---------------------
+# --- boot identity (detects a device reboot while a process is dead) ---------
 codemux_boot_id() {
   if [ -r /proc/sys/kernel/random/boot_id ]; then
     cat /proc/sys/kernel/random/boot_id
@@ -34,8 +34,8 @@ codemux_boot_id() {
   fi
 }
 
-# --- run.tsv: progres instalasi ---------------------------------------------
-# modul  status  pid  boot  mulai  selesai  catatan
+# --- run.tsv: installation progress -----------------------------------------
+# module  status  pid  boot  started  finished  note
 codemux_run_file() { printf '%s/run.tsv' "$CODEMUX_HOME"; }
 
 codemux_run_reset() {
@@ -43,7 +43,7 @@ codemux_run_reset() {
   f="$(codemux_run_file)"
   mkdir -p "$CODEMUX_HOME" || return 1
   {
-    printf '# modul\tstatus\tpid\tboot\tmulai\tselesai\tcatatan\n'
+    printf '# module\tstatus\tpid\tboot\tstarted\tfinished\tnote\n'
     for m in "$@"; do
       printf '%s\tPENDING\t-\t-\t-\t-\t-\n' "$m"
     done
@@ -57,7 +57,7 @@ codemux_run_get() {
   awk -F'\t' -v m="$1" '!/^#/ && $1==m {print $2}' "$f"
 }
 
-# codemux_run_set <modul> <status> [catatan]
+# codemux_run_set <module> <status> [note]
 codemux_run_set() {
   local m="$1" st="$2" note="${3:-}" f tmp boot now
   f="$(codemux_run_file)"
@@ -79,7 +79,7 @@ codemux_run_set() {
     { print }' "$f" >"$tmp" && mv -f "$tmp" "$f"
 }
 
-# Tandai langkah RUNNING yang prosesnya sudah mati sebagai INTERRUPTED.
+# Mark RUNNING steps whose process is already gone as INTERRUPTED.
 codemux_run_reconcile() {
   local f boot m st pid pboot _rest
   f="$(codemux_run_file)"
@@ -90,9 +90,9 @@ codemux_run_reconcile() {
     [ "$st" = "RUNNING" ] || continue
     if [ "$pboot" != "$boot" ] || ! kill -0 "$pid" 2>/dev/null; then
       if [ "$pboot" != "$boot" ]; then
-        codemux_run_set "$m" INTERRUPTED "terputus (HP reboot)"
+        codemux_run_set "$m" INTERRUPTED "interrupted (device reboot)"
       else
-        codemux_run_set "$m" INTERRUPTED "terputus (pid $pid mati)"
+        codemux_run_set "$m" INTERRUPTED "interrupted (pid $pid died)"
       fi
     fi
   done <"$f"
@@ -104,14 +104,14 @@ codemux_run_summary() {
   f="$(codemux_run_file)"
   [ -f "$f" ] || return 1
   awk -F'\t' '!/^#/ {n++; c[$2]++} END {
-    printf "  %d langkah:", n
+    printf "  %d steps:", n
     for (s in c) printf " %s=%d", s, c[s]
     printf "\n"
   }' "$f"
 }
 
-# --- lock: cegah dua install paralel, buang lock basi ------------------------
-# 0 = dapat lock · 1 = benar-benar sibuk · 2 = tidak bisa menulis
+# --- lock: prevent two parallel installs, discard a stale lock ---------------
+# 0 = lock acquired · 1 = genuinely busy · 2 = cannot write
 codemux_lock_acquire() {
   local dir="$CODEMUX_HOME/lock" pid="" boot cboot=""
   mkdir -p "$CODEMUX_HOME" 2>/dev/null || return 2
@@ -134,17 +134,17 @@ codemux_lock_release() { rm -rf "$CODEMUX_HOME/lock" 2>/dev/null || true; }
 
 codemux_lock_info() {
   local dir="$CODEMUX_HOME/lock" pid boot
-  [ -f "$dir/pid" ] || { printf 'tidak ada\n'; return 0; }
+  [ -f "$dir/pid" ] || { printf 'none\n'; return 0; }
   pid="$(cat "$dir/pid" 2>/dev/null || echo 0)"
   boot="$(cat "$dir/boot" 2>/dev/null || echo -)"
   if [ "$boot" = "$(codemux_boot_id)" ] && kill -0 "$pid" 2>/dev/null; then
-    printf 'aktif (pid %s)\n' "$pid"
+    printf 'active (pid %s)\n' "$pid"
   else
-    printf 'basi (pid %s, akan dibuang otomatis)\n' "$pid"
+    printf 'stale (pid %s, will be discarded automatically)\n' "$pid"
   fi
 }
 
-# --- log per-run -------------------------------------------------------------
+# --- per-run log -------------------------------------------------------------
 codemux_log_start() {
   mkdir -p "$CODEMUX_HOME/logs" 2>/dev/null || return 0
   CODEMUX_LOG="$CODEMUX_HOME/logs/$(date '+%Y%m%d-%H%M%S').log"

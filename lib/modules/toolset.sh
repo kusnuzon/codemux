@@ -1,8 +1,8 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034  # PROBE/NOTE/global dipakai lintas file
-# modul: toolset — paket apt wajib (lihat CODEMUX_APT_PACKAGES).
-# Paket tambahan yang besar / butuh repo lain ada di CODEMUX_APT_EXTRA:
-# kegagalannya hanya WARN, tidak menggagalkan install.
+# shellcheck disable=SC2034  # PROBE/NOTE/globals are shared across files
+# module: toolset — required apt packages (see CODEMUX_APT_PACKAGES).
+# Large extra packages / packages that need another repo live in CODEMUX_APT_EXTRA:
+# their failure is only a WARN, it does not fail the install.
 
 m_toolset_required_missing() {
   local p
@@ -28,7 +28,7 @@ m_toolset_probe() {
   local total miss n shown more extra note
   total="$(m_toolset_count "$CODEMUX_APT_PACKAGES")"
   if [ "$total" -eq 0 ]; then
-    PROBE=WARN; NOTE="versions.env tidak memuat CODEMUX_APT_PACKAGES"; return
+    PROBE=WARN; NOTE="versions.env does not define CODEMUX_APT_PACKAGES"; return
   fi
 
   miss="$(m_toolset_required_missing | tr '\n' ' ' | sed 's/ *$//')"
@@ -36,16 +36,16 @@ m_toolset_probe() {
 
   if [ -z "$miss" ]; then
     PROBE=OK
-    NOTE="$total/$total paket wajib terpasang"
+    NOTE="$total/$total required packages installed"
   else
     n="$(m_toolset_count "$miss")"
     shown="$(printf '%s' "$miss" | cut -d' ' -f1-4)"
     more=$((n - 4))
     [ "$more" -gt 0 ] && shown="$shown (+$more)"
-    PROBE=MISS; NOTE="$((total - n))/$total terpasang · kurang: $shown"
+    PROBE=MISS; NOTE="$((total - n))/$total installed · missing: $shown"
   fi
   if [ -n "$extra" ]; then
-    NOTE="$NOTE · opsional belum: $(printf '%s' "$extra" | cut -d' ' -f1-3)"
+    NOTE="$NOTE · optional missing: $(printf '%s' "$extra" | cut -d' ' -f1-3)"
   fi
 }
 
@@ -56,7 +56,7 @@ m_toolset_apply() {
   miss="$(m_toolset_required_missing | tr '\n' ' ' | sed 's/ *$//')"
   extra="$(m_toolset_extra_missing | tr '\n' ' ' | sed 's/ *$//')"
 
-  # Repo tambahan (mis. x11-repo untuk chromium/tesseract) dipasang lebih dulu.
+  # Extra repos (e.g. x11-repo for chromium/tesseract) are installed first.
   if [ -n "$extra" ] && [ -n "${CODEMUX_APT_REPOS:-}" ]; then
     # shellcheck disable=SC2086
     codemux_apt_install $CODEMUX_APT_REPOS >/dev/null 2>&1 || true
@@ -65,21 +65,21 @@ m_toolset_apply() {
   if [ -n "$miss" ]; then
     # shellcheck disable=SC2086
     if ! codemux_apt_install $miss; then
-      APPLY_NOTE="apt gagal: $miss"
+      APPLY_NOTE="apt failed: $miss"
       return 1
     fi
-    APPLY_NOTE="dipasang: $miss"
+    APPLY_NOTE="installed: $miss"
   else
-    APPLY_NOTE="tidak ada yang perlu dipasang"
+    APPLY_NOTE="nothing to install"
   fi
 
   if [ -n "$extra" ]; then
     # shellcheck disable=SC2086
     if codemux_apt_install $extra >/dev/null 2>&1; then
-      bonus=" · opsional: $extra"
+      bonus=" · optional: $extra"
     else
-      bonus=" · opsional dilewati: $extra"
-      log_warn "paket opsional gagal dipasang (bukan kegagalan install): $extra"
+      bonus=" · optional skipped: $extra"
+      log_warn "optional packages failed to install (not an install failure): $extra"
     fi
   fi
 

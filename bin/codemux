@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# codemux — pemasang & pemelihara Termux (M6: install + pemeliharaan + rilis).
+# codemux — Termux installer & maintainer (M6: install + maintenance + release).
 # shellcheck shell=bash
 set -Eeuo pipefail
 
@@ -45,7 +45,7 @@ case "$cmd" in
   help | --help | -h) codemux_usage ;;
   self-update) codemux_cmd_self_update "$@" ;;
   *)
-    log_fail "perintah tidak dikenal: $cmd"
+    log_fail "unknown command: $cmd"
     codemux_usage >&2
     exit 1
     ;;

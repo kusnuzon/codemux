@@ -1,7 +1,7 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034  # PROBE/NOTE/global dipakai lintas file
-# lib/common.sh — helper dasar codemux (warna, log, deteksi, util).
-# Tidak melakukan aksi apa pun saat di-source.
+# shellcheck disable=SC2034  # PROBE/NOTE/globals are shared across files
+# lib/common.sh — core codemux helpers (colors, logging, detection, utils).
+# Performs no action when sourced.
 
 CODEMUX_NAME="codemux"
 CODEMUX_ROOT="${CODEMUX_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -9,8 +9,8 @@ CODEMUX_VERSION="$(cat "$CODEMUX_ROOT/VERSION" 2>/dev/null || echo "0.0.0")"
 CODEMUX_HOME="${CODEMUX_HOME:-$HOME/.config/codemux}"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
-# versions.env (opsional; jangan gagal kalau tidak ada)
-# Nilai dari environment menang atas file (dipakai tests/ dan CI).
+# versions.env (optional; never fail when it is missing)
+# Values from the environment win over the file (used by tests/ and CI).
 _CODEMUX_ENV_APT="${CODEMUX_APT_PACKAGES-__unset__}"
 _CODEMUX_ENV_MIRROR="${CODEMUX_MIRROR_MAIN-__unset__}"
 if [ -f "$CODEMUX_ROOT/versions.env" ]; then
@@ -26,7 +26,7 @@ CODEMUX_APT_PACKAGES="${CODEMUX_APT_PACKAGES:-}"
 CODEMUX_APT_EXTRA="${CODEMUX_APT_EXTRA:-}"
 CODEMUX_APT_REPOS="${CODEMUX_APT_REPOS:-}"
 
-# --- warna -------------------------------------------------------------------
+# --- colors ------------------------------------------------------------------
 codemux_colors() {
   if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_R=$'\033[0m'; C_DIM=$'\033[2m'; C_B=$'\033[1m'
@@ -37,7 +37,7 @@ codemux_colors() {
   fi
 }
 
-# --- log ---------------------------------------------------------------------
+# --- logging -----------------------------------------------------------------
 log_ok()   { printf '%s✔%s %s\n' "$C_OK" "$C_R" "$*"; }
 log_warn() { printf '%s!%s %s\n' "$C_WARN" "$C_R" "$*"; }
 log_fail() { printf '%s✖%s %s\n' "$C_MISS" "$C_R" "$*" >&2; }
@@ -49,7 +49,7 @@ codemux_die() {
   exit 2
 }
 
-# --- util --------------------------------------------------------------------
+# --- utils -------------------------------------------------------------------
 have() { command -v "$1" >/dev/null 2>&1; }
 
 pkg_installed() {
@@ -69,7 +69,7 @@ human_bytes() {
   fi
 }
 
-# Path aman: hanya boleh di dalam $HOME atau $CODEMUX_HOME.
+# Safe path: must be inside $HOME or $CODEMUX_HOME.
 codemux_safe_path() {
   case "$1" in
     "$HOME"/*|"$CODEMUX_HOME"/*) return 0 ;;
@@ -77,19 +77,19 @@ codemux_safe_path() {
   esac
 }
 
-# json_escape: escape minimal untuk output --json.
+# json_escape: minimal escaping for --json output.
 json_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/ /g'
 }
 
-# --- apt & unduhan tahan-lingkungan ------------------------------------------
-# Dua kegagalan nyata saat instalasi Termux dari nol (log 2026-11-02):
-#   1. apt dipakai tanpa `apt-get update` -> "E: Unable to locate package …"
-#      (nodejs/tesseract/chromium) sehingga modul toolset FAIL.
-#   2. paket glibc menimpa libcurl -> curl mati dengan
-#      `cannot locate symbol "SSL_set_quic_tls_early_data_enabled"`, sehingga
-#      SEMUA unduhan sesudahnya (adapter V1/V2, plugin memori) ikut gagal.
-# Helper di bawah menutup keduanya dan dipakai semua modul.
+# --- environment-proof apt & downloads ---------------------------------------
+# Two real failures seen on a from-scratch Termux install (log 2026-11-02):
+#   1. apt used without `apt-get update` -> "E: Unable to locate package …"
+#      (nodejs/tesseract/chromium) so the toolset module FAILED.
+#   2. the glibc package overwrote libcurl -> curl died with
+#      `cannot locate symbol "SSL_set_quic_tls_early_data_enabled"`, so
+#      EVERY later download (V1/V2 adapters, memory plugins) failed too.
+# The helpers below close both gaps and are used by all modules.
 
 CODEMUX_NET_TIMEOUT="${CODEMUX_NET_TIMEOUT:-300}"
 CODEMUX_NET_PROBE="${CODEMUX_NET_PROBE:-https://api.github.com/}"
@@ -104,7 +104,7 @@ codemux_apt_update() {
   return 1
 }
 
-# codemux_apt_install <paket...> — pasang; kalau daftar paket basi, update lalu ulangi.
+# codemux_apt_install <package...> — install; if the package list is stale, update and retry.
 codemux_apt_install() {
   local pkgs=("$@") out rc=0
   [ "${#pkgs[@]}" -gt 0 ] || return 0
@@ -133,10 +133,10 @@ codemux_curl_ok() {
   curl -fsS --max-time 10 -o /dev/null "$CODEMUX_NET_PROBE" >/dev/null 2>&1
 }
 
-# Perbaiki curl yang dirusak paket glibc (libcurl salah versi).
+# Repair curl damaged by the glibc package (wrong libcurl version).
 codemux_heal_curl() {
   codemux_curl_ok && return 0
-  log_warn "curl tidak sehat (biasanya efek paket glibc) — memasang ulang curl/libcurl/openssl"
+  log_warn "curl is unhealthy (usually an effect of the glibc package) — reinstalling curl/libcurl/openssl"
   DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall \
     -o Dpkg::Options::=--force-confold curl libcurl openssl ca-certificates \
     >/dev/null 2>&1 || codemux_apt_install curl libcurl openssl ca-certificates || true
@@ -144,7 +144,7 @@ codemux_heal_curl() {
   codemux_curl_ok
 }
 
-# Satu percobaan unduh. <url> <dest> [accept]
+# One download attempt. <url> <dest> [accept]
 codemux_dl_once() {
   local url="$1" dest="$2" accept="${3:-}"
   if have curl; then
@@ -179,7 +179,7 @@ PY
   return 1
 }
 
-# codemux_download <url> <dest> [accept] — curl, lalu perbaiki curl, lalu wget/python.
+# codemux_download <url> <dest> [accept] — curl, then repair curl, then wget/python.
 codemux_download() {
   local url="$1" dest="$2" accept="${3:-}" part="$2.part"
   mkdir -p "$(dirname "$dest")" || return 1
@@ -198,41 +198,41 @@ codemux_download() {
 
 codemux_usage() {
   cat <<'EOF'
-codemux — pemasang & pemelihara Termux (OpenCode V1 + V2 + ingatan + update)
+codemux — Termux installer & maintainer (OpenCode V1 + V2 + memory + updates)
 
-penggunaan:
-  codemux [perintah] [opsi]
+usage:
+  codemux [command] [options]
 
-perintah:
-  check              status tiap modul (tidak mengubah apa pun)
-  install            pasang yang belum ada; aman diulang & lanjut setelah terputus
-  status             progres install terakhir, lock, 10 baris log terakhir
-  repair             bereskan sisa proses yang mati di tengah
-  version            versi codemux + komponen terpasang
-  help               bantuan ini
-  update-check       bandingkan versi lokal vs rilis hulu (cache 24 jam)
-  upgrade            perbarui apt + payload V1/V2 + launcher
-  doctor             diagnosa lengkap + saran perbaikan
-  memory             status ingatan lintas sesi (read-only)
-  uninstall          lepas payload V1/V2 + blok launcher (memori tetap)
-  self-update        perbarui kode codemux dari rilis hulu
+commands:
+  check              status of each module (changes nothing)
+  install            install what is missing; safe to repeat & resumes after a break
+  status             last install progress, lock, last 10 log lines
+  repair             clean up leftovers from a process that died midway
+  version            codemux version + installed components
+  help               this help
+  update-check       compare local versions with upstream releases (24h cache)
+  upgrade            update apt + V1/V2 payload + launcher
+  doctor             full diagnosis + repair suggestions
+  memory             cross-session memory status (read-only)
+  uninstall          remove V1/V2 payload + launcher block (memory stays)
+  self-update        update the codemux code from the upstream release
 
-opsi check:
-  --json             keluaran mesin
+check options:
+  --json             machine-readable output
 
-opsi install:
-  --dry-run          tampilkan rencana, tidak mengubah apa pun
-  --fresh            mulai dari langkah 1 (bukan melanjutkan)
-  --skip a,b         lewati modul (deps,mirror,storage,toolset,glibc,v1,v2,launcher,dotfiles,memory,self)
-  -y, --yes          tanpa konfirmasi (default: tanpa tanya)
+install options:
+  --dry-run          show the plan, change nothing
+  --fresh            start from step 1 (do not resume)
+  --skip a,b         skip modules (deps,mirror,storage,toolset,glibc,v1,v2,launcher,dotfiles,memory,self)
+  -y, --yes          no confirmation (default: no questions asked)
 
-opsi repair:
-  --dry-run          tampilkan perbaikan yang akan dilakukan
+repair options:
+  --dry-run          show the repairs that would be made
 EOF
 }
 
-# Versi V1 yang SEBENARNYA (payload), bukan versi paket dpkg.
-# dpkg bisa tertinggal: paket 1.19.0 tapi payload sudah 1.19.3.
+# The ACTUAL V1 version (payload), not the dpkg package version.
+# dpkg can lag behind: package 1.19.0 but payload already 1.19.3.
 opencode_v1_version() {
   local v="" dpkg_v=""
   if have opencode; then
@@ -256,7 +256,7 @@ codemux_versions() {
 }
 
 codemux_not_ready() {
-  log_warn "perintah '$1' belum tersedia di versi $CODEMUX_VERSION (milestone berikutnya)."
-  log_dim "Perintah yang tersedia: check, install, status, repair, memory, update-check, doctor, upgrade, uninstall, self-update, version, help."
+  log_warn "command '$1' is not available yet in version $CODEMUX_VERSION (next milestone)."
+  log_dim "Available commands: check, install, status, repair, memory, update-check, doctor, upgrade, uninstall, self-update, version, help."
   exit 1
 }

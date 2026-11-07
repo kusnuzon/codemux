@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # lib/install.sh — `codemux install` (M2) + `codemux status`.
-# Sifat: idempoten, atomik, bisa dilanjutkan setelah mati di tengah.
+# Nature: idempotent, atomic, resumable after being killed midway.
 
 CODEMUX_INSTALL_MODULES=(deps mirror storage toolset glibc v1 v2 launcher dotfiles memory self)
 CODEMUX_INSTALL_CRITICAL="deps glibc"
@@ -12,7 +12,7 @@ codemux_in_list() {
   esac
 }
 
-# verify kalau ada, kalau tidak pakai probe
+# use verify when available, otherwise fall back to probe
 codemux_verify_module() {
   local m="$1"
   PROBE=OK
@@ -37,7 +37,7 @@ codemux_cmd_install() {
       --skip) skip="${2:-}"; shift ;;
       --skip=*) skip="${1#--skip=}" ;;
       -h | --help) codemux_usage; return 0 ;;
-      *) log_warn "opsi tidak dikenal untuk install: $1" ;;
+      *) log_warn "unknown option for install: $1" ;;
     esac
     shift
   done
@@ -47,7 +47,7 @@ codemux_cmd_install() {
   PROBE=OK; NOTE=""
   m_preflight_probe 2>/dev/null || true
   case "$PROBE" in
-    FAIL) log_fail "preflight gagal: $NOTE"; return 2 ;;
+    FAIL) log_fail "preflight failed: $NOTE"; return 2 ;;
     WARN) log_warn "preflight: $NOTE" ;;
   esac
 
@@ -64,18 +64,18 @@ codemux_cmd_install() {
   for m in "${CODEMUX_INSTALL_MODULES[@]}"; do
     i=$((i + 1))
     if codemux_in_list "$m" "$skip"; then
-      act=SKIP; note="dilewati (--skip)"
+      act=SKIP; note="skipped (--skip)"
     elif [ "${PS[$m]}" = OK ]; then
-      act="siap"; note="${PN[$m]}"
+      act="ready"; note="${PN[$m]}"
     else
-      act="PASANG"; note="${PN[$m]}"; need=$((need + 1))
+      act="INSTALL"; note="${PN[$m]}"; need=$((need + 1))
     fi
     printf '  %d/%d %-10s %-7s %s\n' "$i" "$total" "$m" "$act" "$note"
   done
   printf '\n'
 
   if [ "$need" -eq 0 ]; then
-    log_ok "semua modul sudah siap — tidak ada yang perlu dipasang."
+    log_ok "all modules are ready — nothing to install."
     if [ "$dry" -eq 0 ]; then
       codemux_state_init
       codemux_run_reset "${CODEMUX_INSTALL_MODULES[@]}"
@@ -88,7 +88,7 @@ codemux_cmd_install() {
   fi
 
   if [ "$dry" -eq 1 ]; then
-    log_dim "mode --dry-run: tidak ada yang diubah."
+    log_dim "--dry-run mode: nothing was changed."
     return 0
   fi
 
@@ -96,20 +96,20 @@ codemux_cmd_install() {
   codemux_lock_acquire || lock_rc=$?
   case "$lock_rc" in
     0) : ;;
-    1) log_fail "proses lain sedang berjalan: $(codemux_lock_info)"; return 3 ;;
-    *) log_fail "tidak bisa menulis $CODEMUX_HOME"; return 2 ;;
+    1) log_fail "another process is running: $(codemux_lock_info)"; return 3 ;;
+    *) log_fail "cannot write $CODEMUX_HOME"; return 2 ;;
   esac
   # shellcheck disable=SC2064
   trap 'codemux_lock_release' EXIT INT TERM
 
   codemux_state_init
   codemux_log_start
-  printf 'install mulai · skip=%s · preflight=%s\n' "${skip:-none}" "$NOTE" >>"$CODEMUX_LOG"
+  printf 'install start · skip=%s · preflight=%s\n' "${skip:-none}" "$NOTE" >>"$CODEMUX_LOG"
 
   if [ "$fresh" -eq 1 ] || [ ! -f "$(codemux_run_file)" ]; then
     codemux_run_reset "${CODEMUX_INSTALL_MODULES[@]}"
   else
-    log_info "melanjutkan run sebelumnya (pakai --fresh untuk mulai dari nol)"
+    log_info "resuming the previous run (use --fresh to start over)"
   fi
   codemux_run_reconcile
 
@@ -119,8 +119,8 @@ codemux_cmd_install() {
     printf '[%d/%d] %-10s ' "$i" "$total" "$m"
 
     if codemux_in_list "$m" "$skip"; then
-      codemux_run_set "$m" SKIP "dilewati (--skip)"
-      codemux_state_set "$m" SKIP "-" "dilewati (--skip)"
+      codemux_run_set "$m" SKIP "skipped (--skip)"
+      codemux_state_set "$m" SKIP "-" "skipped (--skip)"
       printf '%sSKIP%s\n' "$C_DIM" "$C_R"
       skip_n=$((skip_n + 1))
       continue
@@ -149,7 +149,7 @@ codemux_cmd_install() {
       printf '%sOK%s    %s\n' "$C_OK" "$C_R" "${APPLY_NOTE:-$NOTE}"
       ok_n=$((ok_n + 1))
     elif [ "$PROBE" = WARN ]; then
-      # sudah dipasang, tapi perlu perhatian (mis. MEMORY.md hampir penuh).
+      # already installed, but needs attention (e.g. MEMORY.md almost full).
       codemux_run_set "$m" DONE "${APPLY_NOTE:-$NOTE}"
       codemux_state_set "$m" WARN "-" "${APPLY_NOTE:-$NOTE}"
       printf '%sWARN%s  %s\n' "$C_WARN" "$C_R" "$NOTE"
@@ -161,8 +161,8 @@ codemux_cmd_install() {
       fail_n=$((fail_n + 1))
       failed=1
       if codemux_in_list "$m" "$CODEMUX_INSTALL_CRITICAL"; then
-        log_warn "langkah kritis '$m' gagal — berhenti di sini."
-        log_dim "perbaiki penyebabnya, lalu jalankan lagi: codemux install"
+        log_warn "critical step '$m' failed — stopping here."
+        log_dim "fix the cause, then run again: codemux install"
         break
       fi
     fi
@@ -171,10 +171,10 @@ codemux_cmd_install() {
   printf '\n'
   codemux_run_summary || true
   if [ "$failed" -eq 0 ]; then
-    log_ok "install selesai: $ok_n siap · $skip_n dilewati."
+    log_ok "install finished: $ok_n ready · $skip_n skipped."
   else
-    log_fail "$fail_n langkah gagal."
-    log_dim "lihat: codemux status · lanjutkan: codemux install · perbaiki: codemux repair"
+    log_fail "$fail_n steps failed."
+    log_dim "see: codemux status · resume: codemux install · repair: codemux repair"
   fi
   log_dim "log: $CODEMUX_LOG"
 
@@ -194,17 +194,17 @@ codemux_cmd_status() {
   f="$(codemux_run_file)"
   if [ -f "$f" ]; then
     [ -d "$CODEMUX_HOME/lock" ] || codemux_run_reconcile
-    printf '\nprogres install terakhir:\n'
+    printf '\nlast install progress:\n'
     awk -F'\t' '!/^#/ {printf "  %-10s %-12s %s\n", $1, $2, $7}' "$f"
     codemux_run_summary || true
   else
-    printf '\nbelum ada run install (jalankan: codemux install)\n'
+    printf '\nno install run yet (run: codemux install)\n'
   fi
 
   local log
   log="$(codemux_log_latest)"
   if [ -n "$log" ]; then
-    printf '\nlog terakhir: %s\n' "$log"
+    printf '\nlast log: %s\n' "$log"
     tail -n 10 "$log" 2>/dev/null | sed 's/^/  /'
   fi
   return 0

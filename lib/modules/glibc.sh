@@ -1,9 +1,9 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034  # PROBE/NOTE/global dipakai lintas file
-# modul: glibc — runtime glibc Termux (wajib untuk payload OpenCode).
-# Catatan: pemasangan glibc bisa menimpa libcurl milik Termux sehingga curl
-# mati ("cannot locate symbol SSL_set_quic_tls_early_data_enabled"). Semua
-# modul sesudahnya butuh curl, jadi curl dipulihkan di akhir modul ini.
+# shellcheck disable=SC2034  # PROBE/NOTE/globals are shared across files
+# module: glibc — the Termux glibc runtime (required by the OpenCode payloads).
+# Note: installing glibc can overwrite Termux's libcurl so curl dies
+# ("cannot locate symbol SSL_set_quic_tls_early_data_enabled"). Every module
+# after this one needs curl, so curl is repaired at the end of this module.
 
 m_glibc_probe() {
   local ld="$PREFIX/glibc/lib/ld-linux-aarch64.so.1"
@@ -17,10 +17,10 @@ m_glibc_probe() {
     if codemux_curl_ok; then
       PROBE=OK; NOTE="loader + libc.so.6"
     else
-      PROBE=WARN; NOTE="loader + libc.so.6 · curl perlu dipulihkan"
+      PROBE=WARN; NOTE="loader + libc.so.6 · curl needs repairing"
     fi
   else
-    PROBE=MISS; NOTE="kurang: $missing (paket glibc-repo, glibc, termux-exec-glibc)"
+    PROBE=MISS; NOTE="missing: $missing (packages glibc-repo, glibc, termux-exec-glibc)"
   fi
 }
 
@@ -30,26 +30,26 @@ m_glibc_apply() {
   local ld="$PREFIX/glibc/lib/ld-linux-aarch64.so.1"
 
   if [ ! -x "$ld" ]; then
-    # glibc-repo harus ditambahkan dulu, baru paket glibc tersedia.
-    codemux_apt_install glibc-repo || { APPLY_NOTE="gagal memasang glibc-repo"; return 1; }
+    # glibc-repo must be added first, only then are the glibc packages available.
+    codemux_apt_install glibc-repo || { APPLY_NOTE="failed to install glibc-repo"; return 1; }
     codemux_apt_update || true
     codemux_apt_install glibc termux-exec-glibc || {
-      APPLY_NOTE="gagal memasang glibc/termux-exec-glibc"
+      APPLY_NOTE="failed to install glibc/termux-exec-glibc"
       return 1
     }
-    [ -x "$ld" ] || { APPLY_NOTE="loader glibc tidak muncul di $ld"; return 1; }
-    APPLY_NOTE="glibc-repo + glibc + termux-exec-glibc dipasang"
+    [ -x "$ld" ] || { APPLY_NOTE="the glibc loader did not appear at $ld"; return 1; }
+    APPLY_NOTE="glibc-repo + glibc + termux-exec-glibc installed"
   else
-    APPLY_NOTE="runtime glibc sudah ada"
+    APPLY_NOTE="the glibc runtime is already present"
   fi
 
-  # Jaring pengaman: pulihkan curl sebelum modul v1/v2/memory mengunduh apa pun.
+  # Safety net: repair curl before the v1/v2/memory modules download anything.
   if ! codemux_curl_ok; then
     if codemux_heal_curl; then
-      APPLY_NOTE="$APPLY_NOTE · curl dipulihkan"
+      APPLY_NOTE="$APPLY_NOTE · curl repaired"
     else
-      APPLY_NOTE="$APPLY_NOTE · curl masih rusak (unduhan bisa gagal)"
-      log_warn "curl masih rusak setelah pemasangan ulang; modul unduhan akan mencoba wget/python"
+      APPLY_NOTE="$APPLY_NOTE · curl is still broken (downloads may fail)"
+      log_warn "curl is still broken after reinstalling; download modules will try wget/python"
     fi
   fi
   return 0
