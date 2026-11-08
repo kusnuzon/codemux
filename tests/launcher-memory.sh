@@ -252,10 +252,55 @@ if grep -qF '\033[?25l' "$TPL" && grep -qF '\033[?25h' "$TPL"; then
 else
   bad "menu: cursor escapes (?25l/?25h) incomplete"
 fi
-if grep -qF '\033[7A' "$TPL" && ! grep -qF '\033[8A' "$TPL"; then
-  ok "menu: redraws only the option rows (\\033[7A)"
+if grep -qF '\033[%dA' "$TPL" && ! grep -qF '\033[7A' "$TPL" && ! grep -qF '\033[8A' "$TPL"; then
+  ok "menu: redraws only the option rows (dynamic offset)"
 else
-  bad "menu: still rewrites the whole block (\\033[8A)"
+  bad "menu: still rewrites the whole block with a fixed offset"
+fi
+if grep -q '_oc_redraw()' "$TPL" && grep -q '_OC_COUNT + 3' "$TPL"; then
+  ok "menu: redraw offset follows the row count (_OC_COUNT + 3)"
+else
+  bad "menu: redraw offset is not derived from _OC_COUNT"
+fi
+# the menu only offers the components that are actually installed
+menu_keys() { # <sandbox> → keys of the menu rows
+  local sb="$1"
+  env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
+      PATH="$2"   # only the sandbox bin: the real installed codemux must not leak in
+      . "$1"
+      _oc_items
+      printf "%s" "${_OC_KEYS[*]}"
+    ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
+}
+SB5="$(new_sandbox menu-items)"
+mkdir -p "$SB5/prefix/bin"
+printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode-v2"
+chmod +x "$SB5/prefix/bin/opencode-v2"
+if [ "$(menu_keys "$SB5")" = "v2 shell quit" ]; then
+  ok "menu: V2-only install hides the V1 row"
+else
+  bad "menu: V2-only install still offers V1 ($(menu_keys "$SB5"))"
+fi
+rm -f "$SB5/prefix/bin/opencode-v2"
+printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode"
+chmod +x "$SB5/prefix/bin/opencode"
+if [ "$(menu_keys "$SB5")" = "v1 shell quit" ]; then
+  ok "menu: V1-only install hides the V2 row"
+else
+  bad "menu: V1-only install still offers V2 ($(menu_keys "$SB5"))"
+fi
+printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode-v2"
+chmod +x "$SB5/prefix/bin/opencode-v2"
+if [ "$(menu_keys "$SB5")" = "v1 v2 shell quit" ]; then
+  ok "menu: both components installed → four rows"
+else
+  bad "menu: both components installed → rows are $(menu_keys "$SB5")"
+fi
+rm -f "$SB5/prefix/bin/opencode" "$SB5/prefix/bin/opencode-v2"
+if [ "$(menu_keys "$SB5")" = "shell quit" ]; then
+  ok "menu: nothing installed → only shell/quit"
+else
+  bad "menu: nothing installed → rows are $(menu_keys "$SB5")"
 fi
 if grep -q '_oc_rows()' "$TPL" && grep -q '033\[K' "$TPL"; then
   ok "menu: option rows cleared to the end (\\033[K)"

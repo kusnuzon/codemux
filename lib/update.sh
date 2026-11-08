@@ -91,17 +91,22 @@ codemux_update_rows() { # print the TSV rows of the current check
   fi
   printf 'codemux\t%s\t%s\t%s\n' "$c_local" "$c_latest" "$state"
 
-  case "$v1" in [!0-9]*) state="na" ;; *) state="" ;; esac
-  if [ -z "$v1_latest" ] || [ "$state" = na ]; then state="na"; v1_latest="${v1_latest:--}"; else
-    state="ok"; codemux_ver_newer "$v1_latest" "$v1" && state="update"
+  # Only the components the user selected are reported (V1 only / V2 only / both).
+  if codemux_component_selected v1; then
+    case "$v1" in [!0-9]*) state="na" ;; *) state="" ;; esac
+    if [ -z "$v1_latest" ] || [ "$state" = na ]; then state="na"; v1_latest="${v1_latest:--}"; else
+      state="ok"; codemux_ver_newer "$v1_latest" "$v1" && state="update"
+    fi
+    printf 'opencode-v1\t%s\t%s\t%s\n' "$v1" "$v1_latest" "$state"
   fi
-  printf 'opencode-v1\t%s\t%s\t%s\n' "$v1" "$v1_latest" "$state"
 
-  case "$v2" in [!0-9]*) state="na" ;; *) state="" ;; esac
-  if [ -z "$v2_latest" ] || [ "$state" = na ]; then state="na"; v2_latest="${v2_latest:--}"; else
-    state="ok"; codemux_ver_newer "$v2_latest" "$v2" && state="update"
+  if codemux_component_selected v2; then
+    case "$v2" in [!0-9]*) state="na" ;; *) state="" ;; esac
+    if [ -z "$v2_latest" ] || [ "$state" = na ]; then state="na"; v2_latest="${v2_latest:--}"; else
+      state="ok"; codemux_ver_newer "$v2_latest" "$v2" && state="update"
+    fi
+    printf 'opencode-v2\t%s\t%s\t%s\n' "$v2" "$v2_latest" "$state"
   fi
-  printf 'opencode-v2\t%s\t%s\t%s\n' "$v2" "$v2_latest" "$state"
 
   apt_n="$(codemux_apt_upgradable)"
   state="ok"; [ "${apt_n:-0}" -gt 0 ] && state="update"

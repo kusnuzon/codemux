@@ -1,7 +1,8 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
-# The menu uses arrow keys (↑/↓) + Enter, or numbers 1/2/3 and q.
+# The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
+# Components that are not installed are not offered by the menu.
 # Skip everything: OPENCODE_NO_AUTO=1 bash
 _oc_ver() {
   local v=""
@@ -37,41 +38,76 @@ _oc_banner() {
            "▀▀▀▀ ▀    ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"; do
     printf '   %s%s%s%s%s%s\n' "$C1" "${a:0:19}" "$R" "$C2" "${a:19}" "$R"
   done
-  printf '   %sTermux · Android arm64%s   %sv1 %s%s  %s·%s  %sv2 %s%s\n\n' \
-    "$DIM" "$R" "$DIM" "$(_oc_ver v1)" "$R" "$DIM" "$R" "$DIM" "$(_oc_ver v2)" "$R"
+  # Only the installed components are listed (V1 only / V2 only / both).
+  local bits=""
+  if command -v opencode >/dev/null 2>&1; then
+    bits="v1 $(_oc_ver v1)"
+  fi
+  if command -v opencode-v2 >/dev/null 2>&1; then
+    bits="${bits:+$bits  ·  }v2 $(_oc_ver v2)"
+  fi
+  if [ -n "$bits" ]; then
+    printf '   %sTermux · Android arm64%s   %s%s%s\n\n' "$DIM" "$R" "$DIM" "$bits" "$R"
+  else
+    printf '   %sTermux · Android arm64%s   %sno OpenCode yet%s\n\n' "$DIM" "$R" "$DIM" "$R"
+  fi
 }
 
-# One menu row: <index> <selected?>
+# Menu items depend on what is installed: a component that is not installed is
+# not offered, so a V1-only or V2-only install shows only what it can run.
+_oc_items() {
+  _OC_KEYS=()
+  _OC_NAMES=()
+  _OC_DESCS=()
+  if command -v opencode >/dev/null 2>&1; then
+    _OC_KEYS+=("v1"); _OC_NAMES+=("OpenCode V1"); _OC_DESCS+=("stable · legacy DB")
+  fi
+  if command -v opencode-v2 >/dev/null 2>&1; then
+    _OC_KEYS+=("v2"); _OC_NAMES+=("OpenCode V2"); _OC_DESCS+=("new · separate DB")
+  fi
+  _OC_KEYS+=("shell"); _OC_NAMES+=("Shell only"); _OC_DESCS+=("no opencode")
+  _OC_KEYS+=("quit"); _OC_NAMES+=("Quit"); _OC_DESCS+=("close Termux")
+  _OC_COUNT="${#_OC_KEYS[@]}"
+}
+
+# One menu row: <index> <selected index>
 _oc_row() {
-  local idx="$1" sel="$2" key="$3" name="$4" desc="$5" arrow pad namepad
+  local idx="$1" sel="$2" arrow pad namepad
   if [ "$idx" = "$sel" ]; then
     arrow="$ACC❯$R"; pad="$HL"
   else
     arrow=" "; pad=""
   fi
-  printf -v namepad '%-13s' "$name"
+  printf -v namepad '%-13s' "${_OC_NAMES[$idx]}"
   printf '  %s %s%s%s%s %s%s%s%s  %s%s%s\033[K\n' \
-    "$arrow" "$pad" "$BOLD" "$key" "$R" \
+    "$arrow" "$pad" "$BOLD" "$((idx + 1))" "$R" \
     "$pad" "$BOLD" "$namepad" "$R" \
-    "$pad" "$DIM" "$desc$R"
+    "$pad" "$DIM" "${_OC_DESCS[$idx]}$R"
 }
 
-# Only the 4 option rows (no rules or hints) — used to redraw the selection
+# Only the option rows (no rules or hints) — used to redraw the selection
 # while arrow keys are pressed, so the screen does not flicker.
 _oc_rows() {
-  local sel="$1"
-  _oc_row 0 "$sel" 1 "OpenCode V1" "stable · legacy DB"
-  _oc_row 1 "$sel" 2 "OpenCode V2" "new · separate DB"
-  _oc_row 2 "$sel" 3 "Shell only" "no opencode"
-  _oc_row 3 "$sel" q "Quit" "close Termux"
+  local sel="$1" i
+  for ((i = 0; i < _OC_COUNT; i++)); do
+    _oc_row "$i" "$sel"
+  done
 }
 
 _oc_menu() {
   printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
   _oc_rows "$1"
   printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
-  printf '  %s↑/↓ select%s   %sEnter run%s   %s1/2/3/q%s   %sCtrl+C cancel%s\n\n' \
-    "$DIM" "$R" "$DIM" "$R" "$DIM" "$R" "$DIM" "$R"
+  printf '  %s↑/↓ select%s   %sEnter run%s   %s1-%d/q%s   %sCtrl+C cancel%s\n\n' \
+    "$DIM" "$R" "$DIM" "$R" "$DIM" "$_OC_COUNT" "$R" "$DIM" "$R"
+}
+
+# Redraw only the option rows: from the blank line below the menu move up
+# (rows + rule + hint) lines, write the rows, then move down 3 lines.
+_oc_redraw() {
+  printf '\033[%dA' "$((_OC_COUNT + 3))"
+  _oc_rows "$1"
+  printf '\033[3B'
 }
 
 _oc_read_key() {
@@ -169,12 +205,19 @@ _oc_cursor_show() { printf '\033[?25h'; }
 
 # Returns 0 = continue to the shell, 1 = exit Termux.
 _oc_menu_loop() {
-  local sel=0 full=1 choice_file="$HOME/.local/state/opencode-choice"
-  case "$(cat "$choice_file" 2>/dev/null)" in
-    2) sel=1 ;;
-    3) sel=2 ;;
-    *) sel=0 ;;
+  local sel=0 full=1 i saved key choice_file="$HOME/.local/state/opencode-choice"
+  _oc_items
+  # Restore the last choice (accepts the old numeric format too).
+  saved="$(cat "$choice_file" 2>/dev/null)"
+  case "$saved" in
+    1) saved="v1" ;;
+    2) saved="v2" ;;
+    3) saved="shell" ;;
+    4) saved="quit" ;;
   esac
+  for ((i = 0; i < _OC_COUNT; i++)); do
+    [ "${_OC_KEYS[$i]}" = "$saved" ] && sel="$i"
+  done
 
   # The cursor is hidden while the menu is open: otherwise it blinks on the
   # bottom row and looks like a glitch when moving up/down. Ctrl+C only
@@ -190,53 +233,42 @@ _oc_menu_loop() {
       _oc_menu "$sel"
       full=0
     else
-      # redraw only the 4 option rows (rules and hints are left alone):
-      # from the blank line below the menu move up 7 rows to the first option,
-      # write 4 rows, then move down 3 rows (rule + hint + blank line).
-      printf '\033[7A'
-      _oc_rows "$sel"
-      printf '\033[3B'
+      _oc_redraw "$sel"
     fi
     _oc_read_key
 
     case "$KEY" in
-      up|left)   sel=$(( (sel + 3) % 4 )) ;;
-      down|right) sel=$(( (sel + 1) % 4 )) ;;
+      up|left)   sel=$(( (sel + _OC_COUNT - 1) % _OC_COUNT )) ;;
+      down|right) sel=$(( (sel + 1) % _OC_COUNT )) ;;
       enter)
-        case "$sel" in
-          0|1)
+        key="${_OC_KEYS[$sel]}"
+        case "$key" in
+          v1|v2)
             mkdir -p "$HOME/.local/state" 2>/dev/null
-            printf '%s\n' "$((sel + 1))" >"$choice_file" 2>/dev/null
+            printf '%s\n' "$key" >"$choice_file" 2>/dev/null
             printf '\n'
             # opencode needs a visible cursor; hide it again when back in the menu
             _oc_cursor_show
-            if [ "$sel" -eq 0 ]; then
+            if [ "$key" = "v1" ]; then
               printf '  %s→ OpenCode V1%s\n\n' "$DIM" "$R"
-              if command -v opencode >/dev/null 2>&1; then
-                opencode
-              else
-                printf '  opencode V1 not found.\n'
-              fi
+              opencode
             else
               printf '  %s→ OpenCode V2%s\n\n' "$DIM" "$R"
-              if command -v opencode-v2 >/dev/null 2>&1; then
-                opencode-v2
-              else
-                printf '  opencode-v2 not found.\n'
-              fi
+              opencode-v2
             fi
             # after opencode closes (e.g. you type exit), return to the menu
             _oc_cursor_hide
             full=1
             ;;
-          2) printf '\n'; return 0 ;;
-          3) printf '\n'; return 1 ;;
+          shell) printf '\n'; return 0 ;;
+          quit) printf '\n'; return 1 ;;
         esac
         ;;
-      1) sel=0 ;;
-      2) sel=1 ;;
-      3) sel=2 ;;
-      q|Q) sel=3; return 1 ;;
+      [1-9])
+        # number keys select a row directly (1..N)
+        if [ "$KEY" -le "$_OC_COUNT" ]; then sel=$((KEY - 1)); fi
+        ;;
+      q|Q) sel=$((_OC_COUNT - 1)); return 1 ;;
       esc|cancel|ctrl-c) ;;
     esac
   done
@@ -251,11 +283,14 @@ _oc_cmd_row() {
 _oc_guide() {
   printf '  %sShell only selected — opencode was not started.%s\n\n' "$DIM" "$R"
   printf '  %sAvailable commands:%s\n' "$BOLD" "$R"
-  _oc_cmd_row menu          'back to the choice menu (V1 / V2 / shell / quit)'
-  _oc_cmd_row opencode      'run OpenCode V1 directly'
-  _oc_cmd_row opencode-v2   'run OpenCode V2 directly'
-  _oc_cmd_row doctor        'health check for the OpenCode V2 install'
-  _oc_cmd_row version       'show the V1 and V2 versions'
+  _oc_cmd_row menu          'back to the choice menu'
+  command -v opencode >/dev/null 2>&1 &&
+    _oc_cmd_row opencode    'run OpenCode V1 directly'
+  command -v opencode-v2 >/dev/null 2>&1 &&
+    _oc_cmd_row opencode-v2 'run OpenCode V2 directly'
+  [ -f "$PREFIX/share/opencode-v2/doctor.sh" ] &&
+    _oc_cmd_row doctor      'health check for the OpenCode V2 install'
+  _oc_cmd_row version       'show the installed OpenCode versions'
   command -v kuota >/dev/null 2>&1 &&
     _oc_cmd_row kuota       'estimated remaining free-model quota'
   _oc_cmd_row codemux       'check & maintain Termux (check / install / status)'
@@ -283,8 +318,16 @@ _oc_launcher() {
 
 menu() { _oc_launcher; }
 version() {
-  printf 'OpenCode V1 : %s\n' "$(_oc_ver v1)"
-  printf 'OpenCode V2 : %s\n' "$(_oc_ver v2)"
+  local found=0
+  if command -v opencode >/dev/null 2>&1; then
+    printf 'OpenCode V1 : %s\n' "$(_oc_ver v1)"
+    found=1
+  fi
+  if command -v opencode-v2 >/dev/null 2>&1; then
+    printf 'OpenCode V2 : %s\n' "$(_oc_ver v2)"
+    found=1
+  fi
+  [ "$found" -eq 1 ] || printf 'no OpenCode installed — run: codemux install\n'
 }
 doctor() {
   if [ -f "$PREFIX/share/opencode-v2/doctor.sh" ]; then

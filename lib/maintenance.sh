@@ -211,7 +211,8 @@ codemux_cmd_upgrade() {
       --only=*) only="${1#--only=}" ;;
       -h | --help)
         printf '%s\n' 'usage: codemux upgrade [--dry-run] [--yes] [--only apt,v1,v2,launcher]' \
-          '' 'Update apt packages, the OpenCode V1/V2 payloads, then sync the launcher block.' \
+          '' 'Update apt packages, the selected OpenCode payloads, then sync the launcher block.' \
+          'By default only the components chosen at install time are updated (V1/V2/both).' \
           'The apt opencode package stays held; memory & projects are untouched.'
         return 0
         ;;
@@ -221,8 +222,16 @@ codemux_cmd_upgrade() {
   done
   codemux_load_modules
 
-  local -a steps=(apt v1 v2 launcher)
-  local -a run=()
+  local -a steps=() run=()
+  if [ -n "$only" ]; then
+    # An explicit --only may name any component, selected or not.
+    steps=(apt v1 v2 launcher)
+  else
+    steps=(apt)
+    codemux_component_selected v1 && steps+=(v1)
+    codemux_component_selected v2 && steps+=(v2)
+    steps+=(launcher)
+  fi
   for m in "${steps[@]}"; do
     if [ -n "$only" ] && ! codemux_in_list "$m" "$only"; then continue; fi
     run+=("$m")

@@ -25,6 +25,8 @@ OPENCODE_V2_VERSION="${OPENCODE_V2_VERSION:-?}"
 CODEMUX_APT_PACKAGES="${CODEMUX_APT_PACKAGES:-}"
 CODEMUX_APT_EXTRA="${CODEMUX_APT_EXTRA:-}"
 CODEMUX_APT_REPOS="${CODEMUX_APT_REPOS:-}"
+# Components installed by default (the user can pick V1 only, V2 only, or both).
+CODEMUX_COMPONENTS_DEFAULT="${CODEMUX_COMPONENTS_DEFAULT:-v1 v2}"
 
 # --- colors ------------------------------------------------------------------
 codemux_colors() {
@@ -196,6 +198,59 @@ codemux_download() {
   return 1
 }
 
+# --- component selection (V1 only / V2 only / both) --------------------------
+# The choice is stored in ~/.config/codemux/components ("v1 v2" = both) so
+# install, check, upgrade and update-check agree with each other.
+codemux_components_file() { printf '%s/components' "$CODEMUX_HOME"; }
+
+# codemux_components_norm <v1|v2|both|v1,v2|...> → "v1 v2" (ordered, unique)
+# Returns 1 for anything unrecognised.
+codemux_components_norm() {
+  local raw="${1:-}" item seen_v1=0 seen_v2=0 out=""
+  raw="${raw//,/ }"
+  for item in $raw; do
+    case "$item" in
+      both | all)
+        seen_v1=1; seen_v2=1 ;;
+      v1) seen_v1=1 ;;
+      v2) seen_v2=1 ;;
+      *) return 1 ;;
+    esac
+  done
+  [ "$seen_v1" -eq 1 ] && out="v1"
+  if [ "$seen_v2" -eq 1 ]; then
+    out="${out:+$out }v2"
+  fi
+  [ -n "$out" ] || return 1
+  printf '%s' "$out"
+}
+
+# Saved selection, or the default when nothing has been saved yet.
+codemux_components_get() {
+  local f val
+  f="$(codemux_components_file)"
+  if [ -f "$f" ]; then
+    val="$(codemux_components_norm "$(tr '\n' ' ' <"$f" 2>/dev/null)")" &&
+      { printf '%s' "$val"; return 0; }
+  fi
+  printf '%s' "$CODEMUX_COMPONENTS_DEFAULT"
+}
+
+# Persist the selection (atomic). Returns 1 when the list is invalid.
+codemux_components_set() {
+  local val
+  val="$(codemux_components_norm "$1")" || return 1
+  mkdir -p "$CODEMUX_HOME" || return 1
+  printf '%s\n' "$val" | codemux_atomic_write "$(codemux_components_file)"
+}
+
+codemux_component_selected() {
+  case " $(codemux_components_get) " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 codemux_usage() {
   cat <<'EOF'
 codemux — Termux installer & maintainer (OpenCode V1 + V2 + memory + updates)
@@ -223,8 +278,19 @@ check options:
 install options:
   --dry-run          show the plan, change nothing
   --fresh            start from step 1 (do not resume)
+  --only v1|v2|both  install OpenCode V1 only, V2 only, or both (default: ask,
+                     or keep the saved choice; non-interactive → both)
+  --components X     same as --only
   --skip a,b         skip modules (deps,mirror,storage,toolset,glibc,v1,v2,launcher,dotfiles,memory,self)
-  -y, --yes          no confirmation (default: no questions asked)
+  -y, --yes          no confirmation, never ask (keep the saved/default choice)
+
+component choice:
+  With --only v1 only the V1 payload is installed (V2 stays untouched) and the
+  other way around; "both" installs V1 + V2. The shared dependencies (base
+  tools, apt toolset, glibc runtime, memory files, launcher) are ALWAYS
+  installed first, so any choice works on a fresh Termux install.
+  The choice is saved in ~/.config/codemux/components and reused by
+  install/check/upgrade/update-check. Override it any time with --only.
 
 repair options:
   --dry-run          show the repairs that would be made
@@ -250,9 +316,18 @@ opencode_v2_version() {
 }
 
 codemux_versions() {
+  local found=0
   printf '%-16s %s\n' "codemux" "$CODEMUX_VERSION"
-  printf '%-16s %s\n' "opencode-v1" "$(opencode_v1_version)"
-  printf '%-16s %s\n' "opencode-v2" "$(opencode_v2_version)"
+  if codemux_component_selected v1 && have opencode; then
+    printf '%-16s %s\n' "opencode-v1" "$(opencode_v1_version)"
+    found=1
+  fi
+  if codemux_component_selected v2 && [ -x "$PREFIX/share/opencode-v2/opencode.real" ]; then
+    printf '%-16s %s\n' "opencode-v2" "$(opencode_v2_version)"
+    found=1
+  fi
+  [ "$found" -eq 1 ] || printf '%-16s %s\n' "components" "none installed yet"
+  printf '%-16s %s\n' "components" "$(codemux_components_get)"
 }
 
 codemux_not_ready() {

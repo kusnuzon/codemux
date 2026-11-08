@@ -2,7 +2,10 @@
 # lib/install.sh — `codemux install` (M2) + `codemux status`.
 # Nature: idempotent, atomic, resumable after being killed midway.
 
-CODEMUX_INSTALL_MODULES=(deps mirror storage toolset glibc v1 v2 launcher dotfiles memory self)
+# Base modules: always installed, whatever OpenCode components are chosen.
+# The V1/V2 payload modules are appended only when selected.
+CODEMUX_INSTALL_BASE=(deps mirror storage toolset glibc)
+CODEMUX_INSTALL_TAIL=(launcher dotfiles memory self)
 CODEMUX_INSTALL_CRITICAL="deps glibc"
 
 codemux_in_list() {
@@ -10,6 +13,35 @@ codemux_in_list() {
     *",$1,"*) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# Interactive picker (only used when the user runs `codemux install` in a TTY
+# and has not chosen before). Everything stays English: repo output only.
+codemux_components_ask() {
+  local ans
+  # The prompt goes to stderr: only the answer is captured by $( ).
+  printf '\n%sWhich OpenCode should be installed?%s\n' "$C_B" "$C_R" >&2
+  printf '  1) OpenCode V1 only (stable, legacy DB)\n' >&2
+  printf '  2) OpenCode V2 only (new, separate DB)\n' >&2
+  printf '  3) Both (V1 + V2, default)\n' >&2
+  printf 'Choose [3]: ' >&2
+  read -r ans || ans=""
+  case "$ans" in
+    1) printf 'v1' ;;
+    2) printf 'v2' ;;
+    *) printf 'v1 v2' ;;
+  esac
+}
+
+# Build the module list for this run (base + selected payloads + shared tail).
+codemux_install_modules() {
+  local comps="$1" m
+  local -a list=("${CODEMUX_INSTALL_BASE[@]}")
+  case " $comps " in *" v1 "*) list+=(v1) ;; esac
+  case " $comps " in *" v2 "*) list+=(v2) ;; esac
+  list+=("${CODEMUX_INSTALL_TAIL[@]}")
+  CODEMUX_INSTALL_MODULES=("${list[@]}")
+  return 0
 }
 
 # use verify when available, otherwise fall back to probe
@@ -25,15 +57,19 @@ codemux_verify_module() {
 }
 
 codemux_cmd_install() {
-  local dry=0 fresh=0 skip="" i=0 total need=0 m act note
-  local failed=0 ok_n=0 fail_n=0 skip_n=0
+  local dry=0 fresh=0 only="" skip="" comps="" i=0 total need=0 m act note
+  local failed=0 ok_n=0 fail_n=0 skip_n=0 compfile
   local -A PS=() PN=()
 
   while [ $# -gt 0 ]; do
     case "$1" in
       --dry-run) dry=1 ;;
-      --yes | -y) : ;;
+      --yes | -y) CODEMUX_YES=1 ;;
       --fresh) fresh=1 ;;
+      --only) only="${2:-}"; shift ;;
+      --only=*) only="${1#--only=}" ;;
+      --components) only="${2:-}"; shift ;;
+      --components=*) only="${1#--components=}" ;;
       --skip) skip="${2:-}"; shift ;;
       --skip=*) skip="${1#--skip=}" ;;
       -h | --help) codemux_usage; return 0 ;;
@@ -41,6 +77,33 @@ codemux_cmd_install() {
     esac
     shift
   done
+
+  compfile="$(codemux_components_file)"
+  if [ -n "$only" ]; then
+    comps="$(codemux_components_norm "$only")" || {
+      log_fail "unknown component list '$only' — use: v1, v2, or both"
+      return 2
+    }
+  elif [ -n "${CODEMUX_COMPONENTS:-}" ]; then
+    comps="$(codemux_components_norm "$CODEMUX_COMPONENTS")" || {
+      log_fail "unknown CODEMUX_COMPONENTS '${CODEMUX_COMPONENTS}' — use: v1, v2, or both"
+      return 2
+    }
+  elif [ -f "$compfile" ]; then
+    comps="$(codemux_components_get)"
+  elif [ "$dry" -eq 0 ] && [ "${CODEMUX_YES:-0}" != 1 ] && [ -t 0 ] && [ -t 1 ]; then
+    comps="$(codemux_components_ask)" || comps=""
+    comps="$(codemux_components_norm "$comps")" || comps=""
+  else
+    comps="$(codemux_components_get)"
+  fi
+  [ -n "$comps" ] || comps="$(codemux_components_get)"
+
+  # Remember the choice so check/upgrade/update-check follow it later.
+  if [ "$dry" -eq 0 ]; then
+    codemux_components_set "$comps" || log_warn "cannot save the component choice in $compfile"
+  fi
+  codemux_install_modules "$comps"
 
   codemux_load_modules
 
@@ -58,7 +121,8 @@ codemux_cmd_install() {
   done
 
   total=${#CODEMUX_INSTALL_MODULES[@]}
-  printf '%s%s %s%s · install%s\n\n' "$C_B" "$CODEMUX_NAME" "$CODEMUX_VERSION" "$C_R" \
+  printf '%s%s %s%s · install [%s]%s\n\n' "$C_B" "$CODEMUX_NAME" "$CODEMUX_VERSION" "$C_R" \
+    "$(printf '%s' "$comps" | tr ' ' '+')" \
     "$([ "$dry" -eq 1 ] && printf ' (dry-run)')"
 
   for m in "${CODEMUX_INSTALL_MODULES[@]}"; do
@@ -104,7 +168,8 @@ codemux_cmd_install() {
 
   codemux_state_init
   codemux_log_start
-  printf 'install start · skip=%s · preflight=%s\n' "${skip:-none}" "$NOTE" >>"$CODEMUX_LOG"
+  printf 'install start · components=%s · skip=%s · preflight=%s\n' \
+    "$comps" "${skip:-none}" "$NOTE" >>"$CODEMUX_LOG"
 
   if [ "$fresh" -eq 1 ] || [ ! -f "$(codemux_run_file)" ]; then
     codemux_run_reset "${CODEMUX_INSTALL_MODULES[@]}"

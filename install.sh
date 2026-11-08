@@ -3,6 +3,8 @@
 # Safe to use via `curl … | bash`: there is no second piped script.
 #   curl -fsSL -H 'Accept: application/vnd.github.raw' \
 #     https://api.github.com/repos/kusnuzon/codemux/contents/install.sh | bash
+#   … | bash -s -- --only v1    # install OpenCode V1 only (v2 / both)
+# Every option is forwarded to `codemux install` unchanged.
 set -Eeuo pipefail
 
 REPO="${CODEMUX_REPO:-kusnuzon/codemux}"

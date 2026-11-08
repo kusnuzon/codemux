@@ -22,7 +22,7 @@ codemux_load_modules() {
 
 codemux_cmd_check() {
   local json=0 a m i=0 label
-  local ok=0 warn=0 miss=0 fail=0
+  local ok=0 warn=0 miss=0 fail=0 skip=0 comps
   local total="${#CODEMUX_MODULES[@]}"
   local -a J=()
 
@@ -34,6 +34,7 @@ codemux_cmd_check() {
   done
 
   codemux_load_modules
+  comps="$(codemux_components_get)"
 
   if [ "$json" -eq 0 ]; then
     printf '%s%s %s%s · check mode (changes nothing)\n\n' \
@@ -44,7 +45,13 @@ codemux_cmd_check() {
     i=$((i + 1))
     PROBE=OK
     NOTE=""
-    "m_${m}_probe" 2>/dev/null || true
+    if { [ "$m" = v1 ] || [ "$m" = v2 ]; } && ! codemux_component_selected "$m"; then
+      # Not selected by the user: report it, but do not count it as missing.
+      PROBE=SKIP
+      NOTE="not selected (components: $comps)"
+    else
+      "m_${m}_probe" 2>/dev/null || true
+    fi
     label="$(codemux_label "$m")"
 
     case "$PROBE" in
@@ -52,6 +59,7 @@ codemux_cmd_check() {
       WARN) warn=$((warn + 1)) ;;
       MISS) miss=$((miss + 1)) ;;
       FAIL) fail=$((fail + 1)) ;;
+      SKIP) skip=$((skip + 1)) ;;
       *) PROBE=FAIL; NOTE="probe error"; fail=$((fail + 1)) ;;
     esac
 
@@ -63,6 +71,7 @@ codemux_cmd_check() {
         WARN) printf '[%2d/%2d] %-12s %sWARN%s  %s%s%s\n' "$i" "$total" "$label" "$C_WARN" "$C_R" "$C_DIM" "$NOTE" "$C_R" ;;
         MISS) printf '[%2d/%2d] %-12s %sMISS%s  %s%s%s\n' "$i" "$total" "$label" "$C_MISS" "$C_R" "$C_DIM" "$NOTE" "$C_R" ;;
         FAIL) printf '[%2d/%2d] %-12s %sFAIL%s  %s%s%s\n' "$i" "$total" "$label" "$C_MISS" "$C_R" "$C_DIM" "$NOTE" "$C_R" ;;
+        SKIP) printf '[%2d/%2d] %-12s %sSKIP%s  %s%s%s\n' "$i" "$total" "$label" "$C_DIM" "$C_R" "$C_DIM" "$NOTE" "$C_R" ;;
       esac
     fi
   done
@@ -72,12 +81,13 @@ codemux_cmd_check() {
   joined="${joined%,}"
 
   if [ "$json" -eq 1 ]; then
-    printf '{"codemux":"%s","versi":"%s","modul":[%s],"ringkasan":{"ok":%d,"warn":%d,"miss":%d,"fail":%d}}\n' \
-      "$CODEMUX_NAME" "$CODEMUX_VERSION" "$joined" "$ok" "$warn" "$miss" "$fail"
+    printf '{"codemux":"%s","versi":"%s","komponen":"%s","modul":[%s],"ringkasan":{"ok":%d,"warn":%d,"miss":%d,"fail":%d,"skip":%d}}\n' \
+      "$CODEMUX_NAME" "$CODEMUX_VERSION" "$comps" "$joined" "$ok" "$warn" "$miss" "$fail" "$skip"
   else
     printf '\n'
-    printf '%s%d OK%s · %s%d WARN%s · %s%d MISS%s · %s%d FAIL%s\n' \
-      "$C_OK" "$ok" "$C_R" "$C_WARN" "$warn" "$C_R" "$C_MISS" "$miss" "$C_R" "$C_MISS" "$fail" "$C_R"
+    printf '%s%d OK%s · %s%d WARN%s · %s%d MISS%s · %s%d FAIL%s · %s%d SKIP%s\n' \
+      "$C_OK" "$ok" "$C_R" "$C_WARN" "$warn" "$C_R" "$C_MISS" "$miss" "$C_R" \
+      "$C_MISS" "$fail" "$C_R" "$C_DIM" "$skip" "$C_R"
 
     if [ "$fail" -gt 0 ]; then
       log_fail "some components do not meet the requirements yet — see the FAIL lines above."

@@ -5,9 +5,9 @@ cross-session memory, a base toolset, and update checks — one command,
 idempotent (safe to repeat), non-destructive.
 
 > **Status: M6 (release 1.0).** Every PRD command works: `check`, `install`
-> (resume-safe, 11 modules), `status`, `repair`, `memory`, `update-check`,
-> `doctor`, `upgrade`, `uninstall`, `self-update`, `version`, `help`. The full
-> design lives in [PRD.md](PRD.md).
+> (resume-safe, 10–11 modules depending on the component choice), `status`,
+> `repair`, `memory`, `update-check`, `doctor`, `upgrade`, `uninstall`,
+> `self-update`, `version`, `help`. The full design lives in [PRD.md](PRD.md).
 
 ## One-command install
 
@@ -22,6 +22,29 @@ When no release exists yet it falls back to the `main` branch (no sha). Options
 are passed through, e.g. `| bash -s -- --dry-run` or
 `| bash -s -- --skip toolset`.
 
+## Choose what to install (V1 only / V2 only / both)
+
+```bash
+# interactive: one 3-row prompt (V1 only / V2 only / both)
+curl -fsSL -H 'Accept: application/vnd.github.raw' \
+  https://api.github.com/repos/kusnuzon/codemux/contents/install.sh | bash
+
+# non-interactive / already decided
+… | bash -s -- --only v1     # OpenCode V1 only (V2 is never touched)
+… | bash -s -- --only v2     # OpenCode V2 only
+… | bash -s -- --only both   # V1 + V2 (default)
+```
+
+- `--components v1|v2|both` and `CODEMUX_COMPONENTS=v1` are aliases.
+- The choice is saved in `~/.config/codemux/components` and reused by
+  `install`, `check`, `upgrade` and `update-check`. Override it any time with
+  `--only`.
+- Every shared dependency (base tools, apt toolset, glibc runtime, memory files,
+  launcher) is installed **first and in full**, whatever the choice is — a
+  fresh Termux ends up complete either way.
+- `check` shows an unselected component as `SKIP` (not as missing), and the
+  startup menu only offers the components that are actually installed.
+
 ## Usage (from the repo)
 
 ```bash
@@ -29,13 +52,14 @@ git clone https://github.com/kusnuzon/codemux
 bash codemux/bin/codemux check              # status of each module, changes nothing
 bash codemux/bin/codemux install --dry-run  # install plan, changes nothing
 bash codemux/bin/codemux install            # install / continue what was interrupted
+bash codemux/bin/codemux install --only v1  # V1 only (or v2 / both)
 bash codemux/bin/codemux status             # progress, lock, last log
 bash codemux/bin/codemux repair             # clean up leftovers from a killed process
 bash codemux/bin/codemux check --json       # for scripts
 bash codemux/bin/codemux memory             # cross-session memory status (read-only)
 bash codemux/bin/codemux update-check       # compare local versions with upstream releases
 bash codemux/bin/codemux doctor             # full diagnosis + repair suggestions
-bash codemux/bin/codemux upgrade --dry-run  # upgrade plan (apt + V1/V2 + launcher)
+bash codemux/bin/codemux upgrade --dry-run  # upgrade plan (apt + selected V1/V2 + launcher)
 bash codemux/bin/codemux uninstall --dry-run  # payload removal plan (memory stays)
 ```
 
@@ -51,15 +75,17 @@ Once installed (M2+), the command becomes `codemux` in `$PREFIX/bin`.
 | `storage` | `termux-setup-storage` has run |
 | `toolset` | 20 required apt packages (git, gh, python, nodejs, sqlite, …) + optional `tesseract chromium` (x11-repo) |
 | `glibc` | loader + libc.so.6 for the OpenCode payloads |
-| `opencode-v1` | V1 payload + `apt-mark hold` |
-| `opencode-v2` | V2 payload + the `lib/compat` shim |
+| `opencode-v1` | V1 payload + `apt-mark hold` (`SKIP` when V1 was not selected) |
+| `opencode-v2` | V2 payload + the `lib/compat` shim (`SKIP` when V2 was not selected) |
 | `launcher` | banner/menu block in `~/.bashrc` (detects an old block) |
 | `dotfiles` | `.bash_profile`, `.hushlogin` |
 | `memory` | `MEMORY.md` (+ 24,000 byte limit), `RECENT.md`, memory + session-title plugins, instructions |
 | `update-cache` | age of the upstream update-check cache |
 
 `install` runs the modules in order: `deps -> mirror -> storage -> toolset ->
-glibc -> v1 -> v2 -> launcher -> dotfiles -> memory`.
+glibc -> v1 -> v2 -> launcher -> dotfiles -> memory`. `v1`/`v2` are included
+only when selected (`--only v1`, `--only v2`, `--only both`); everything else
+always runs. Use `--dry-run` to see the exact plan (10 or 11 rows).
 
 All dependencies are installed up front (`deps` + `toolset`) so a fresh Termux
 does not fail halfway. Two traps handled automatically:
@@ -73,8 +99,11 @@ does not fail halfway. Two traps handled automatically:
 ### Launcher & memory (M4)
 
 - **launcher**: writes a marked `# codemux:launcher begin … end` block into
-  `~/.bashrc` (banner, V1/V2/shell arrow menu, and the `menu`, `version`,
-  `doctor`, `codemux`, `keluar`/`exit` commands). An old block without markers is
+  `~/.bashrc` (banner, arrow menu, and the `menu`, `version`, `doctor`,
+  `codemux`, `keluar`/`exit` commands). The menu rows are built from what is
+  installed (V1/V2/shell/quit → only the present components are offered) and
+  only the option rows are redrawn on arrow keys, so the screen does not
+  flicker. An old block without markers is
   **adopted**: it is cut only when its structure is recognised (an
   `_oc_launcher` call, last line `fi`); the rest of `~/.bashrc` is untouched.
   `.bashrc` is backed up, the new block is tested with `bash -n`, and on failure

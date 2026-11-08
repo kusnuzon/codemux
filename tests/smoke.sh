@@ -36,7 +36,8 @@ d = json.load(sys.stdin)
 assert d["codemux"] == "codemux", d
 assert len(d["modul"]) == 13, len(d["modul"])
 r = d["ringkasan"]
-assert r["ok"] + r["warn"] + r["miss"] + r["fail"] == 13, r
+assert r["ok"] + r["warn"] + r["miss"] + r["fail"] + r["skip"] == 13, r
+assert d["komponen"] in ("v1", "v2", "v1 v2"), d
 '; then
   ok "check --json"
 else
@@ -51,6 +52,68 @@ if [ "$rows" -eq 11 ] && printf '%s' "$out" | grep -q 'dry-run'; then
 else
   bad "install --dry-run (plan rows=$rows)"
 fi
+
+# 6b. component choice: V1 only / V2 only / both
+SB="$PREFIX/tmp/codemux-smoke-$$"
+rm -rf "$SB"
+mkdir -p "$SB/home" "$SB/state"
+sel() { # <args...> → stdout of `codemux install --dry-run` in the sandbox
+  env HOME="$SB/home" CODEMUX_HOME="$SB/state" PREFIX="$SB/prefix" TMPDIR="${TMPDIR:-/tmp}" \
+    CODEMUX_ALLOW_NONANDROID=1 CODEMUX_NO_APT_CHECK=1 \
+    bash bin/codemux install --dry-run "$@" 2>&1 || true
+}
+out="$(sel --only v1)"
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/10 ' || true)"
+if [ "$rows" -eq 10 ] &&
+  printf '%s\n' "$out" | grep -qE '^  [0-9]+/10 v1 ' &&
+  ! printf '%s\n' "$out" | grep -qE '^  [0-9]+/10 v2 '; then
+  ok "install --only v1 (10 modules, V2 skipped)"
+else
+  bad "install --only v1 (plan rows=$rows)"
+fi
+out="$(sel --only v2)"
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/10 ' || true)"
+if [ "$rows" -eq 10 ] &&
+  printf '%s\n' "$out" | grep -qE '^  [0-9]+/10 v2 ' &&
+  ! printf '%s\n' "$out" | grep -qE '^  [0-9]+/10 v1 '; then
+  ok "install --only v2 (10 modules, V1 skipped)"
+else
+  bad "install --only v2 (plan rows=$rows)"
+fi
+out="$(sel --only both)"
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/11 ' || true)"
+if [ "$rows" -eq 11 ]; then ok "install --only both (11 modules)"; else bad "install --only both (plan rows=$rows)"; fi
+if sel --only v3 | grep -q 'unknown component list'; then
+  ok "install --only v3 rejected"
+else
+  bad "install --only v3 was not rejected"
+fi
+
+# 6c. the saved choice is reused; check reports the other component as SKIP
+printf 'v1\n' >"$SB/state/components"
+out="$(env HOME="$SB/home" CODEMUX_HOME="$SB/state" PREFIX="$SB/prefix" \
+  CODEMUX_ALLOW_NONANDROID=1 CODEMUX_NO_APT_CHECK=1 bash bin/codemux check --json 2>/dev/null || true)"
+if printf '%s' "$out" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["komponen"] == "v1", d
+assert d["ringkasan"]["skip"] == 1, d["ringkasan"]
+st = {m["modul"]: m["status"] for m in d["modul"]}
+assert st["opencode-v2"] == "SKIP", st
+assert st["opencode-v1"] != "SKIP", st
+'; then
+  ok "check: unselected component reported as SKIP"
+else
+  bad "check: SKIP for the unselected component"
+fi
+out="$(sel)"
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/10 ' || true)"
+if [ "$rows" -eq 10 ] && printf '%s\n' "$out" | grep -q 'install \[v1\]'; then
+  ok "install reuses the saved choice (v1)"
+else
+  bad "install did not reuse the saved choice"
+fi
+rm -rf "$SB"
 
 # 7. status & repair --dry-run must not crash
 if bash bin/codemux status >/dev/null 2>&1; then ok "status"; else bad "status"; fi

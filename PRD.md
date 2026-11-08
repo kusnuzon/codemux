@@ -32,7 +32,8 @@ with a single command.
 2. Idempotent: run on an already set-up Termux → only fills what is missing,
    never overwrites user config.
 3. `codemux check` reports the status of each component (installed / missing / broken).
-4. `codemux upgrade` updates apt packages, V1, V2, and the dotfiles in one go.
+4. `codemux upgrade` updates apt packages, the selected V1/V2 payloads, and the
+   launcher in one go.
 5. Every step has detection (precheck) + action + verification + rollback.
 6. Transparent: every action is printed, `--dry-run` included.
 7. **Cross-session memory** for V1 *and* V2: a new conversation immediately knows
@@ -89,7 +90,7 @@ codemux [command] [options]
 commands:
   install            install everything that is missing (default)
   check              status of each module, changes nothing
-  upgrade            apt + V1 + V2 + dotfiles (+ update prompt when available)
+  upgrade            apt + the selected V1/V2 payloads + launcher (update prompt)
   update-check       check upstream for new releases, write the cache, exit (no install)
   repair             fix modules that failed/broke
   doctor             full diagnosis (shareable, no sensitive data)
@@ -99,7 +100,7 @@ commands:
 options:
   --yes / -y         no confirmation
   --dry-run          print the plan, do not execute
-  --only a,b,c       limit to specific modules
+  --only a,b,c       limit to specific modules (for `install`: v1, v2, or both)
   --skip a,b,c       skip specific modules
   --latest           use the newest versions (ignore versions.env)
   --no-storage       do not run termux-setup-storage
@@ -113,6 +114,32 @@ options:
 
 Exit codes: `0` success/satisfied, `1` partial failure, `2` prerequisites not
 met (not Android / wrong arch / not enough disk).
+
+### 6A. Component selection (V1 only / V2 only / both)
+
+The user picks which OpenCode to install; every shared dependency is installed
+either way, so any choice works on a fresh Termux.
+
+```
+codemux install --only v1     # OpenCode V1 only (V2 is not touched)
+codemux install --only v2     # OpenCode V2 only
+codemux install --only both   # V1 + V2 (default)
+```
+
+- `--components X` is an alias; `CODEMUX_COMPONENTS=v1` does the same.
+- Without a flag/env (interactive): a 3-row prompt appears once. Without a TTY
+  (CI, `curl | bash`) the saved/default choice is used — default `v1 v2`.
+- The choice is saved in `~/.config/codemux/components` (`v1`, `v2`, `v1 v2`)
+  and reused by `install`, `check`, `upgrade`, `update-check`.
+- Base modules are always installed: `deps mirror storage toolset glibc` +
+  `launcher dotfiles memory self`. Only the payload module (`v1`/`v2`) follows
+  the choice, so V1-only = 10 modules, V2-only = 10, both = 11.
+- `check` reports an unselected component as `SKIP` ("not selected") and counts
+  it in `ringkasan.skip`; `--json` gains a `komponen` key.
+- `upgrade` (no `--only`) updates apt + the selected payloads + the launcher;
+  `update-check` omits rows for components that are not installed.
+- The startup menu only offers components that are installed (rows are built
+  from `command -v opencode` / `opencode-v2`).
 
 ---
 
@@ -161,8 +188,8 @@ Execution order = the table below. `probe` decides SKIP/APPLY.
 | 3 | `storage` | `[ -d ~/storage ]` and `/sdcard` writable | `termux-setup-storage` (interactive! see §11) |
 | 4 | `apt-toolset` | `dpkg-query -W` for each package in `versions.env` | `pkg install -y <missing packages>` (including the `browser` group: chromium, playwright, agent-browser) |
 | 5 | `glibc-runtime` | `$PREFIX/glibc/lib/ld-linux-aarch64.so.1` exists | `pkg install -y glibc-repo glibc termux-exec-glibc` |
-| 6 | `opencode-v1` | `$PREFIX/share/opencode/opencode.real --version` | call `lib/v1.sh` (install/upgrade) + `apt-mark hold opencode` |
-| 7 | `opencode-v2` | `$PREFIX/share/opencode-v2/VERSION` + `opencode-v2 --version` | call `lib/v2.sh` (npm tarball + `lib/compat` shim + env sanitizing) |
+| 6 | `opencode-v1` | `$PREFIX/share/opencode/opencode.real --version` | call `lib/v1.sh` (install/upgrade) + `apt-mark hold opencode` (only when V1 is selected) |
+| 7 | `opencode-v2` | `$PREFIX/share/opencode-v2/VERSION` + `opencode-v2 --version` | call `lib/v2.sh` (npm tarball + `lib/compat` shim + env sanitizing) (only when V2 is selected) |
 | 8 | `launcher` | `~/.bashrc` contains the `# codemux:launcher v1` marker | back up, then insert the block from `assets/bashrc-snippet` |
 | 9 | `dotfiles` | `~/.bash_profile`, `~/.hushlogin` | write/merge (never overwrite other content) |
 | 10 | `memory` | `memory.js` + `session-digest.py` present, `instructions` lists `MEMORY.md` & `RECENT.md` | install the templates + merge `opencode.jsonc`; existing files are **not** overwritten; `--no-memory` skips it |
@@ -236,7 +263,7 @@ The Android permission dialog cannot be fully automated. Mechanism:
 
 | Command | Contents |
 |---|---|
-| `codemux upgrade` | `pkg update && pkg upgrade -y` (opencode held) → `lib/v1.sh upgrade` → `lib/v2.sh upgrade` → re-sync the launcher block (version) → `doctor` |
+| `codemux upgrade` | `pkg update && pkg upgrade -y` (opencode held) → `lib/v1.sh upgrade` → `lib/v2.sh upgrade` (only the selected components) → re-sync the launcher block (version) → `doctor` |
 | `codemux self-update` | download the latest `codemux` release, replace `bin/`+`lib/` (assets untouched when the user modified them) |
 | `codemux repair` | pick modules in FAIL/broken state → apply again (e.g. reinstall the V2 compat shim, sanitize `LD_PRELOAD`) |
 | `codemux uninstall` | remove the V1/V2 payloads + launcher block; does **not** delete `MEMORY.md`, projects, or backups |
