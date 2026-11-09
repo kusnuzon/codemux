@@ -42,7 +42,7 @@ run_bootstrap() { # <options...>
 out="$(run_bootstrap --dry-run 2>&1)"
 if printf '%s' "$out" | grep -q 'sha256 matches' &&
   printf '%s' "$out" | grep -q 'dry-run' &&
-  printf '%s' "$out" | grep -q 'install (dry-run)'; then
+  printf '%s' "$out" | grep -q 'install \[v1+v2\]'; then
   ok "bootstrap: sha256 verified + install continued"
 else
   bad "bootstrap: unexpected flow"
