@@ -115,6 +115,38 @@ else
 fi
 rm -rf "$SB"
 
+# 6d. progress feedback: silent without a TTY (logs/CI stay clean), live with one
+out="$(env CODEMUX_HOME="$SB/prog" bash -c '
+  . lib/common.sh
+  codemux_colors
+  codemux_spin_start "[1/2] deps " installing
+  codemux_spin_msg "downloading x"
+  codemux_spin_stop
+  printf done
+' 2>&1)"
+if [ "$out" = "done" ]; then
+  ok "progress: silent when stderr is not a terminal"
+else
+  bad "progress: unexpected output without a TTY ($out)"
+fi
+out="$(env CODEMUX_HOME="$SB/prog" CODEMUX_PROGRESS=1 bash -c '
+  . lib/common.sh
+  codemux_colors
+  codemux_spin_start "[1/2] deps " installing
+  sleep 0.4
+  codemux_spin_stop
+  printf done
+' 2>&1)"
+case "$out" in
+  *"[1/2] deps "*) ok "progress: spinner + prefix drawn with a terminal" ;;
+  *) bad "progress: spinner did not draw ($out)" ;;
+esac
+case "$out" in
+  *"installing"*) ok "progress: the step message is shown" ;;
+  *) bad "progress: step message missing" ;;
+esac
+rm -rf "$SB"
+
 # 7. status & repair --dry-run must not crash
 if bash bin/codemux status >/dev/null 2>&1; then ok "status"; else bad "status"; fi
 if bash bin/codemux repair --dry-run >/dev/null 2>&1; then ok "repair --dry-run"; else bad "repair --dry-run"; fi

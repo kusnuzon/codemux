@@ -39,12 +39,99 @@ codemux_colors() {
   fi
 }
 
+# --- progress feedback --------------------------------------------------------
+# A long step (apt, adapters, downloads) prints one line that keeps updating, so
+# the install never looks frozen. Silent when stderr is not a terminal or when
+# CODEMUX_PROGRESS=0 / CODEMUX_NO_PROGRESS=1 (tests, CI, log files).
+# CODEMUX_PROGRESS=1 forces it on (used by the tests).
+CODEMUX_SPIN_PID=""
+CODEMUX_SPIN_PREFIX=""
+CODEMUX_SPIN_DIR=""
+
+codemux_progress_tty() {
+  case "${CODEMUX_PROGRESS:-}" in
+    1 | yes | on) return 0 ;;
+    0 | no | off) return 1 ;;
+  esac
+  [ -z "${CODEMUX_NO_PROGRESS:-}" ] && [ -t 2 ]
+}
+
+# Text next to the spinner ("installing", "downloading memory.js", …).
+codemux_spin_msg() { # <message>
+  [ -n "$CODEMUX_SPIN_DIR" ] || return 0
+  printf '%s' "${1:-working}" >"$CODEMUX_SPIN_DIR/.spin.msg" 2>/dev/null || true
+}
+
+# Show the growing size of a file (e.g. the .part of a download).
+codemux_spin_size() { # [file]
+  [ -n "$CODEMUX_SPIN_DIR" ] || return 0
+  if [ -n "${1:-}" ]; then
+    printf '%s' "$1" >"$CODEMUX_SPIN_DIR/.spin.size" 2>/dev/null || true
+  else
+    rm -f "$CODEMUX_SPIN_DIR/.spin.size" 2>/dev/null || true
+  fi
+}
+
+# codemux_spin_start <prefix> [message]
+# The prefix is the part that stays fixed (e.g. "[6/11] v1         "); the
+# caller prints the result right after codemux_spin_stop returns.
+codemux_spin_start() {
+  codemux_spin_stop
+  codemux_progress_tty || return 0
+  CODEMUX_SPIN_PREFIX="$1"
+  CODEMUX_SPIN_DIR="${CODEMUX_HOME:-${TMPDIR:-/tmp}}/run"
+  mkdir -p "$CODEMUX_SPIN_DIR" 2>/dev/null || { CODEMUX_SPIN_DIR=""; return 0; }
+  codemux_spin_msg "${2:-working}"
+  codemux_spin_size ""
+  (
+    frames='|/-\'
+    i=0
+    start=$SECONDS
+    while :; do
+      msg="$(cat "$CODEMUX_SPIN_DIR/.spin.msg" 2>/dev/null)" || msg=working
+      extra=""
+      sf="$(cat "$CODEMUX_SPIN_DIR/.spin.size" 2>/dev/null)"
+      if [ -n "$sf" ] && [ -f "$sf" ]; then
+        b="$(stat -c %s "$sf" 2>/dev/null || echo 0)"
+        extra=" · $(human_bytes "$b")"
+      fi
+      printf '\r%s%s%s %s%s (%ss%s)\033[K' \
+        "$CODEMUX_SPIN_PREFIX" "$C_INFO" "${frames:$((i % 4)):1}" "$C_R" \
+        "$msg" "$((SECONDS - start))" "$extra" >&2
+      i=$((i + 1))
+      sleep 0.25 2>/dev/null || sleep 1
+    done
+  ) &
+  CODEMUX_SPIN_PID=$!
+}
+
+# Remove the current spinner line but keep the prefix (the caller appends OK/FAIL).
+codemux_spin_stop() {
+  if [ -z "$CODEMUX_SPIN_PID" ]; then
+    CODEMUX_SPIN_DIR=""
+    return 0
+  fi
+  kill "$CODEMUX_SPIN_PID" 2>/dev/null || true
+  wait "$CODEMUX_SPIN_PID" 2>/dev/null || true
+  CODEMUX_SPIN_PID=""
+  printf '\r%s\033[K' "$CODEMUX_SPIN_PREFIX" >&2
+  rm -f "$CODEMUX_SPIN_DIR/.spin.msg" "$CODEMUX_SPIN_DIR/.spin.size" 2>/dev/null || true
+  CODEMUX_SPIN_DIR=""
+  return 0
+}
+
+# Called before a normal log line so it does not land on top of the spinner.
+codemux_spin_pause() {
+  [ -n "$CODEMUX_SPIN_PID" ] || return 0
+  printf '\r\033[K' >&2
+}
+
 # --- logging -----------------------------------------------------------------
-log_ok()   { printf '%s✔%s %s\n' "$C_OK" "$C_R" "$*"; }
-log_warn() { printf '%s!%s %s\n' "$C_WARN" "$C_R" "$*"; }
-log_fail() { printf '%s✖%s %s\n' "$C_MISS" "$C_R" "$*" >&2; }
-log_info() { printf '%s→%s %s\n' "$C_INFO" "$C_R" "$*"; }
-log_dim()  { printf '%s%s%s\n' "$C_DIM" "$*" "$C_R"; }
+log_ok()   { codemux_spin_pause; printf '%s✔%s %s\n' "$C_OK" "$C_R" "$*"; }
+log_warn() { codemux_spin_pause; printf '%s!%s %s\n' "$C_WARN" "$C_R" "$*"; }
+log_fail() { codemux_spin_pause; printf '%s✖%s %s\n' "$C_MISS" "$C_R" "$*" >&2; }
+log_info() { codemux_spin_pause; printf '%s→%s %s\n' "$C_INFO" "$C_R" "$*"; }
+log_dim()  { codemux_spin_pause; printf '%s%s%s\n' "$C_DIM" "$*" "$C_R"; }
 
 codemux_die() {
   log_fail "$*"
@@ -182,20 +269,46 @@ PY
 }
 
 # codemux_download <url> <dest> [accept] — curl, then repair curl, then wget/python.
+# In a terminal it reports progress (spinner message + growing size), so a slow
+# mobile connection does not look frozen.
 codemux_download() {
-  local url="$1" dest="$2" accept="${3:-}" part="$2.part"
+  local url="$1" dest="$2" accept="${3:-}" part="$2.part" name size
+  name="$(basename "$dest")"
   mkdir -p "$(dirname "$dest")" || return 1
   rm -f "$part"
-  if codemux_dl_once "$url" "$part" "$accept"; then
-    mv -f "$part" "$dest" && return 0
+
+  if codemux_progress_tty; then
+    if [ -n "$CODEMUX_SPIN_PID" ]; then
+      codemux_spin_msg "downloading $name"
+      codemux_spin_size "$part"
+    else
+      printf '  %s↓ downloading %s…%s\n' "$C_DIM" "$name" "$C_R" >&2
+    fi
   fi
-  rm -f "$part"
-  codemux_heal_curl >/dev/null 2>&1 || true
+
   if codemux_dl_once "$url" "$part" "$accept"; then
-    mv -f "$part" "$dest" && return 0
+    mv -f "$part" "$dest" || return 1
+  else
+    rm -f "$part"
+    codemux_heal_curl >/dev/null 2>&1 || true
+    if codemux_dl_once "$url" "$part" "$accept"; then
+      mv -f "$part" "$dest" || return 1
+    else
+      rm -f "$part"
+      return 1
+    fi
   fi
-  rm -f "$part"
-  return 1
+
+  if codemux_progress_tty; then
+    if [ -n "$CODEMUX_SPIN_PID" ]; then
+      codemux_spin_size ""
+      codemux_spin_msg "installing"
+    else
+      size="$(stat -c %s "$dest" 2>/dev/null || echo 0)"
+      printf '  %s↓ %s (%s)%s\n' "$C_DIM" "$name" "$(human_bytes "$size")" "$C_R" >&2
+    fi
+  fi
+  return 0
 }
 
 # --- component selection (V1 only / V2 only / both) --------------------------
@@ -294,6 +407,12 @@ component choice:
 
 repair options:
   --dry-run          show the repairs that would be made
+
+progress:
+  Long steps (apt, the V1/V2 adapters, downloads) show a live spinner with
+  elapsed time and, while downloading, the size so far. Set CODEMUX_PROGRESS=0
+  (or CODEMUX_NO_PROGRESS=1) to silence it; non-terminal output is silent
+  automatically, so logs and CI stay clean.
 EOF
 }
 

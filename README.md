@@ -45,6 +45,22 @@ curl -fsSL -H 'Accept: application/vnd.github.raw' \
 - `check` shows an unselected component as `SKIP` (not as missing), and the
   startup menu only offers the components that are actually installed.
 
+### Progress, so it never looks frozen
+
+Every long step prints one line that keeps updating — a spinner, the step name,
+the elapsed seconds, and (while downloading) the size so far:
+
+```
+[4/11] toolset    | installing (37s)
+[6/11] v1         / waiting for the upstream V1 installer (1m 12s)
+  ↓ downloading memory.js (7 KB)
+```
+
+`apt` installs, the V1/V2 adapters and every download are covered, both in
+`codemux install`/`upgrade` and in the `curl … | bash` bootstrap. Set
+`CODEMUX_PROGRESS=0` (or `CODEMUX_NO_PROGRESS=1`) to turn it off; when the
+output is not a terminal (logs, CI, `| tee`) it is already silent.
+
 ## Usage (from the repo)
 
 ```bash

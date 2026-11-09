@@ -31,7 +31,9 @@ m_glibc_apply() {
 
   if [ ! -x "$ld" ]; then
     # glibc-repo must be added first, only then are the glibc packages available.
+    codemux_spin_msg "apt install: glibc-repo"
     codemux_apt_install glibc-repo || { APPLY_NOTE="failed to install glibc-repo"; return 1; }
+    codemux_spin_msg "apt install: glibc termux-exec-glibc (large download)"
     codemux_apt_update || true
     codemux_apt_install glibc termux-exec-glibc || {
       APPLY_NOTE="failed to install glibc/termux-exec-glibc"

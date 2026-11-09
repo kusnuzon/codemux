@@ -45,6 +45,7 @@ m_v2_apply() {
   log_info "V2 adapter: upstream install.sh ($(codemux_adapter_sha "$script")) runs detached"
 
   codemux_spawn v2 bash "$script" || { APPLY_NOTE="failed to run the V2 adapter"; return 1; }
+  codemux_spin_msg "waiting for the upstream V2 installer (apt + payload, log is live)"
   local rc=0
   codemux_wait v2 3600 || rc=$?
   if [ "$rc" -ne 0 ]; then

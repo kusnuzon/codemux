@@ -58,11 +58,13 @@ m_toolset_apply() {
 
   # Extra repos (e.g. x11-repo for chromium/tesseract) are installed first.
   if [ -n "$extra" ] && [ -n "${CODEMUX_APT_REPOS:-}" ]; then
+    codemux_spin_msg "apt install: $CODEMUX_APT_REPOS"
     # shellcheck disable=SC2086
     codemux_apt_install $CODEMUX_APT_REPOS >/dev/null 2>&1 || true
   fi
 
   if [ -n "$miss" ]; then
+    codemux_spin_msg "apt install: $miss (this can take a few minutes)"
     # shellcheck disable=SC2086
     if ! codemux_apt_install $miss; then
       APPLY_NOTE="apt failed: $miss"
@@ -74,6 +76,7 @@ m_toolset_apply() {
   fi
 
   if [ -n "$extra" ]; then
+    codemux_spin_msg "apt install (optional): $extra"
     # shellcheck disable=SC2086
     if codemux_apt_install $extra >/dev/null 2>&1; then
       bonus=" · optional: $extra"

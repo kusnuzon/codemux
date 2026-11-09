@@ -114,11 +114,13 @@ codemux_cmd_install() {
     WARN) log_warn "preflight: $NOTE" ;;
   esac
 
+  codemux_spin_start "" "checking the current state"
   for m in "${CODEMUX_INSTALL_MODULES[@]}"; do
     codemux_verify_module "$m"
     PS[$m]="$PROBE"
     PN[$m]="$NOTE"
   done
+  codemux_spin_stop
 
   total=${#CODEMUX_INSTALL_MODULES[@]}
   printf '%s%s %s%s · install [%s]%s\n\n' "$C_B" "$CODEMUX_NAME" "$CODEMUX_VERSION" "$C_R" \
@@ -203,9 +205,10 @@ codemux_cmd_install() {
     fi
 
     codemux_run_set "$m" RUNNING ""
-    printf '… '
     APPLY_NOTE=""
+    codemux_spin_start "$(printf '[%d/%d] %-10s ' "$i" "$total" "$m")" "installing"
     if "m_${m}_apply" 2>>"$CODEMUX_LOG"; then :; fi
+    codemux_spin_stop
     codemux_verify_module "$m"
 
     if [ "$PROBE" = OK ]; then

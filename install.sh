@@ -55,16 +55,23 @@ if ! curl -fsS --max-time 10 -o /dev/null "https://github.com" >/dev/null 2>&1; 
   hash -r 2>/dev/null || true
 fi
 
-# download: curl, then wget, then python (if curl is still broken)
-download() { # <url> <dest>
-  if curl -fsSL --max-time 300 "$1" -o "$2.part" 2>/dev/null && [ -s "$2.part" ]; then
-    mv -f "$2.part" "$2"; return 0
+# download: curl, then wget, then python (if curl is still broken).
+# In a terminal it shows a progress bar, so a slow connection does not look stuck.
+download() { # <url> <dest> [quiet]
+  local url="$1" dest="$2" quiet="${3:-0}"
+  local -a cflags=(-fsSL --max-time 300) wflags=(-q)
+  if [ "$quiet" -eq 0 ] && [ -t 2 ]; then
+    cflags=(-fL --progress-bar --max-time 300)
+    wflags=(-q --show-progress)
   fi
-  rm -f "$2.part"
-  if command -v wget >/dev/null 2>&1 && wget -q --timeout=60 -O "$2.part" "$1" >/dev/null 2>&1 && [ -s "$2.part" ]; then
-    mv -f "$2.part" "$2"; return 0
+  if curl "${cflags[@]}" "$url" -o "$dest.part" 2>/dev/null && [ -s "$dest.part" ]; then
+    mv -f "$dest.part" "$dest"; return 0
   fi
-  rm -f "$2.part"
+  rm -f "$dest.part"
+  if command -v wget >/dev/null 2>&1 && wget "${wflags[@]}" --timeout=60 -O "$dest.part" "$url" >/dev/null 2>&1 && [ -s "$dest.part" ]; then
+    mv -f "$dest.part" "$dest"; return 0
+  fi
+  rm -f "$dest.part"
   return 1
 }
 
@@ -95,7 +102,7 @@ if [ -z "$tarball" ]; then
   say "downloading $url"
   download "$url" "$tarball" || die "failed to download tarball"
   if [ -n "$sha_url" ]; then
-    download "$sha_url" "$CACHE/codemux-download.sha256" 2>/dev/null || true
+    download "$sha_url" "$CACHE/codemux-download.sha256" 1 || true
     expect_sha="$(awk '{print $1}' "$CACHE/codemux-download.sha256" 2>/dev/null || true)"
   fi
 fi
@@ -111,6 +118,7 @@ fi
 
 # 3) extract to current (atomic: new → swap)
 dest="$CACHE/current"
+say "extracting…"
 rm -rf "$dest.new"
 mkdir -p "$dest.new" || die "cannot create $dest.new"
 tar -xzf "$tarball" -C "$dest.new" --strip-components=1 || die "failed to extract tarball"

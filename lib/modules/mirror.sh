@@ -59,6 +59,7 @@ m_mirror_apply() {
   fi
 
   # real test: apt-get update must pass
+  codemux_spin_msg "apt-get update (refreshing package lists)"
   codemux_spawn mirror env DEBIAN_FRONTEND=noninteractive apt-get update -qq || {
     APPLY_NOTE="failed to run apt-get update"; return 1; }
   local rc=0

@@ -49,6 +49,7 @@ m_deps_apply() {
   pkgs="$(printf '%s' "$pkgs" | sed 's/^ *//')"
 
   if [ -n "$pkgs" ]; then
+    codemux_spin_msg "apt install: $pkgs"
     # shellcheck disable=SC2086
     if ! codemux_apt_install $pkgs; then
       APPLY_NOTE="apt failed: $pkgs"
@@ -58,6 +59,7 @@ m_deps_apply() {
   fi
 
   if m_deps_curl_broken; then
+    codemux_spin_msg "repairing curl (reinstalling curl/libcurl/openssl)"
     codemux_heal_curl || {
       APPLY_NOTE="curl is still broken after reinstalling"
       return 1

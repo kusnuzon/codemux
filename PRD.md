@@ -141,6 +141,26 @@ codemux install --only both   # V1 + V2 (default)
 - The startup menu only offers components that are installed (rows are built
   from `command -v opencode` / `opencode-v2`).
 
+### 6B. Progress feedback (never look frozen)
+
+Long operations report live progress on stderr, one line, overwritten in place:
+
+```
+[4/11] toolset    | installing (37s)
+[6/11] v1         / waiting for the upstream V1 installer (1m 12s)
+  ↓ downloading memory.js (7 KB)
+```
+
+- `codemux_spin_start <prefix> [message]` / `codemux_spin_msg` /
+  `codemux_spin_size <file>` / `codemux_spin_stop` live in `lib/common.sh`.
+- Downloads report the growing `.part` size; the message comes from
+  `codemux_download`, so every module (plugins, adapters, self-update) gets it.
+- `log_*` pause the spinner first, so lines never collide.
+- Automatic silence when stderr is not a TTY; `CODEMUX_PROGRESS=1` forces it on
+  (tests), `CODEMUX_PROGRESS=0` / `CODEMUX_NO_PROGRESS=1` turns it off.
+- `install.sh` shows a curl/wget progress bar for the release tarball,
+  `extracting…`, then hands over to `codemux install`.
+
 ---
 
 ## 7. Repo architecture

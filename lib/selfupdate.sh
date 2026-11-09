@@ -85,11 +85,15 @@ codemux_cmd_self_update() {
   codemux_confirm "Download and install the latest codemux release?" || { log_dim "cancelled."; return 0; }
 
   mkdir -p "$CODEMUX_HOME" 2>/dev/null
-  tarball="$(codemux_self_download 2>"$CODEMUX_HOME/.selfupdate.err")" || {
+  codemux_spin_start "  " "downloading the codemux release"
+  tarball="$(codemux_self_download 2>"$CODEMUX_HOME/.selfupdate.err")"
+  local dl_rc=$?
+  codemux_spin_stop
+  if [ "$dl_rc" -ne 0 ]; then
     log_fail "failed to download the codemux release"
     [ -s "$CODEMUX_HOME/.selfupdate.err" ] && log_dim "$(tail -1 "$CODEMUX_HOME/.selfupdate.err")"
     return 1
-  }
+  fi
   if grep -q '^no-sha$' "$CODEMUX_HOME/.selfupdate.err" 2>/dev/null && [ "$force" -eq 0 ]; then
     log_warn "the release has no sha256 yet (main fallback) — continue with --force"
     return 1

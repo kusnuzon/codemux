@@ -142,6 +142,7 @@ codemux_cmd_doctor() {
 # --- upgrade -----------------------------------------------------------------
 codemux_upgrade_step_apt() {
   local rc=0
+  codemux_spin_msg "apt-get update (refreshing the package list)"
   log_info "apt: refresh the package list"
   codemux_spawn upgrade_apt env DEBIAN_FRONTEND=noninteractive apt-get update ||
     { log_warn "failed to run apt-get update"; return 1; }
@@ -150,6 +151,7 @@ codemux_upgrade_step_apt() {
     log_warn "apt-get update failed (rc $rc): $(codemux_step_tail upgrade_apt)"
     return 1
   fi
+  codemux_spin_msg "apt-get upgrade (opencode held, this can take a while)"
   log_info "apt: upgrade packages (opencode is held)"
   codemux_spawn upgrade_apt2 env DEBIAN_FRONTEND=noninteractive \
     apt-get -y -o Dpkg::Options::=--force-confold upgrade ||
@@ -266,9 +268,12 @@ codemux_cmd_upgrade() {
 
   for m in "${run[@]}"; do
     printf '[%s] ' "$m"
+    codemux_spin_start "$(printf '[%s] ' "$m")" "updating"
     if "codemux_upgrade_step_$m" 2>>"$CODEMUX_LOG"; then
+      codemux_spin_stop
       ok_n=$((ok_n + 1)); printf '%sOK%s\n' "$C_OK" "$C_R"
     else
+      codemux_spin_stop
       fail_n=$((fail_n + 1)); printf '%sFAIL%s\n' "$C_MISS" "$C_R"
     fi
   done
