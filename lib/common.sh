@@ -183,6 +183,32 @@ json_escape() {
 CODEMUX_NET_TIMEOUT="${CODEMUX_NET_TIMEOUT:-300}"
 CODEMUX_NET_PROBE="${CODEMUX_NET_PROBE:-https://api.github.com/}"
 
+# GitHub API calls without a token are capped at 60 requests/hour and start
+# returning HTTP 403 once the quota is gone (a few installs are enough to hit
+# it, because V1/V2/memory each download from api.github.com). Reuse a token
+# when one is available: env first, then the gh CLI.
+_CODEMUX_GH_TOKEN_CACHE=""
+codemux_gh_token() {
+  if [ -n "$_CODEMUX_GH_TOKEN_CACHE" ]; then
+    printf '%s' "$_CODEMUX_GH_TOKEN_CACHE"
+    return 0
+  fi
+  local tok="${CODEMUX_GITHUB_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
+  if [ -z "$tok" ] && have gh; then
+    tok="$(gh auth token --hostname github.com 2>/dev/null || true)"
+  fi
+  _CODEMUX_GH_TOKEN_CACHE="$tok"
+  printf '%s' "$tok"
+}
+
+# Is this a GitHub API URL (i.e. subject to the 60/hour rate limit)?
+codemux_api_url() {
+  case "$1" in
+    "https://api.github.com/"*) return 0 ;;
+  esac
+  return 1
+}
+
 codemux_apt_update() {
   local i
   have apt-get || return 1
@@ -217,9 +243,20 @@ codemux_apt_install() {
   return "$rc"
 }
 
+# Curl is healthy when it completes an HTTPS request, whatever the status code:
+# api.github.com answers 403 once the unauthenticated quota (60/h) is gone, and
+# -f used to turn that into "curl is broken" -> pointless reinstall on every run.
 codemux_curl_ok() {
   have curl || return 1
-  curl -fsS --max-time 10 -o /dev/null "$CODEMUX_NET_PROBE" >/dev/null 2>&1
+  local tok=""
+  if codemux_api_url "$CODEMUX_NET_PROBE"; then
+    tok="$(codemux_gh_token)"
+  fi
+  if [ -n "$tok" ]; then
+    curl -sS --max-time 10 -o /dev/null -H "Authorization: Bearer $tok" "$CODEMUX_NET_PROBE" >/dev/null 2>&1
+  else
+    curl -sS --max-time 10 -o /dev/null "$CODEMUX_NET_PROBE" >/dev/null 2>&1
+  fi
 }
 
 # Repair curl damaged by the glibc package (wrong libcurl version).
@@ -235,28 +272,35 @@ codemux_heal_curl() {
 
 # One download attempt. <url> <dest> [accept]
 codemux_dl_once() {
-  local url="$1" dest="$2" accept="${3:-}"
+  local url="$1" dest="$2" accept="${3:-}" tok=""
+  local -a hdr=()
+  if codemux_api_url "$url"; then
+    tok="$(codemux_gh_token)"
+  fi
+  [ -n "$accept" ] && hdr+=(-H "Accept: $accept")
+  [ -n "$tok" ] && hdr+=(-H "Authorization: Bearer $tok")
   if have curl; then
-    if [ -n "$accept" ]; then
-      curl -fsSL --max-time "$CODEMUX_NET_TIMEOUT" -H "Accept: $accept" "$url" -o "$dest" 2>/dev/null
-    else
-      curl -fsSL --max-time "$CODEMUX_NET_TIMEOUT" "$url" -o "$dest" 2>/dev/null
-    fi
+    curl -fsSL --max-time "$CODEMUX_NET_TIMEOUT" "${hdr[@]+"${hdr[@]}"}" "$url" -o "$dest" 2>/dev/null
     [ -s "$dest" ] && return 0
     rm -f "$dest"
   fi
   if have wget; then
-    wget -q --timeout=60 -O "$dest" "$url" >/dev/null 2>&1
+    local -a whdr=()
+    [ -n "$tok" ] && whdr+=("--header=Authorization: Bearer $tok")
+    wget -q --timeout=60 "${whdr[@]+"${whdr[@]}"}" -O "$dest" "$url" >/dev/null 2>&1
     [ -s "$dest" ] && return 0
     rm -f "$dest"
   fi
   if have python; then
-    python - "$url" "$dest" "$accept" <<'PY' >/dev/null 2>&1
+    python - "$url" "$dest" "$accept" "$tok" <<'PY' >/dev/null 2>&1
 import sys, urllib.request
 url, dest, accept = sys.argv[1], sys.argv[2], (sys.argv[3] if len(sys.argv) > 3 else "")
+token = sys.argv[4] if len(sys.argv) > 4 else ""
 req = urllib.request.Request(url, headers={"User-Agent": "codemux"})
 if accept:
     req.add_header("Accept", accept)
+if token:
+    req.add_header("Authorization", "Bearer " + token)
 data = urllib.request.urlopen(req, timeout=60).read()
 if not data:
     raise SystemExit(1)
@@ -295,6 +339,9 @@ codemux_download() {
       mv -f "$part" "$dest" || return 1
     else
       rm -f "$part"
+      if codemux_api_url "$url" && [ -z "$(codemux_gh_token)" ]; then
+        log_warn "download failed: the GitHub API allows 60 requests/hour without a token (HTTP 403). Run 'gh auth login' or export GITHUB_TOKEN, then retry."
+      fi
       return 1
     fi
   fi
