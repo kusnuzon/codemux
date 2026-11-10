@@ -41,6 +41,10 @@ m_memory_probe() {
     PROBE=WARN; NOTE="digest wrapper in ~/.bashrc is missing (added during install)"
     return
   fi
+  if ! grep -q '_oc_tty_repair()' "$HOME/.bashrc" 2>/dev/null; then
+    PROBE=WARN; NOTE="bashrc wrapper predates the V1 XDG guard (updated during install)"
+    return
+  fi
 
   size="$(wc -c <"$base/MEMORY.md" 2>/dev/null || echo 0)"
   size="${size// /}"
@@ -80,6 +84,7 @@ codemux_memory_ensure_instructions() {
 codemux_memory_ensure_wrapper() {
   local rc="$HOME/.bashrc" size bak
   if codemux_memory_wrapper_present; then
+    codemux_memory_ensure_xdg_guard
     return 0
   fi
   [ -f "$rc" ] || : >"$rc" || return 1
@@ -94,8 +99,29 @@ _oc_refresh_digest() {
   [ -x "$HOME/.config/opencode/bin/session-digest.py" ] || return 0
   python3 "$HOME/.config/opencode/bin/session-digest.py" >/dev/null 2>&1
 }
-opencode() { _oc_refresh_digest; command opencode "$@"; }
-opencode-v2() { _oc_refresh_digest; command opencode-v2 "$@"; }
+# V1 keeps its own database. Drop the V2 XDG_* values so starting V1 from a V2
+# shell cannot point it at the V2 database ("no session table", blank screen).
+_oc_tty_repair() {
+  [ -t 1 ] || return 0
+  stty sane 2>/dev/null
+  printf '\033[?1049l\033[?25h\033[0m'
+}
+opencode() {
+  _oc_refresh_digest
+  local rc=0
+  ( unset XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME; command opencode "$@" )
+  rc=$?
+  [ "$rc" -ne 0 ] && _oc_tty_repair
+  return "$rc"
+}
+opencode-v2() {
+  _oc_refresh_digest
+  local rc=0
+  command opencode-v2 "$@"
+  rc=$?
+  [ "$rc" -ne 0 ] && _oc_tty_repair
+  return "$rc"
+}
 # codemux:memory end
 EOS
 
@@ -104,6 +130,43 @@ EOS
     truncate -s "$size" "$rc" 2>/dev/null || { [ -n "$bak" ] && cp -a "$bak" "$rc"; }
     return 1
   fi
+  chmod 600 "$rc" 2>/dev/null || true
+  return 0
+}
+
+# Older installs only refresh the digest. Append a guard block further down the
+# file (later definitions win) so V1 starts with its own XDG paths and a crashed
+# TUI restores the terminal instead of leaving a black, unresponsive screen.
+codemux_memory_ensure_xdg_guard() {
+  local rc="$HOME/.bashrc"
+  grep -q '_oc_tty_repair()' "$rc" 2>/dev/null && return 0
+  cat >>"$rc" <<'EOS'
+
+# codemux:memory-xdg begin  (managed by codemux — V1 keeps its own database)
+_oc_tty_repair() {
+  [ -t 1 ] || return 0
+  stty sane 2>/dev/null
+  printf '\033[?1049l\033[?25h\033[0m'
+}
+opencode() {
+  _oc_refresh_digest
+  local rc=0
+  ( unset XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME; command opencode "$@" )
+  rc=$?
+  [ "$rc" -ne 0 ] && _oc_tty_repair
+  return "$rc"
+}
+opencode-v2() {
+  _oc_refresh_digest
+  local rc=0
+  command opencode-v2 "$@"
+  rc=$?
+  [ "$rc" -ne 0 ] && _oc_tty_repair
+  return "$rc"
+}
+# codemux:memory-xdg end
+EOS
+  bash -n "$rc" 2>/dev/null || return 1
   chmod 600 "$rc" 2>/dev/null || true
   return 0
 }
