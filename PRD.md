@@ -4,7 +4,10 @@ One command to make Termux "ready to use": OpenCode V1 + V2 + menu/banner + a
 base toolset + storage, both on a bare Termux and on a partially set-up one.
 New repo, public, idempotent (safe to run repeatedly).
 
-Status: **DRAFT v2 — no code yet.** The name and the 3 main decisions are approved (see §18).
+Status: **implemented — v0.7.3 (2026-11-12).** Every command in §6 exists and is
+tested: smoke 44 · launcher-memory 38 · maintenance 19 · resume 16 · release 7 ·
+adapter 12. CI (`shellcheck -S warning` + `bash -n` + `check --json` + smoke) runs
+on every push. §18 keeps the decision log; §17 shows what is done and what is next.
 
 ---
 
@@ -32,14 +35,14 @@ with a single command.
 2. Idempotent: run on an already set-up Termux → only fills what is missing,
    never overwrites user config.
 3. `codemux check` reports the status of each component (installed / missing / broken).
-4. `codemux upgrade` updates apt packages, the selected V1/V2 payloads, and the
-   launcher in one go.
+4. `codemux upgrade` updates apt packages, **only the OpenCode payloads that are
+   actually installed**, and the launcher in one go.
 5. Every step has detection (precheck) + action + verification + rollback.
 6. Transparent: every action is printed, `--dry-run` included.
 7. **Cross-session memory** for V1 *and* V2: a new conversation immediately knows
    the memory + summary of earlier sessions (§12A).
-8. **Automatic update check**: when an upstream repo has a new release a notice
-   appears; once approved, the latest version is downloaded & installed (§12B).
+8. **Update check**: a notice appears in the startup menu when an upstream repo has
+   a new release; updating is a single explicit command (`codemux upgrade`, §12B).
 
 ## 3. Non-goals (out of scope for v1)
 
@@ -58,7 +61,7 @@ with a single command.
 | S3 fully set-up Termux | everything present | everything skipped, finishes in < 60 seconds, no files changed |
 | S4 Update | present, old versions | `upgrade` → apt + V1/V2 bumped, config kept |
 | S5 Broken | V2 fails on glibc/LD_PRELOAD | `doctor` points at the cause + `repair` fixes it |
-| S6 Offline | no internet | stops fast, clear message, can continue (`--resume`) |
+| S6 Offline | no internet | stops fast, clear message, run again later (resume) |
 
 ---
 
@@ -88,32 +91,49 @@ with a single command.
 codemux [command] [options]
 
 commands:
-  install            install everything that is missing (default)
-  check              status of each module, changes nothing
-  upgrade            apt + the selected V1/V2 payloads + launcher (update prompt)
-  update-check       check upstream for new releases, write the cache, exit (no install)
-  repair             fix modules that failed/broke
-  doctor             full diagnosis (shareable, no sensitive data)
-  uninstall          remove components (needs confirmation; user config stays)
-  self-update        update codemux itself
+  install            install what is missing; safe to repeat & resumes after a break
+  check              status of each module (changes nothing)
+  status             last install progress, lock, last 10 log lines
+  upgrade            apt + installed V1/V2 payloads + launcher
+  update-check       compare local versions with upstream releases (24h cache)
+  repair             clean up leftovers from a process that died midway
+  doctor             full diagnosis + repair suggestions
+  memory             cross-session memory status (read-only)
+  uninstall          remove V1/V2 payload + launcher block (memory stays)
+  self-update        update the codemux code from the upstream release
+  version            codemux version + installed components
+  help               the built-in help
 
-options:
-  --yes / -y         no confirmation
-  --dry-run          print the plan, do not execute
-  --only a,b,c       limit to specific modules (for `install`: v1, v2, or both)
-  --skip a,b,c       skip specific modules
-  --latest           use the newest versions (ignore versions.env)
-  --no-storage       do not run termux-setup-storage
-  --no-memory        do not install the memory feature (default: installed)
-  --auto-update      download+install right away when an update exists (default: ask)
-  --no-update-check  skip the update check during install/upgrade
-  --mirror auto|id|official
-  --json             machine output (for `check`/`doctor`)
-  --verbose          show the commands being run
+install options:
+  --dry-run          show the plan, change nothing
+  --fresh            start from step 1 (do not resume)
+  --only v1|v2|both  OpenCode V1 only, V2 only, or both (default: ask, or keep
+                     the saved choice; non-interactive → both)
+  --components X     same as --only
+  --skip a,b         skip modules (deps,mirror,storage,toolset,glibc,v1,v2,
+                     launcher,dotfiles,memory,self)
+  -y, --yes          no confirmation, never ask (keep the saved/default choice)
+
+other options:
+  check --json       machine-readable output
+  update-check --json / --quiet
+  repair --dry-run   show the repairs that would be made
+  uninstall --purge  also delete ~/.config/codemux (memory/projects are never touched)
+
+progress:
+  Long steps show a live spinner with elapsed time and, while downloading, the
+  size so far. CODEMUX_PROGRESS=0 (or CODEMUX_NO_PROGRESS=1) silences it;
+  non-terminal output is silent automatically, so logs and CI stay clean.
 ```
 
-Exit codes: `0` success/satisfied, `1` partial failure, `2` prerequisites not
-met (not Android / wrong arch / not enough disk).
+Exit codes: `check` → `0` ready · `1` something missing · `2` prerequisite failed.
+`install` → `0` finished · `1` a step failed · `2` prerequisite failed · `3`
+another install is running.
+
+Environment knobs: `CODEMUX_HOME` (default `~/.config/codemux`),
+`CODEMUX_COMPONENTS`, `CODEMUX_GITHUB_TOKEN` / `GITHUB_TOKEN` / `GH_TOKEN`,
+`CODEMUX_PROGRESS`, `CODEMUX_ALLOW_NONANDROID` + `CODEMUX_NO_APT_CHECK` (tests),
+`CODEMUX_FAKE_TAG_*` / `CODEMUX_FAKE_LOCAL_*` (tests).
 
 ### 6A. Component selection (V1 only / V2 only / both)
 
@@ -171,65 +191,78 @@ Long operations report live progress on stderr, one line, overwritten in place:
 
 ```
 codemux/
-├── install.sh              # small bootstrap: download the release → run bin/codemux
-├── bin/codemux        # entry point (bash), loads lib/*.sh
+├── install.sh              # small bootstrap: release tarball + sha256 → bin/codemux
+├── bin/codemux             # entry point (bash), sources lib/*.sh
 ├── lib/
-│   ├── common.sh           # log, colors, die, need, backup, confirm, state
-│   ├── state.sh            # read/write the state TSV, resume
-│   ├── modules/*.sh        # 1 file per module (see §8)
-│   ├── memory.sh           # install/merge V1+V2 memory (§12A)
-│   ├── updater.sh          # check upstream releases + prompt (§12B)
-│   ├── v1.sh               # adapter to the opencode-termux repo
-│   └── v2.sh               # adapter to the opencode-termux-v2 repo
-├── assets/
-│   ├── bashrc-snippet      # banner + arrow menu + guide (marked block)
-│   ├── bash_profile        # `. ~/.bashrc`
-│   └── hushlogin           # hide the stock MOTD
-├── memory/                 # templates: MEMORY.md, AGENTS.md, opencode.jsonc
-├── plugins/                # memory.js + session-digest.py (mechanism only)
-├── versions.env            # pinned versions (V1, V2, chromium, …)
-├── tools/doctor.sh         # diagnosis
-└── tests/
-    ├── sandbox-home.sh     # test installing twice in a fake HOME
-    └── smoke.sh
+│   ├── common.sh           # log, colors, die, detection, downloads, spinner,
+│   │                       #   component choice, token auth
+│   ├── state.sh            # state.tsv + run.tsv, lock, log, interruption detection
+│   ├── exec.sh             # crash-proof execution: detached spawn, wait,
+│   │                       #   atomic write, backup
+│   ├── install.sh          # `install` plan, picker, module order, `status`
+│   ├── check.sh            # `check` (+ --json)
+│   ├── maintenance.sh      # upgrade, doctor, uninstall
+│   ├── update.sh           # update-check, cache, version compare
+│   ├── memory.sh           # `memory` status
+│   ├── repair.sh           # `repair`
+│   ├── selfupdate.sh       # `self-update`
+│   ├── adapter.sh          # download + run the upstream V1/V2 installers
+│   └── modules/*.sh        # 1 file per module (see §8)
+├── templates/
+│   ├── bashrc-block.sh     # banner + arrow menu + update notice (marked block)
+│   ├── jsonc-instructions.py
+│   └── memory/             # MEMORY.md, AGENTS.md, opencode.jsonc templates
+├── versions.env            # pinned versions, package lists, upstream repos
+├── tests/                  # smoke, launcher-memory, maintenance, resume,
+│                           #   release, adapter
+└── .github/workflows/ci.yml
 ```
 
-`install.sh` is deliberately small (< 60 lines): make sure `curl` exists, download
-the release tarball, verify the sha256, extract to `~/.cache/codemux/src`, then
-execute.
+`install.sh` is deliberately small (~135 lines): check `curl` → download the
+release tarball → verify the sha256 → extract to `~/.cache/codemux/src/current`
+(atomic swap) → `exec bin/codemux install`. When no release exists it falls back
+to the `main` branch through `codeload` (no sha).
 
 ---
 
 ## 8. Modules & detection (the core mechanism)
 
-Execution order = the table below. `probe` decides SKIP/APPLY.
+Execution order = the table below. Each module file is `lib/modules/<name>.sh`
+with `m_<name>_probe` / `m_<name>_apply` / `m_<name>_verify`. `probe` decides
+SKIP vs APPLY. `install` runs `deps → mirror → storage → toolset → glibc → v1 →
+v2 → launcher → dotfiles → memory → self` (10 rows for V1-only or V2-only, 11 for
+both); `preflight` runs before the rows and `update-cache` is checked by `check`
+only.
 
 | # | Module | Detection (probe) | Action when missing |
 |---|---|---|---|
-| 0 | `preflight` | `uname -o`=Android, `uname -m`=aarch64, `id -u`≠0, disk ≥ 3 GB, DNS ok | refuse with a clear message |
-| 1 | `bootstrap-deps` | `command -v curl tar sha256sum` | `pkg update -y && pkg install -y curl tar coreutils` |
-| 2 | `mirror` | contents of `$PREFIX/etc/apt/sources.list` + `apt-get update` < N seconds | non-interactive `termux-change-repo` / write sources.list |
-| 3 | `storage` | `[ -d ~/storage ]` and `/sdcard` writable | `termux-setup-storage` (interactive! see §11) |
-| 4 | `apt-toolset` | `dpkg-query -W` for each package in `versions.env` | `pkg install -y <missing packages>` (including the `browser` group: chromium, playwright, agent-browser) |
-| 5 | `glibc-runtime` | `$PREFIX/glibc/lib/ld-linux-aarch64.so.1` exists | `pkg install -y glibc-repo glibc termux-exec-glibc` |
-| 6 | `opencode-v1` | `$PREFIX/share/opencode/opencode.real --version` | call `lib/v1.sh` (install/upgrade) + `apt-mark hold opencode` (only when V1 is selected) |
-| 7 | `opencode-v2` | `$PREFIX/share/opencode-v2/VERSION` + `opencode-v2 --version` | call `lib/v2.sh` (npm tarball + `lib/compat` shim + env sanitizing) (only when V2 is selected) |
-| 8 | `launcher` | `~/.bashrc` contains the `# codemux:launcher v1` marker | back up, then insert the block from `assets/bashrc-snippet` |
-| 9 | `dotfiles` | `~/.bash_profile`, `~/.hushlogin` | write/merge (never overwrite other content) |
-| 10 | `memory` | `memory.js` + `session-digest.py` present, `instructions` lists `MEMORY.md` & `RECENT.md` | install the templates + merge `opencode.jsonc`; existing files are **not** overwritten; `--no-memory` skips it |
-| 11 | `update-check` | `~/.config/codemux/update-cache.tsv` younger than 24 hours | check upstream releases (`releases/latest` redirect, no API quota), write the cache; `--no-update-check` skips it |
-| 12 | `verify` | run `doctor` | short report + exit code |
+| — | `preflight` | Android, `aarch64`, uid ≠ 0, disk ≥ 3 GB, bash present | refuse with a clear message (exit 2) |
+| 1 | `deps` | `curl tar sha256sum gzip unzip awk sed jq` | `pkg install` the missing ones, heal a broken `curl` |
+| 2 | `mirror` | active `sources.list` + `apt-get update` responds | pick/repair the apt mirror (official fallback) |
+| 3 | `storage` | `~/storage` exists and `/sdcard` readable | `termux-setup-storage` (interactive, §11) |
+| 4 | `toolset` | `dpkg-query -W` for each package in `versions.env` | `pkg install -y` what is missing (+ optional `tesseract chromium`, WARN only) |
+| 5 | `glibc` | `$PREFIX/glibc/lib/ld-linux-aarch64.so.1` + `libc.so.6` | `pkg install glibc-repo glibc termux-exec-glibc`, heal `libcurl` |
+| 6 | `v1` | payload at `$PREFIX/share/opencode/opencode.real` + launcher + `apt-mark hold` | run the `opencode-termux` installer (adapter) |
+| 7 | `v2` | payload at `$PREFIX/share/opencode-v2/opencode.real` + `lib/compat` shim + launcher | run the `opencode-termux-v2` installer (adapter) |
+| 8 | `launcher` | `~/.bashrc` has the `# codemux:launcher begin` block with `version 2` and passes `bash -n` | back up, insert the block from `templates/bashrc-block.sh` |
+| 9 | `dotfiles` | `~/.bash_profile`, `~/.hushlogin` | write/merge, never overwrite other content |
+| 10 | `memory` | plugins + `MEMORY.md`/`RECENT.md` + `instructions` entries | install templates + merge `opencode.jsonc`, never overwrite |
+| 11 | `self` | `codemux` on `PATH` points at this checkout/install | symlink into `$PREFIX/bin` |
+| 12 | `update-cache` | `~/.config/codemux/update-cache.tsv` younger than 24 h | refresh the cache (`check` reports its age) |
 
 Per-module contract:
 
 ```bash
-module_probe()   # 0 = already satisfied, 1 = action needed
-module_apply()   # 0 = success, !=0 failure
-module_verify()  # 0 = actually working
+m_<name>_probe()   # sets PROBE=OK|WARN|MISS|FAIL|SKIP + NOTE
+m_<name>_apply()   # performs the action, logs every command
+m_<name>_verify()  # defaults to probe; 0 = actually working
 ```
 
-Uniform output: `[3/11] storage        SKIP  (already present)`,
-`[6/11] opencode-v1    APPLY (1.19.0 → 1.19.3)`, `… OK`, `… FAIL (reason)`.
+Uniform output: `[3/10] storage      ready   Termux storage present`,
+`[6/10] v1           apply   (1.19.3 → 1.19.5)`, `… ok`, `… FAIL (reason)`.
+`check` uses `OK / WARN / MISS / FAIL / SKIP` with a summary line and exit codes
+(§6). `SKIP` means "not selected" (a component the user did not install), not a
+problem.
 
 ---
 
@@ -238,32 +271,50 @@ Uniform output: `[3/11] storage        SKIP  (already present)`,
 `~/.config/codemux/state.tsv` (append-only, human readable):
 
 ```
-# ts             module         status  version  note
-2026-10-22T19:40  preflight      DONE    -       android/aarch64, disk 3.3G
-2026-10-22T19:41  apt-toolset    SKIP    -       145 packages already present
-2026-10-22T19:44  opencode-v2    APPLY   2.1.2   compat shim installed
+# ts             module       status  version  note
+2026-11-11T01:59 deps         SKIP    -        curl tar sha256sum gzip unzip awk sed jq
+2026-11-11T02:03 toolset      DONE    -        20/20 required packages installed
+2026-11-11T02:05 v2           DONE    2.2.7    compat shim installed
 ```
 
-Backup: `~/.config/codemux/backup/20261022-194000/.bashrc` etc.
-Lock: `~/.config/codemux/lock` (prevents 2 parallel processes).
+`~/.config/codemux/run.tsv` holds the plan of the current run — one row per
+module with `status pid boot started finished note`:
+
+```
+# module	status	pid	boot	started	finished	note
+deps	DONE	31976	be656e9e-…	08:00:19	08:03:08	curl tar sha256sum …
+v1	RUNNING	32011	be656e9e-…	08:03:09	-	adapter pid 32011
+```
+
+`codemux status` shows: which step out of how many, the active pid, the last 10
+log lines. A `RUNNING` row whose pid is gone (or whose `boot` id differs → the
+device rebooted) is reported as **interrupted**, never as finished.
+
+Also in `~/.config/codemux/`: `lock` (pid + boot id, prevents parallel runs),
+`logs/<timestamp>.log`, `backup/<ts>-<tag>/`, `components`, `update-cache.tsv`.
 
 ---
 
 ## 10. Installer flow (phases)
 
 ```
-[bootstrap]  install.sh: check bash+curl → download the release tarball → sha256 → exec bin/codemux install
+[bootstrap]  install.sh: check bash+curl → download the release tarball → sha256
+             → extract to ~/.cache/codemux/src/current → exec bin/codemux install
      │
-[preflight]  OS/arch/uid/disk/DNS/bash version → failure = stop (exit 2)
+[choice]     --only / CODEMUX_COMPONENTS / saved ~/.config/codemux/components,
+             otherwise the arrow-key picker (TTY only); the answer is saved
      │
-[plan]       probe every module → print the plan table (APPLY/SKIP) → confirm (unless -y / --dry-run)
+[preflight]  Android/aarch64/uid/disk → failure = stop (exit 2)
      │
-[execute]    modules 1..10 in order; per module: apply → verify → record state
-     │        one failing module ≠ total failure: continue, collect the FAIL list
+[plan]       probe every selected module → print the plan (ready / INSTALL) →
+             nothing to do = exit 0 · --dry-run = stop here
      │
-[verify]     full doctor → summary: OK/SKIP/FAIL + suggested next steps
+[execute]    modules in order; per module: apply (spinner to stderr) → verify →
+             record in run.tsv + state.tsv. One failing module ≠ total failure:
+             it is collected, except `deps`/`glibc` which stop the run.
      │
-[done]       print: how to open the menu, how to upgrade, where the log is
+[done]       summary (ready/skipped/failed) + the log path; failure prints
+             `codemux status` / `install` (resume) / `repair` hints
 ```
 
 Full log: `~/.config/codemux/logs/<timestamp>.log` (mode 600).
@@ -274,12 +325,13 @@ Full log: `~/.config/codemux/logs/<timestamp>.log` (mode 600).
 
 The Android permission dialog cannot be fully automated. Mechanism:
 
-1. `probe`: when `~/storage` exists and `/sdcard/Android` is readable → SKIP.
-2. Otherwise: run `termux-setup-storage` and **wait**; instruct the user to
-   "tap Allow on screen". Timeout 90 seconds.
-3. On failure/timeout: record `WARN`, continue with the other modules (not
-   fatal), show the manual steps at the end.
-4. `--no-storage` skips this step entirely.
+1. `probe`: when `~/storage` exists and `/sdcard` is readable → `OK` (SKIP).
+2. Otherwise: run `termux-setup-storage` with a 45 second timeout and **wait**;
+   the dialog stays on screen until the user taps Allow.
+3. On failure/timeout: record `WARN` ("storage permission not granted yet — run
+   termux-setup-storage anytime"), continue with the other modules (not fatal).
+4. `--skip storage` skips this step entirely (the `--only`/component choice never
+   affects it).
 
 ---
 
@@ -287,10 +339,11 @@ The Android permission dialog cannot be fully automated. Mechanism:
 
 | Command | Contents |
 |---|---|
-| `codemux upgrade` | `pkg update && pkg upgrade -y` (opencode held) → `lib/v1.sh upgrade` → `lib/v2.sh upgrade` (only the installed components) → re-sync the launcher block (version) → `doctor` |
-| `codemux self-update` | download the latest `codemux` release, replace `bin/`+`lib/` (assets untouched when the user modified them) |
-| `codemux repair` | pick modules in FAIL/broken state → apply again (e.g. reinstall the V2 compat shim, sanitize `LD_PRELOAD`) |
-| `codemux uninstall` | remove the V1/V2 payloads + launcher block; does **not** delete `MEMORY.md`, projects, or backups |
+| `codemux upgrade` | `pkg update && pkg upgrade -y` (opencode held) → V1/V2 adapters **only for the payloads that are installed** (detected via `$PREFIX/share/opencode{,-v2}/opencode.real`) → re-sync the launcher block → refresh the update cache |
+| `codemux update-check` | compare local versions with the upstream releases (24 h cache), `--json`, `--quiet` |
+| `codemux self-update` | download the latest `codemux` release, verify sha256, back up `bin lib templates VERSION versions.env install.sh` to `backup/<ts>-selfupdate/`, swap, then run `--version`; failure = automatic restore |
+| `codemux repair` | drop a stale lock, mark dead `RUNNING` steps, `dpkg --configure -a` + `apt-get -f install` when apt was interrupted, reinstall the V2 compat shim, refresh the launcher block |
+| `codemux uninstall` | move the V1/V2 payloads to `backup/<ts>-uninstall/`, remove the launcher/memory blocks (verified with `bash -n`, restored if broken); `--purge` also deletes `~/.config/codemux`. Never touches `MEMORY.md`, projects, or backups |
 
 Optional schedule: Termux has no cron by default → it is enough to suggest
 "run `codemux upgrade` once a month".
@@ -345,9 +398,8 @@ to `RECENT.md`, which is loaded automatically through `instructions`.
 ### Important rules
 
 1. **Hard limit for `MEMORY.md` = 24,000 bytes.** The plugin refuses to write past
-   it (proven in production). `doctor` checks the size; above 90% of the limit →
-   warning + trimming advice (`codemux memory prune` only **suggests**, it does
-   not delete).
+   it (proven in production). `check`/`doctor` show the size and warn above 90% of
+   the limit; trimming is done by the model/human (codemux never deletes memory).
 2. **Never overwrite user memory.** A reinstall must not wipe
    `MEMORY.md`/`AGENTS.md` — that is the most expensive mistake.
 3. **No personal data in the repo.** The repo only holds templates; memory
@@ -360,7 +412,7 @@ to `RECENT.md`, which is loaded automatically through `instructions`.
    fresh installs, personal data not being overwritten, a config missing entries,
    adoption of an old block, idempotency, and a broken `~/.bashrc` (restored, not
    left broken).
-6. **`--no-memory`** skips the whole module (for those who want a clean config).
+6. **`--skip memory`** skips the whole module (for those who want a clean config).
 
 ### Related commands
 
@@ -369,17 +421,17 @@ codemux memory              # status + size of MEMORY.md/RECENT.md (read-only)
 codemux memory --json       # for scripts
 ```
 
-`memory digest` and `memory prune --dry-run` are not implemented yet; for now the
-digest runs automatically through the `~/.bashrc` wrapper and the plugin, and
-trimming memory is done manually on `doctor`'s advice (M5).
+No `memory digest` / `memory prune` subcommand exists: the digest runs
+automatically through the `~/.bashrc` wrapper and the memory plugin, and trimming
+is done by the model (or by hand) when `check`/`doctor` reports the 90% warning.
 
 ---
 
-## 12B. Automatic update check + download after approval
+## 12B. Update check & cache (notify → `codemux upgrade`)
 
 Problem: Termux has no cron; V1/V2/codemux versions go stale quickly and nothing
-notifies anyone. Solution: a light check when the menu opens, a notification, then
-download only after approval.
+notifies anyone. Solution: a light check when the menu opens, a one-line notice,
+and the update itself stays an explicit command.
 
 ### Sources being checked
 
@@ -393,48 +445,49 @@ download only after approval.
 
 The GitHub API is only used as a **fallback** (quota 60/hour without a token).
 
-### Flow
+### Flow (as implemented)
 
 ```
 menu opens
-   └─ update cache < 24 hours? ── yes ──> show the notice line (instant)
+   └─ cache < 6 hours old? ── yes ──> show the notice line (instant)
                 │ no
-                └─ run `codemux update-check --quiet` in the background
-                   (6 second timeout, output to the cache, never blocks the prompt)
-                        └─ done → cache updated → the notice appears
-                           on the next menu / when returning from opencode
+                └─ `codemux update-check --quiet` in the background
+                   (6 s timeout, output to the cache, never blocks the prompt)
+                        └─ cache updated → the notice appears next time
 
-a newer version exists:
-   ⬆ updates available: V2 2.1.2 → 2.1.3 · codemux 1.0.0 → 1.1.0
-     press [u] to update now (later: codemux upgrade)
-   └─ [u] → change summary → confirm [y/N]
-             └─ y → download the release → sha256 → backup → install → verify
-                    ├─ success → new version shown, cache cleared
-                    └─ failure → automatic rollback + report
+a newer version / apt packages exist:
+   update available: codemux 0.7.2 · opencode-v2 2.2.7
+   run: codemux upgrade
+   └─ the menu only informs; the update itself is a normal command
+      (`codemux upgrade` → plan → confirmation → install → verify), so a TUI
+      session is never interrupted mid-flight
 ```
 
-### Configuration (`~/.config/codemux/config`)
+### Cache & retry rules (`~/.config/codemux/update-cache.tsv`)
 
-```ini
-auto_update_check=on        # on|off
-auto_update_mode=ask        # ask (default) | notify | auto
-check_interval=24h
-include_apt=yes
-```
+| Situation | Behaviour |
+|---|---|
+| Cache younger than 24 h | used as-is, no network |
+| Cache older | background refresh, at most once per 6 h from the menu |
+| Upstream check failed for a component | row marked `na`, retried at most once per hour |
+| Cached "local" version ≠ installed version | row hidden (stale) and the cache is forced to re-check |
+| Never installed yet | rows follow the saved component choice |
 
-- `ask` → notify + ask before downloading (**default**).
-- `notify` → only informs, never asks.
-- `auto` → download+install right away (`--auto-update`), still with backup + verify.
+There is no `config` file: behaviour is fixed (notify + manual `codemux upgrade`)
+and the knobs are environment variables (`CODEMUX_HOME`) and CLI options.
 
 ### Safety & behaviour
 
-- Never updates while an opencode/TUI session is running — only from the menu/CLI.
+- The menu only **notifies**; nothing is downloaded or replaced without running
+  `codemux upgrade` (or `upgrade --yes`).
 - Every download is sha256-verified; the old payload is backed up
-  (`~/.config/codemux/backup/<ts>/`) and restored when `verify` fails.
-- Offline/timeout → fails **silently**, the cache is not modified, startup is
-  unaffected.
+  (`~/.config/codemux/backup/<ts>-<tag>/`) and restored when verification fails.
+- Offline/timeout → fails **silently**, the cache keeps the previous "latest"
+  value, startup is unaffected.
 - `opencode` stays `apt-mark hold` so apt does not overwrite the V1 payload.
-- Check/download history is logged in `~/.config/codemux/logs/update.log` (mode 600).
+- API calls to `api.github.com` use a token when available
+  (`CODEMUX_GITHUB_TOKEN` > `GITHUB_TOKEN` > `GH_TOKEN` > `gh auth token`) to avoid
+  the 60 requests/hour anonymous limit.
 
 ### Related commands
 
@@ -446,23 +499,31 @@ codemux upgrade --yes           # no questions
 codemux upgrade --only v2       # a single component (apt,v1,v2,launcher)
 ```
 
-M5 implementation: `lib/update.sh` (`releases/latest` redirect, cache
+Implementation: `lib/update.sh` (`releases/latest` redirect, cache
 `~/.config/codemux/update-cache.tsv`, `CODEMUX_FAKE_TAG_*` /
-`CODEMUX_FAKE_LOCAL_*` overrides for tests), `lib/maintenance.sh` (doctor,
-upgrade, uninstall), the update notice in the launcher block (at most one
-background check per 6 hours), `tests/maintenance.sh`.
+`CODEMUX_FAKE_LOCAL_*` overrides for tests, token-aware API fallback),
+`lib/maintenance.sh` (doctor, upgrade, uninstall), the update notice in the
+launcher block (`_oc_update_notice`, at most one background check per 6 hours),
+`tests/maintenance.sh` and the menu tests in `tests/launcher-memory.sh`.
 
 ---
 
 ## 13. Security & reliability
 
-- Every download is `sha256`-verified (recorded in `versions.env` / release notes).
-- No layered `curl | bash`: the bootstrap downloads a tarball, not a second piped script.
-- Never writes a token; `gh` is not authenticated automatically.
-- `set -Eeuo pipefail`, `shellcheck -S warning` must pass in CI.
+- Every download is `sha256`-verified (release tarball, self-update; payload
+  checksums come from the upstream installer / npm registry sha512).
+- No layered `curl | bash`: the bootstrap downloads a tarball and only falls back
+  to `codeload` for `main` (documented in the output as "no sha256").
+- No token is ever written by codemux; `gh` login is the user's own business.
+  When a token *is* already available it is used only for GitHub API headers.
+- `set -Eeuo pipefail` in `bin/codemux`; CI runs `shellcheck -S warning`,
+  `bash -n`, `check --json` validation and `tests/smoke.sh` on every push.
 - No `rm -rf` on a path containing `$HOME`, except the internal
   `~/.cache/codemux/src` path.
-- Mode of new config files: `600` for state/log.
+- Mode of new config files: `600` for state/log; downloads go through
+  `.part` + checksum + atomic `mv`.
+- Nothing is downloaded or replaced while an opencode session runs: the menu only
+  notifies, and `upgrade`/`self-update` are explicit commands.
 
 ---
 
@@ -475,10 +536,11 @@ background check per 6 hours), `tests/maintenance.sh`.
 | Minimum disk space checked | 3 GB free |
 | Repo size (no binaries) | < 300 KB |
 | Idempotency | run twice → the second run changes 0 files (checked with `find -newer`) |
-| Network failure | clear message + `--resume` does not re-download what is present |
+| Network failure | clear message; `codemux install` (resume) does not re-download what is present |
 | Session digest (8 sessions, V1+V2) | < 2 seconds, never blocks the prompt |
 | Update check (background) | < 6 seconds, never blocks the menu |
-| Update-check cache | 1× per 24 hours per component |
+| Update-check cache | 1× per 24 hours per component (menu retries at most 1×/6 h) |
+| Tests | smoke 44 · launcher-memory 38 · maintenance 19 · resume 16 · release 7 · adapter 12 |
 
 ---
 
@@ -502,10 +564,20 @@ background check per 6 hours), `tests/maintenance.sh`.
    writes facts; other sessions read them. Given `MEMORY.md` already holds user
    content, Then its hash does not change after the install.
 8. **S8 (update)** Given the local version is older than the upstream release,
-   When the menu opens, Then the `⬆ updates available` line appears; When answering
-   `y`, Then it is downloaded + the sha256 matches + the version goes up; When
-   answering `n`, Then nothing is downloaded. Given offline, Then the update check
-   fails silently (startup is unaffected).
+   When the menu opens (cache stale), Then `update available: …` + `run: codemux
+   upgrade` appears; When running `codemux upgrade`, Then only installed payloads
+   are updated + sha256 of every download matches + the version goes up. Given
+   offline, Then the update check fails silently (startup is unaffected).
+9. **S9 (component choice)** Given no saved choice and a TTY, When `install`,
+   Then the arrow-key picker appears; ↑/↓ + Enter, `1`/`2`/`3` and `q` all behave
+   as documented; `q` changes nothing and writes no `components` file. Given
+   `--only v1` (or a non-TTY run), Then the choice is used without asking and the
+   missing component stays untouched.
+10. **S10 (menu install)** Given only one component is installed, When the menu
+    opens, Then both rows are shown and the missing one says
+    `not installed · Enter to install`; choosing it asks `Install it now? [y/N]`,
+    `n` prints `not installed — nothing changed`, and `y` runs
+    `codemux install --only <component>` and then starts it.
 
 ---
 
@@ -521,7 +593,7 @@ background check per 6 hours), `tests/maintenance.sh`.
 | 3 GB disk | downloads fail midway | preflight disk check, `--only` to save space |
 | Overwriting the user's `.bashrc` | lost config | block markers + backup + merge |
 | Two concurrent processes | corrupt state | lockfile |
-| `MEMORY.md` > 24,000 bytes (hard plugin limit, has happened) | `memory_save` fails | `doctor` warns + `codemux memory prune --dry-run` suggests trimming (never deletes automatically) |
+| `MEMORY.md` > 24,000 bytes (hard plugin limit, has happened) | `memory_save` fails | `check`/`doctor` warn at 90% and the model trims; codemux never deletes memory |
 | `RECENT.md` grows | wasted context | the digest is limited to 8 sessions, each truncated to ~600 characters |
 | False update notice / local version newer | pointless download | compare semver; `update-check --json` shows the version source |
 | GitHub API limit (60/hour) | check fails | use the `releases/latest` redirect (no quota), API only as fallback |
@@ -531,52 +603,72 @@ background check per 6 hours), `tests/maintenance.sh`.
 
 ## 17. Milestones
 
-| # | Contents | Output |
+| # | Contents | Status |
 |---|---|---|
-| M1 | skeleton: `bin`, `lib/common`, `state`, `preflight`, `check` | `codemux check` works ✅ |
-| M2 | env modules: deps, mirror, storage, apt-toolset, glibc (+ resume/atomic §20) | Termux "tool-ready" ✅ |
-| M3 | V1 & V2 adapters (call the existing repos) | `opencode`, `opencode-v2` work [done] |
-| M4 | launcher: banner+guide menu, dotfiles, **V1+V2 memory** (§12A) | startup screen + memory done ✅ |
-| M5 | `doctor`, `upgrade`, `repair`, `uninstall`, **`update-check` + update prompt** (§12B) | maintenance ✅ |
-| M6 | CI: shellcheck, sandbox HOME test, release tarball | 1.0 release ✅ |
+| M1 | skeleton: `bin`, `lib/common`, `state`, `preflight`, `check` | ✅ `codemux check` works |
+| M2 | env modules: deps, mirror, storage, toolset, glibc (+ resume/atomic §20) | ✅ Termux "tool-ready" |
+| M3 | V1 & V2 adapters (call the existing repos) | ✅ `opencode`, `opencode-v2` work |
+| M4 | launcher: banner + arrow menu, dotfiles, **V1+V2 memory** (§12A) | ✅ startup menu + memory |
+| M5 | `doctor`, `upgrade`, `repair`, `uninstall`, **`update-check`** (§12B) | ✅ maintenance |
+| M6 | CI: shellcheck, `bash -n`, `check --json`, smoke, release tarball | ✅ 1.0 ready |
+| M7 | component picker (↑/↓), upgrade limited to installed payloads, menu install confirmation | ✅ **0.7.3** (§6A, §12, S9/S10) |
+| M8 | next: update notice **inside** an opencode session (plugin reading the cache), `memory prune --dry-run`, optional `--lang id` | ⏳ planned |
+
+Release history: `0.6.4` update-cache fix · `0.6.5` `kuota` menu line · `0.6.6`
+early dependency install · `0.7.0` component choice · `0.7.1` progress spinner ·
+`0.7.2` token-authenticated GitHub downloads · `0.7.3` picker + installed-only
+upgrade + menu install flow.
 
 ---
 
-## 18. Decisions that need approval
+## 18. Decisions (decided — kept as a record)
 
-| # | Question | Recommendation |
+| # | Question | Decision |
 |---|---|---|
 | D1 | Repo name | **`codemux`** (chosen) |
 | D2 | Duplicate the V1/V2 logic? | **Adapter** — call the `opencode-termux` & `opencode-termux-v2` repos (chosen) |
-| D3 | Include personal memory? | Templates only, via `--with-memory`, never overwriting (**approved**) |
-| D4 | Default apt mirror | `auto` (fast probe, official fallback) (**approved**) |
-| D5 | Does "from scratch" Termux include Chromium/Playwright? | **Yes, installed by default** (chosen); can be skipped with `--skip browser` (saves ~400 MB) |
-| D6 | Output language | English (default), `--lang id` later (**approved**) |
-| D7 | Memory feature installed by default? | **Yes, ON by default** (`--no-memory` to skip) — requested |
-| D8 | Update-check behaviour | **Notify first, download after approval**; `--auto-update` for no questions |
-| D9 | Update-check interval | **24 hours**, run in the background (6 second timeout) when the menu opens |
-| D10 | Update notice inside an opencode session | Later phase (M7), through a plugin that reads the cache |
+| D3 | Include personal memory? | Templates only, never overwriting (**approved**) |
+| D4 | Default apt mirror | current active mirror, repaired when broken, official fallback (**approved**) |
+| D5 | Does "from scratch" Termux include Chromium/Playwright? | **Optional extras** (`tesseract chromium` via `x11-repo`, WARN on failure); skip everything with `--skip toolset` |
+| D6 | Output language | English (**approved**; `--lang id` is M8) |
+| D7 | Memory feature installed by default? | **Yes, ON by default** (`--skip memory` to skip) |
+| D8 | Update behaviour | **Notify only** (`update available … run: codemux upgrade`); nothing downloads automatically |
+| D9 | Update-check interval | **24 hours** cache, menu retries at most every 6 hours, `na` rows every hour |
+| D10 | Update notice inside an opencode session | Not implemented (M8) |
+| D11 | Component default | **Both** (`v1 v2`) when nothing is saved; the picker remembers the answer |
+| D12 | Upgrade scope | **Only installed payloads** + apt + launcher; `--only` overrides |
 
 ---
 
-## 19. One command (plan)
+## 19. One command
 
 ```bash
 curl -fsSL -H 'Accept: application/vnd.github.raw' \
-  https://api.github.com/repos/kusnuzon/codemux/contents/install.sh | bash -s -- --yes
+  https://api.github.com/repos/kusnuzon/codemux/contents/install.sh | bash
 ```
+
+Add `--yes` for a fully non-interactive run (keeps the saved/default components),
+`--only v1|v2|both` to decide up front, or `--dry-run` to see the plan.
 
 Release assets: `codemux.tar.gz` (+ `codemux.tar.gz.sha256`). The bootstrap
 downloads both, verifies the sha256, extracts to `~/.cache/codemux/src/current`
 (atomic: `current.new` → swap), then `exec bin/codemux install`. When no release
 exists yet → `codeload …/refs/heads/main` fallback without sha.
 
-Lightweight variant (no heavy browser/python):
+Lightweight variant (skip the apt toolset — e.g. on a tiny disk):
 
 ```bash
 curl -fsSL -H 'Accept: application/vnd.github.raw' \
   https://api.github.com/repos/kusnuzon/codemux/contents/install.sh \
-  | bash -s -- --yes --skip browser,python
+  | bash -s -- --yes --skip toolset
+```
+
+Component-scoped variants (nothing else is touched):
+
+```bash
+… | bash -s -- --only v1     # V1 only   (10 modules)
+… | bash -s -- --only v2     # V2 only   (10 modules)
+… | bash -s -- --only both   # V1 + V2   (11 modules, default)
 ```
 
 ---
@@ -600,18 +692,17 @@ verification. So a process killed at any moment always reveals where it stopped.
 
 ### 20.2 Human-readable state
 
-`state.tsv` + the `install.run` marker:
+`state.tsv` (history) + `run.tsv` (current run):
 
 ```
-# step          status     start  finish   note
-1 preflight     DONE       19:40  19:40    android/aarch64
-2 deps          DONE       19:40  19:41    7 tools present
-3 toolset       RUNNING    19:41  -        apt pid 12345
+# module    status    pid    boot        started   finished  note
+deps        DONE      31976  be656e9e-…  08:00:19  08:03:08  curl tar sha256sum …
+toolset     RUNNING   32011  be656e9e-…  08:03:09  -         apt pid 32011
 ```
 
 `codemux status` shows: which step out of how many, the active pid, the last 10
-log lines. If the process is dead, the status stays `RUNNING` but the pid is no
-longer alive → codemux knows it was **interrupted**, not finished.
+log lines. If the process is dead, the row stays `RUNNING` but the pid is gone →
+the next `install` marks it `INTERRUPTED` and continues from that step.
 
 ### 20.3 Dead-process detection
 
@@ -643,11 +734,11 @@ longer alive → codemux knows it was **interrupted**, not finished.
 
 ### 20.6 Resumable without any human
 
-1. Open Termux again → the menu reads `install.run` and shows a top line:
-   `! installation interrupted at step 3/9 — Enter to continue`.
-2. `codemux install` with no arguments = **automatic resume**; `--fresh` to start over.
+1. `codemux status` shows the interrupted step and the active pid.
+2. `codemux install` with no arguments = **automatic resume** (it marks dead
+   `RUNNING` rows `INTERRUPTED` and re-probes every module); `--fresh` starts over.
 3. One-command emergency repair: `codemux repair` (dpkg configure, stale lock,
-   missing shim, broken config block).
+   missing shim, dead `RUNNING` rows).
 
 ### 20.7 "Kill it midway" tests
 
