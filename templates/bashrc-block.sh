@@ -1,8 +1,10 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
+# codemux:launcher version 2
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
-# Components that are not installed are not offered by the menu.
+# Every row is always offered: a component that is not installed is marked
+# "not installed", and choosing it asks for confirmation before installing.
 # Skip everything: OPENCODE_NO_AUTO=1 bash
 _oc_ver() {
   local v=""
@@ -53,20 +55,29 @@ _oc_banner() {
   fi
 }
 
-# Menu items depend on what is installed: a component that is not installed is
-# not offered, so a V1-only or V2-only install shows only what it can run.
+# Every component row is always shown. A missing one is marked "not installed"
+# and choosing it offers to install it (see _oc_launch_component).
 _oc_items() {
   _OC_KEYS=()
   _OC_NAMES=()
   _OC_DESCS=()
+  _OC_STATE=()
   if command -v opencode >/dev/null 2>&1; then
-    _OC_KEYS+=("v1"); _OC_NAMES+=("OpenCode V1"); _OC_DESCS+=("stable · legacy DB")
+    _OC_KEYS+=("v1"); _OC_NAMES+=("OpenCode V1")
+    _OC_DESCS+=("$(_oc_ver v1) · stable · legacy DB"); _OC_STATE+=("installed")
+  else
+    _OC_KEYS+=("v1"); _OC_NAMES+=("OpenCode V1")
+    _OC_DESCS+=("not installed · Enter to install"); _OC_STATE+=("missing")
   fi
   if command -v opencode-v2 >/dev/null 2>&1; then
-    _OC_KEYS+=("v2"); _OC_NAMES+=("OpenCode V2"); _OC_DESCS+=("new · separate DB")
+    _OC_KEYS+=("v2"); _OC_NAMES+=("OpenCode V2")
+    _OC_DESCS+=("$(_oc_ver v2) · new · separate DB"); _OC_STATE+=("installed")
+  else
+    _OC_KEYS+=("v2"); _OC_NAMES+=("OpenCode V2")
+    _OC_DESCS+=("not installed · Enter to install"); _OC_STATE+=("missing")
   fi
-  _OC_KEYS+=("shell"); _OC_NAMES+=("Shell only"); _OC_DESCS+=("no opencode")
-  _OC_KEYS+=("quit"); _OC_NAMES+=("Quit"); _OC_DESCS+=("close Termux")
+  _OC_KEYS+=("shell"); _OC_NAMES+=("Shell only"); _OC_DESCS+=("no opencode"); _OC_STATE+=("installed")
+  _OC_KEYS+=("quit"); _OC_NAMES+=("Quit"); _OC_DESCS+=("close Termux"); _OC_STATE+=("installed")
   _OC_COUNT="${#_OC_KEYS[@]}"
 }
 
@@ -98,7 +109,7 @@ _oc_menu() {
   printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
   _oc_rows "$1"
   printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
-  printf '  %s↑/↓ select%s   %sEnter run%s   %s1-%d/q%s   %sCtrl+C cancel%s\n\n' \
+  printf '  %s↑/↓ select%s   %sEnter run/install%s   %s1-%d/q%s   %sCtrl+C cancel%s\n\n' \
     "$DIM" "$R" "$DIM" "$R" "$DIM" "$_OC_COUNT" "$R" "$DIM" "$R"
 }
 
@@ -203,6 +214,58 @@ _oc_update_notice() {
 _oc_cursor_hide() { printf '\033[?25l'; }
 _oc_cursor_show() { printf '\033[?25h'; }
 
+# Run a component. When its payload is missing, explain that first and ask for
+# confirmation before running `codemux install --only <component>`.
+# Returns 0 when the component ran, 1 when it is still missing.
+_oc_launch_component() {
+  local key="$1" bin label ans rc
+  case "$key" in
+    v1) bin="opencode"; label="V1" ;;
+    v2) bin="opencode-v2"; label="V2" ;;
+    *) return 1 ;;
+  esac
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    printf '\n  %sOpenCode %s is not installed yet.%s\n' "$BOLD" "$label" "$R"
+    printf '  Install it now? [y/N] '
+    _oc_cursor_show
+    ans=""
+    IFS= read -r ans || ans=""
+    case "$ans" in
+      y | Y | yes | YES) ;;
+      *)
+        printf '  %snot installed — nothing changed.%s\n\n' "$DIM" "$R"
+        _oc_cursor_hide
+        return 1
+        ;;
+    esac
+    if ! command -v codemux >/dev/null 2>&1; then
+      printf '  %scodemux not found — cannot install.%s\n\n' "$DIM" "$R"
+      _oc_cursor_hide
+      return 1
+    fi
+    printf '  %s→ installing OpenCode %s (this can take a while)…%s\n\n' "$DIM" "$label" "$R"
+    codemux install --only "$key"
+    rc=$?
+    hash -r 2>/dev/null || true
+    _oc_cursor_hide
+    if [ "$rc" -ne 0 ] || ! command -v "$bin" >/dev/null 2>&1; then
+      printf '\n  %sinstall failed (rc=%s) — see the log above.%s\n\n' "$DIM" "$rc" "$R"
+      return 1
+    fi
+  fi
+  printf '\n'
+  _oc_cursor_show
+  if [ "$key" = "v1" ]; then
+    printf '  %s→ OpenCode V1%s\n\n' "$DIM" "$R"
+    opencode
+  else
+    printf '  %s→ OpenCode V2%s\n\n' "$DIM" "$R"
+    opencode-v2
+  fi
+  _oc_cursor_hide
+  return 0
+}
+
 # Returns 0 = continue to the shell, 1 = exit Termux.
 _oc_menu_loop() {
   local sel=0 full=1 i saved key choice_file="$HOME/.local/state/opencode-choice"
@@ -244,20 +307,13 @@ _oc_menu_loop() {
         key="${_OC_KEYS[$sel]}"
         case "$key" in
           v1|v2)
-            mkdir -p "$HOME/.local/state" 2>/dev/null
-            printf '%s\n' "$key" >"$choice_file" 2>/dev/null
-            printf '\n'
-            # opencode needs a visible cursor; hide it again when back in the menu
-            _oc_cursor_show
-            if [ "$key" = "v1" ]; then
-              printf '  %s→ OpenCode V1%s\n\n' "$DIM" "$R"
-              opencode
-            else
-              printf '  %s→ OpenCode V2%s\n\n' "$DIM" "$R"
-              opencode-v2
+            if _oc_launch_component "$key"; then
+              mkdir -p "$HOME/.local/state" 2>/dev/null
+              printf '%s\n' "$key" >"$choice_file" 2>/dev/null
             fi
-            # after opencode closes (e.g. you type exit), return to the menu
-            _oc_cursor_hide
+            # the install may have changed the rows: rebuild before redrawing
+            _oc_items
+            [ "$sel" -ge "$_OC_COUNT" ] && sel=$((_OC_COUNT - 1))
             full=1
             ;;
           shell) printf '\n'; return 0 ;;

@@ -122,6 +122,31 @@ else
   bad "upgrade --dry-run changed the system"
 fi
 
+# 2b. upgrade follows what is installed, never pulls the missing component in
+mkdir -p "$SB2/prefix/share/opencode" "$SB2/prefix/share/opencode-v2"
+printf 'v1 payload\n' >"$SB2/prefix/share/opencode/opencode.real"
+run_cm "$SB2" upgrade --dry-run >"$SB2/only-v1.log" 2>&1
+if grep -qE '^  v1 ' "$SB2/only-v1.log" && ! grep -qE '^  v2 ' "$SB2/only-v1.log"; then
+  ok "upgrade: only the installed component (V1) is planned"
+else
+  bad "upgrade: plan is not limited to installed components"
+fi
+rm -f "$SB2/prefix/share/opencode/opencode.real"
+printf 'v2 payload\n' >"$SB2/prefix/share/opencode-v2/opencode.real"
+run_cm "$SB2" upgrade --dry-run >"$SB2/only-v2.log" 2>&1
+if grep -qE '^  v2 ' "$SB2/only-v2.log" && ! grep -qE '^  v1 ' "$SB2/only-v2.log"; then
+  ok "upgrade: only the installed component (V2) is planned"
+else
+  bad "upgrade: plan is not limited to installed components"
+fi
+rm -f "$SB2/prefix/share/opencode-v2/opencode.real"
+run_cm "$SB2" upgrade --dry-run >"$SB2/none.log" 2>&1
+if ! grep -qE '^  v[12] ' "$SB2/none.log"; then
+  ok "upgrade: nothing installed → no payload step is planned"
+else
+  bad "upgrade: plans a payload even though none is installed"
+fi
+
 # =============================================================================
 # 3. upgrade --only launcher: adopts the old block + digest wrapper
 # =============================================================================

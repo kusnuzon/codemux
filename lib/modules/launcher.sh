@@ -1,6 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034  # PROBE/NOTE/globals are shared across files
 # module: launcher — banner + menu in ~/.bashrc (codemux-marked block).
+# Bump when the template changes in a way users should receive on `install`.
+CODEMUX_LAUNCHER_BLOCK_VERSION="2"
 
 m_launcher_probe() {
   local rc="$HOME/.bashrc"
@@ -10,10 +12,12 @@ m_launcher_probe() {
   fi
   if grep -q 'codemux:launcher begin' "$rc" 2>/dev/null &&
      grep -q 'codemux:launcher end' "$rc" 2>/dev/null; then
-    if bash -n "$rc" 2>/dev/null; then
-      PROBE=OK; NOTE="marked block present"
-    else
+    if ! bash -n "$rc" 2>/dev/null; then
       PROBE=FAIL; NOTE="$HOME/.bashrc fails bash -n"
+    elif ! grep -q "codemux:launcher version $CODEMUX_LAUNCHER_BLOCK_VERSION" "$rc" 2>/dev/null; then
+      PROBE=WARN; NOTE="outdated launcher block (refreshed during install)"
+    else
+      PROBE=OK; NOTE="marked block present"
     fi
     return
   fi

@@ -17,18 +17,58 @@ codemux_in_list() {
 
 # Interactive picker (only used when the user runs `codemux install` in a TTY
 # and has not chosen before). Everything stays English: repo output only.
+# Arrow keys (or j/k) move, Enter picks, 1/2/3 pick directly, q cancels.
 codemux_components_ask() {
-  local ans
-  # The prompt goes to stderr: only the answer is captured by $( ).
-  printf '\n%sWhich OpenCode should be installed?%s\n' "$C_B" "$C_R" >&2
-  printf '  1) OpenCode V1 only (stable, legacy DB)\n' >&2
-  printf '  2) OpenCode V2 only (new, separate DB)\n' >&2
-  printf '  3) Both (V1 + V2, default)\n' >&2
-  printf 'Choose [3]: ' >&2
-  read -r ans || ans=""
-  case "$ans" in
-    1) printf 'v1' ;;
-    2) printf 'v2' ;;
+  local sel=2 key rest ch i
+  local -a labels=(
+    "OpenCode V1 only — stable, legacy DB"
+    "OpenCode V2 only — new, separate DB"
+    "Both — V1 + V2 (default)"
+  )
+  [ -t 2 ] || { printf 'v1 v2'; return 0; }
+
+  _ask_draw() {
+    for i in 0 1 2; do
+      if [ "$i" = "$sel" ]; then
+        printf '  %s❯ %d) %s%s\n' "$C_INFO" "$((i + 1))" "${labels[$i]}" "$C_R" >&2
+      else
+        printf '    %d) %s\n' "$((i + 1))" "${labels[$i]}" >&2
+      fi
+    done
+  }
+
+  printf '\n%sWhich OpenCode should be installed?%s\n\n' "$C_B" "$C_R" >&2
+  _ask_draw
+  printf '\n  %s↑/↓ select   Enter run   1-3 choose   q cancel%s\n' "$C_DIM" "$C_R" >&2
+
+  while :; do
+    IFS= read -rsn1 key || key="q"
+    case "$key" in
+      $'\033')
+        rest=""
+        while [ "${#rest}" -lt 2 ]; do
+          IFS= read -rsn1 -t 0.25 ch || break
+          rest+="$ch"
+        done
+        case "$rest" in
+          '[A') sel=$(((sel + 2) % 3)) ;;
+          '[B') sel=$(((sel + 1) % 3)) ;;
+        esac
+        ;;
+      k | K) sel=$(((sel + 2) % 3)) ;;
+      j | J) sel=$(((sel + 1) % 3)) ;;
+      '' | $'\r' | $'\n') break ;;
+      1) sel=0; break ;;
+      2) sel=1; break ;;
+      3) sel=2; break ;;
+      q | Q) printf '\n' >&2; return 1 ;;
+    esac
+    printf '\033[3A' >&2
+    _ask_draw
+  done
+  case "$sel" in
+    0) printf 'v1' ;;
+    1) printf 'v2' ;;
     *) printf 'v1 v2' ;;
   esac
 }
@@ -92,8 +132,12 @@ codemux_cmd_install() {
   elif [ -f "$compfile" ]; then
     comps="$(codemux_components_get)"
   elif [ "$dry" -eq 0 ] && [ "${CODEMUX_YES:-0}" != 1 ] && [ -t 0 ] && [ -t 1 ]; then
-    comps="$(codemux_components_ask)" || comps=""
+    comps="$(codemux_components_ask)" || {
+      log_dim "install cancelled — nothing was changed."
+      return 0
+    }
     comps="$(codemux_components_norm "$comps")" || comps=""
+    [ -n "$comps" ] && log_dim "components: $comps"
   else
     comps="$(codemux_components_get)"
   fi

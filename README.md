@@ -25,7 +25,7 @@ are passed through, e.g. `| bash -s -- --dry-run` or
 ## Choose what to install (V1 only / V2 only / both)
 
 ```bash
-# interactive: one 3-row prompt (V1 only / V2 only / both)
+# interactive: arrow-key picker (↑/↓ + Enter, or 1/2/3) — V1 / V2 / both
 curl -fsSL -H 'Accept: application/vnd.github.raw' \
   https://api.github.com/repos/kusnuzon/codemux/contents/install.sh | bash
 
@@ -42,8 +42,10 @@ curl -fsSL -H 'Accept: application/vnd.github.raw' \
 - Every shared dependency (base tools, apt toolset, glibc runtime, memory files,
   launcher) is installed **first and in full**, whatever the choice is — a
   fresh Termux ends up complete either way.
-- `check` shows an unselected component as `SKIP` (not as missing), and the
-  startup menu only offers the components that are actually installed.
+- `check` shows an unselected component as `SKIP` (not as missing). The startup
+  menu always lists both components: one that is not installed is marked
+  "not installed", and choosing it asks for confirmation before
+  `codemux install --only <component>` runs.
 
 ### Progress, so it never looks frozen
 
@@ -116,10 +118,11 @@ does not fail halfway. Two traps handled automatically:
 
 - **launcher**: writes a marked `# codemux:launcher begin … end` block into
   `~/.bashrc` (banner, arrow menu, and the `menu`, `version`, `doctor`,
-  `codemux`, `keluar`/`exit` commands). The menu rows are built from what is
-  installed (V1/V2/shell/quit → only the present components are offered) and
-  only the option rows are redrawn on arrow keys, so the screen does not
-  flicker. An old block without markers is
+  `codemux`, `keluar`/`exit` commands). The menu always shows four rows
+  (V1, V2, shell, quit): a component that is missing stays visible as
+  "not installed" and choosing it asks "Install it now? [y/N]" before running
+  `codemux install --only <component>`. Only the option rows are redrawn on
+  arrow keys, so the screen does not flicker. An old block without markers is
   **adopted**: it is cut only when its structure is recognised (an
   `_oc_launcher` call, last line `fi`); the rest of `~/.bashrc` is untouched.
   `.bashrc` is backed up, the new block is tested with `bash -n`, and on failure

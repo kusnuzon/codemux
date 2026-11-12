@@ -91,8 +91,15 @@ codemux_update_rows() { # print the TSV rows of the current check
   fi
   printf 'codemux\t%s\t%s\t%s\n' "$c_local" "$c_latest" "$state"
 
-  # Only the components the user selected are reported (V1 only / V2 only / both).
-  if codemux_component_selected v1; then
+  # Only components that are installed are reported (a V1-only device gets no V2
+  # row). Before the first install nothing is detected, so the saved choice is
+  # used and the plan still shows what will be installed.
+  local comps want_v1=0 want_v2=0
+  comps="$(codemux_components_installed)"
+  [ -n "$comps" ] || comps="$(codemux_components_get)"
+  case " $comps " in *" v1 "*) want_v1=1 ;; esac
+  case " $comps " in *" v2 "*) want_v2=1 ;; esac
+  if [ "$want_v1" = 1 ]; then
     case "$v1" in [!0-9]*) state="na" ;; *) state="" ;; esac
     if [ -z "$v1_latest" ] || [ "$state" = na ]; then state="na"; v1_latest="${v1_latest:--}"; else
       state="ok"; codemux_ver_newer "$v1_latest" "$v1" && state="update"
@@ -100,7 +107,7 @@ codemux_update_rows() { # print the TSV rows of the current check
     printf 'opencode-v1\t%s\t%s\t%s\n' "$v1" "$v1_latest" "$state"
   fi
 
-  if codemux_component_selected v2; then
+  if [ "$want_v2" = 1 ]; then
     case "$v2" in [!0-9]*) state="na" ;; *) state="" ;; esac
     if [ -z "$v2_latest" ] || [ "$state" = na ]; then state="na"; v2_latest="${v2_latest:--}"; else
       state="ok"; codemux_ver_newer "$v2_latest" "$v2" && state="update"

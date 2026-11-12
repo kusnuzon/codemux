@@ -127,19 +127,23 @@ codemux install --only both   # V1 + V2 (default)
 ```
 
 - `--components X` is an alias; `CODEMUX_COMPONENTS=v1` does the same.
-- Without a flag/env (interactive): a 3-row prompt appears once. Without a TTY
-  (CI, `curl | bash`) the saved/default choice is used — default `v1 v2`.
+- Without a flag/env (interactive): an arrow-key picker appears once
+  (↑/↓ + Enter, or 1/2/3; q cancels). Without a TTY (CI, `curl | bash`) the
+  saved/default choice is used — default `v1 v2`.
 - The choice is saved in `~/.config/codemux/components` (`v1`, `v2`, `v1 v2`)
-  and reused by `install`, `check`, `upgrade`, `update-check`.
+  and reused by `install`, `check`, `update-check`; `--only` overrides it.
 - Base modules are always installed: `deps mirror storage toolset glibc` +
   `launcher dotfiles memory self`. Only the payload module (`v1`/`v2`) follows
   the choice, so V1-only = 10 modules, V2-only = 10, both = 11.
 - `check` reports an unselected component as `SKIP` ("not selected") and counts
   it in `ringkasan.skip`; `--json` gains a `komponen` key.
-- `upgrade` (no `--only`) updates apt + the selected payloads + the launcher;
-  `update-check` omits rows for components that are not installed.
-- The startup menu only offers components that are installed (rows are built
-  from `command -v opencode` / `opencode-v2`).
+- `upgrade` (no `--only`) updates apt + **only the payloads actually installed**
+  (detected by `$PREFIX/share/opencode{,-v2}/opencode.real`) + the launcher, so
+  a V1-only device never pulls V2 in; `update-check` omits rows for components
+  that are not installed.
+- The startup menu always shows V1 and V2. A missing component is marked
+  "not installed" and selecting it asks for confirmation before installing only
+  that component.
 
 ### 6B. Progress feedback (never look frozen)
 
@@ -283,7 +287,7 @@ The Android permission dialog cannot be fully automated. Mechanism:
 
 | Command | Contents |
 |---|---|
-| `codemux upgrade` | `pkg update && pkg upgrade -y` (opencode held) → `lib/v1.sh upgrade` → `lib/v2.sh upgrade` (only the selected components) → re-sync the launcher block (version) → `doctor` |
+| `codemux upgrade` | `pkg update && pkg upgrade -y` (opencode held) → `lib/v1.sh upgrade` → `lib/v2.sh upgrade` (only the installed components) → re-sync the launcher block (version) → `doctor` |
 | `codemux self-update` | download the latest `codemux` release, replace `bin/`+`lib/` (assets untouched when the user modified them) |
 | `codemux repair` | pick modules in FAIL/broken state → apply again (e.g. reinstall the V2 compat shim, sanitize `LD_PRELOAD`) |
 | `codemux uninstall` | remove the V1/V2 payloads + launcher block; does **not** delete `MEMORY.md`, projects, or backups |

@@ -262,7 +262,7 @@ if grep -q '_oc_redraw()' "$TPL" && grep -q '_OC_COUNT + 3' "$TPL"; then
 else
   bad "menu: redraw offset is not derived from _OC_COUNT"
 fi
-# the menu only offers the components that are actually installed
+# every component row is always offered; a missing one is marked "not installed"
 menu_keys() { # <sandbox> → keys of the menu rows
   local sb="$1"
   env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
@@ -272,35 +272,53 @@ menu_keys() { # <sandbox> → keys of the menu rows
       printf "%s" "${_OC_KEYS[*]}"
     ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
 }
+menu_descs() { # <sandbox> → descriptions of the menu rows
+  local sb="$1"
+  env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
+      PATH="$2"
+      . "$1"
+      _oc_items
+      printf "%s\n" "${_OC_DESCS[@]}"
+    ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
+}
 SB5="$(new_sandbox menu-items)"
 mkdir -p "$SB5/prefix/bin"
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode-v2"
 chmod +x "$SB5/prefix/bin/opencode-v2"
-if [ "$(menu_keys "$SB5")" = "v2 shell quit" ]; then
-  ok "menu: V2-only install hides the V1 row"
+if [ "$(menu_keys "$SB5")" = "v1 v2 shell quit" ] &&
+  menu_descs "$SB5" | sed -n '1p' | grep -q 'not installed'; then
+  ok "menu: V2-only install still offers V1, marked not installed"
 else
-  bad "menu: V2-only install still offers V1 ($(menu_keys "$SB5"))"
+  bad "menu: V2-only rows are $(menu_keys "$SB5")"
 fi
 rm -f "$SB5/prefix/bin/opencode-v2"
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode"
 chmod +x "$SB5/prefix/bin/opencode"
-if [ "$(menu_keys "$SB5")" = "v1 shell quit" ]; then
-  ok "menu: V1-only install hides the V2 row"
+if [ "$(menu_keys "$SB5")" = "v1 v2 shell quit" ] &&
+  menu_descs "$SB5" | sed -n '2p' | grep -q 'not installed'; then
+  ok "menu: V1-only install still offers V2, marked not installed"
 else
-  bad "menu: V1-only install still offers V2 ($(menu_keys "$SB5"))"
+  bad "menu: V1-only rows are $(menu_keys "$SB5")"
 fi
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode-v2"
 chmod +x "$SB5/prefix/bin/opencode-v2"
-if [ "$(menu_keys "$SB5")" = "v1 v2 shell quit" ]; then
-  ok "menu: both components installed → four rows"
+if [ "$(menu_keys "$SB5")" = "v1 v2 shell quit" ] &&
+  ! menu_descs "$SB5" | grep -q 'not installed'; then
+  ok "menu: both installed → four rows, no install note"
 else
-  bad "menu: both components installed → rows are $(menu_keys "$SB5")"
+  bad "menu: both rows are $(menu_keys "$SB5")"
 fi
 rm -f "$SB5/prefix/bin/opencode" "$SB5/prefix/bin/opencode-v2"
-if [ "$(menu_keys "$SB5")" = "shell quit" ]; then
-  ok "menu: nothing installed → only shell/quit"
+if [ "$(menu_keys "$SB5")" = "v1 v2 shell quit" ] &&
+  [ "$(menu_descs "$SB5" | grep -c 'not installed')" -eq 2 ]; then
+  ok "menu: nothing installed → both rows marked not installed"
 else
-  bad "menu: nothing installed → rows are $(menu_keys "$SB5")"
+  bad "menu: empty rows are $(menu_keys "$SB5")"
+fi
+if grep -q '_oc_launch_component()' "$TPL" && grep -q 'Install it now?' "$TPL"; then
+  ok "menu: choosing a missing component asks before installing"
+else
+  bad "menu: missing component has no install confirmation"
 fi
 if grep -q '_oc_rows()' "$TPL" && grep -q '033\[K' "$TPL"; then
   ok "menu: option rows cleared to the end (\\033[K)"

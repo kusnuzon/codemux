@@ -404,6 +404,17 @@ codemux_components_set() {
   printf '%s\n' "$val" | codemux_atomic_write "$(codemux_components_file)"
 }
 
+# Components that really have a payload on this device. Upgrade uses this so a
+# V1-only (or V2-only) install never pulls the missing component in.
+codemux_components_installed() {
+  local out=""
+  [ -f "$PREFIX/share/opencode/opencode.real" ] && out="v1"
+  if [ -f "$PREFIX/share/opencode-v2/opencode.real" ]; then
+    out="${out:+$out }v2"
+  fi
+  printf '%s' "$out"
+}
+
 codemux_component_selected() {
   case " $(codemux_components_get) " in
     *" $1 "*) return 0 ;;
