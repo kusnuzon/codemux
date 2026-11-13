@@ -6,10 +6,70 @@
 # Source of the mechanism (code, not personal data). Can be overridden via env for tests.
 CODEMUX_MEMORY_PLUGIN_URL="${CODEMUX_MEMORY_PLUGIN_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/memory.js}"
 CODEMUX_MEMORY_TITLE_URL="${CODEMUX_MEMORY_TITLE_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/session-title.js}"
+CODEMUX_MEMORY_NOTICE_URL="${CODEMUX_MEMORY_NOTICE_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/update-notice.js}"
 CODEMUX_MEMORY_DIGEST_URL="${CODEMUX_MEMORY_DIGEST_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/session-digest.py}"
+CODEMUX_MEMORY_KUOTA_URL="${CODEMUX_MEMORY_KUOTA_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/kuota.py}"
 CODEMUX_MEMORY_LIMIT="${CODEMUX_MEMORY_LIMIT:-24000}"
 
 codemux_memory_base() { printf '%s/.config/opencode' "$HOME"; }
+
+# Point a downloaded Python script at this Termux prefix (shebang on line 1).
+codemux_py_shebang() {
+  local f="$1"
+  [ -f "$f" ] || return 1
+  sed -i "1s|^#!.*|#!$PREFIX/bin/python3|" "$f" 2>/dev/null || return 1
+  return 0
+}
+
+# Refresh the mechanism (code only) from upstream: fetch, compare, back up, swap.
+# Personal data (MEMORY.md, AGENTS.md, RECENT.md, opencode.jsonc contents) is
+# never replaced — only the plugins/scripts that keep the feature working.
+# Sets CODEMUX_MEMORY_CHANGED to the number of files that were replaced.
+codemux_memory_sync_mechanism() {
+  local base pair mode rel url dst tmp changed=0 rc=0
+  base="$(codemux_memory_base)"
+  mkdir -p "$base/bin" "$base/plugins" "$CODEMUX_HOME/cache" || return 1
+  local pairs=(
+    "600|plugins/memory.js|$CODEMUX_MEMORY_PLUGIN_URL"
+    "600|plugins/session-title.js|$CODEMUX_MEMORY_TITLE_URL"
+    "600|plugins/update-notice.js|$CODEMUX_MEMORY_NOTICE_URL"
+    "700|bin/session-digest.py|$CODEMUX_MEMORY_DIGEST_URL"
+    "700|bin/kuota|$CODEMUX_MEMORY_KUOTA_URL"
+  )
+  for pair in "${pairs[@]}"; do
+    IFS='|' read -r mode rel url <<<"$pair"
+    dst="$base/$rel"
+    tmp="$CODEMUX_HOME/cache/$(basename "$rel")"
+    if ! codemux_fetch_raw "$url" "$tmp"; then
+      log_warn "memory: could not download $rel"
+      rc=1
+      continue
+    fi
+    case "$rel" in
+      bin/*) codemux_py_shebang "$tmp" || true ;;
+    esac
+    if [ -s "$dst" ] && cmp -s "$tmp" "$dst"; then
+      continue
+    fi
+    if [ -s "$dst" ]; then
+      codemux_backup memory "$dst" >/dev/null 2>&1 || true
+    fi
+    if codemux_atomic_write "$dst" <"$tmp"; then
+      chmod "$mode" "$dst" 2>/dev/null || true
+      changed=$((changed + 1))
+      log_dim "memory: $rel updated"
+    else
+      log_warn "memory: could not write $rel"
+      rc=1
+    fi
+  done
+  if [ -x "$base/bin/kuota" ]; then
+    mkdir -p "$PREFIX/bin" 2>/dev/null || true
+    ln -sf "$base/bin/kuota" "$PREFIX/bin/kuota" 2>/dev/null || true
+  fi
+  CODEMUX_MEMORY_CHANGED="$changed"
+  return "$rc"
+}
 
 # Digest wrapper: only once in ~/.bashrc (a codemux:memory marked block).
 codemux_memory_wrapper_present() {
@@ -19,7 +79,8 @@ codemux_memory_wrapper_present() {
 m_memory_probe() {
   local base need miss=() f size pct
   base="$(codemux_memory_base)"
-  need=("MEMORY.md" "AGENTS.md" "RECENT.md" "plugins/memory.js" "plugins/session-title.js" "bin/session-digest.py")
+  need=("MEMORY.md" "AGENTS.md" "RECENT.md" "plugins/memory.js" "plugins/session-title.js"
+    "plugins/update-notice.js" "bin/session-digest.py" "bin/kuota")
 
   for f in "${need[@]}"; do
     [ -f "$base/$f" ] || miss+=("$f")
@@ -185,7 +246,7 @@ m_memory_apply() {
     fi
   done
 
-  # 2) mechanism (plugins + digest) — fetched from the upstream repo
+  # 2) mechanism (plugins + digest + kuota) — fetched from the upstream repo
   if [ ! -s "$base/plugins/memory.js" ]; then
     codemux_fetch_raw "$CODEMUX_MEMORY_PLUGIN_URL" "$base/plugins/memory.js" || {
       APPLY_NOTE="failed to download plugins/memory.js"; return 1
@@ -200,12 +261,34 @@ m_memory_apply() {
     chmod 600 "$base/plugins/session-title.js" 2>/dev/null || true
     made+=("plugins/session-title.js")
   fi
+  if [ ! -s "$base/plugins/update-notice.js" ]; then
+    codemux_fetch_raw "$CODEMUX_MEMORY_NOTICE_URL" "$base/plugins/update-notice.js" || {
+      APPLY_NOTE="failed to download plugins/update-notice.js"; return 1
+    }
+    chmod 600 "$base/plugins/update-notice.js" 2>/dev/null || true
+    made+=("plugins/update-notice.js")
+  fi
   if [ ! -s "$base/bin/session-digest.py" ]; then
     codemux_fetch_raw "$CODEMUX_MEMORY_DIGEST_URL" "$base/bin/session-digest.py" || {
       APPLY_NOTE="failed to download bin/session-digest.py"; return 1
     }
+    codemux_py_shebang "$base/bin/session-digest.py"
     chmod 700 "$base/bin/session-digest.py" 2>/dev/null || true
     made+=("bin/session-digest.py")
+  fi
+  if [ ! -s "$base/bin/kuota" ]; then
+    codemux_fetch_raw "$CODEMUX_MEMORY_KUOTA_URL" "$base/bin/kuota" || {
+      APPLY_NOTE="failed to download bin/kuota"; return 1
+    }
+    codemux_py_shebang "$base/bin/kuota"
+    chmod 700 "$base/bin/kuota" 2>/dev/null || true
+    made+=("bin/kuota")
+  fi
+  # `kuota` must be reachable from PATH (the launcher menu checks `command -v`).
+  if [ -x "$base/bin/kuota" ]; then
+    mkdir -p "$PREFIX/bin" 2>/dev/null || true
+    ln -sf "$base/bin/kuota" "$PREFIX/bin/kuota" 2>/dev/null ||
+      APPLY_NOTE="kuota installed, but the symlink in $PREFIX/bin failed"
   fi
 
   # 3) RECENT.md: generate it now if missing

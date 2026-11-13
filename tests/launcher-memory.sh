@@ -29,6 +29,10 @@ cat >"$FIXTURE/title.js" <<'EOS'
 // session-title.js (test fixture)
 export default { id: "session-title", async server() { return {} }, setup() {} };
 EOS
+cat >"$FIXTURE/notice.js" <<'EOS'
+// update-notice.js (test fixture)
+export default { id: "update-notice", setup() {}, async server() { return {} } };
+EOS
 cat >"$FIXTURE/digest.py" <<'EOS'
 #!/usr/bin/env python3
 import os
@@ -38,6 +42,15 @@ with open(os.path.join(base, "RECENT.md"), "w", encoding="utf-8") as fh:
     fh.write("# RECENT\n\n- created by the digest fixture\n")
 EOS
 chmod 700 "$FIXTURE/digest.py"
+cat >"$FIXTURE/kuota" <<'EOS'
+#!/usr/bin/env python3
+import sys
+if "--warn" in sys.argv:
+    print("\u26a0 kuota 161/200 (81%) · run: kuota")
+    raise SystemExit(0)
+print("kuota fixture")
+EOS
+chmod 700 "$FIXTURE/kuota"
 
 new_sandbox() {
   local name="$1" d="$SANDBOX_ROOT/$1"
@@ -53,7 +66,9 @@ run_cm() { # <sandbox> <command...>
     CODEMUX_ALLOW_NONANDROID=1 \
     CODEMUX_MEMORY_PLUGIN_URL="$FIXTURE/plugin.js" \
     CODEMUX_MEMORY_TITLE_URL="$FIXTURE/title.js" \
+    CODEMUX_MEMORY_NOTICE_URL="$FIXTURE/notice.js" \
     CODEMUX_MEMORY_DIGEST_URL="$FIXTURE/digest.py" \
+    CODEMUX_MEMORY_KUOTA_URL="$FIXTURE/kuota" \
     bash "$ROOT/bin/codemux" "$@"
 }
 
@@ -113,6 +128,9 @@ fi
 [ -s "$SB/home/.config/opencode/plugins/memory.js" ] && ok "fresh: plugins/memory.js downloaded" || bad "fresh: plugins/memory.js missing"
 [ -s "$SB/home/.config/opencode/plugins/session-title.js" ] && ok "fresh: plugins/session-title.js downloaded" || bad "fresh: plugins/session-title.js missing"
 [ -x "$SB/home/.config/opencode/bin/session-digest.py" ] && ok "fresh: session-digest.py executable" || bad "fresh: session-digest.py not executable"
+[ -s "$SB/home/.config/opencode/plugins/update-notice.js" ] && ok "fresh: plugins/update-notice.js downloaded" || bad "fresh: plugins/update-notice.js missing"
+[ -x "$SB/home/.config/opencode/bin/kuota" ] && ok "fresh: bin/kuota executable" || bad "fresh: bin/kuota not executable"
+[ -L "$SB/prefix/bin/kuota" ] && ok "fresh: kuota on PATH (symlink)" || bad "fresh: kuota symlink missing"
 
 # check: the three M4 modules must be OK
 if run_cm "$SB" check --json >"$SB/check.json" 2>/dev/null; then :; fi
@@ -330,6 +348,41 @@ if grep -q '_oc_int' "$TPL" && grep -q 'cancel' "$TPL"; then
 else
   bad "menu: Ctrl+C not handled (cursor may be left hidden)"
 fi
+
+# quota warning line: shown only when `kuota` reports one, empty otherwise
+kuota_line() { # <sandbox> → the notice line
+  local sb="$1"
+  env HOME="$sb/home" PREFIX="$sb/prefix" PATH="$sb/prefix/bin" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" \
+    "${BASH:-bash}" -c '
+    ACC=""; DIM=""; R=""
+    . "$1"
+    _oc_kuota_notice
+  ' _ "$TPL" 2>/dev/null
+}
+if grep -q '_oc_kuota_notice$' "$TPL" || grep -q '^      _oc_kuota_notice' "$TPL"; then
+  ok "menu: quota warning is rendered with the menu"
+else
+  bad "menu: quota warning is never called"
+fi
+if [ -z "$(kuota_line "$SB5")" ]; then
+  ok "menu: no kuota installed → no quota line"
+else
+  bad "menu: quota line printed without kuota"
+fi
+printf '#!/bin/sh\nexit 0\n' >"$SB5/prefix/bin/kuota"
+chmod +x "$SB5/prefix/bin/kuota"
+if [ -z "$(kuota_line "$SB5")" ]; then
+  ok "menu: quota below the threshold → silent"
+else
+  bad "menu: quota line printed below the threshold"
+fi
+printf '#!%s/bin/sh\nprintf "warn 161/200\\n"\n' "$PREFIX" >"$SB5/prefix/bin/kuota"
+chmod +x "$SB5/prefix/bin/kuota"
+case "$(kuota_line "$SB5")" in
+  *"161/200"*) ok "menu: quota warning is shown when the limit is near" ;;
+  *) bad "menu: quota warning not shown" ;;
+esac
+rm -f "$SB5/prefix/bin/kuota"
 
 # =============================================================================
 # 6. update notice: stale cache rows are hidden

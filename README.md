@@ -10,10 +10,13 @@ run again and again.
 
 - 🤖 **OpenCode V1 and/or V2** — you choose, nothing extra is pulled in
 - 🎛️ **Startup menu** — arrow keys, opens the component you pick
-- 🧠 **Cross-session memory** — `MEMORY.md` + `RECENT.md` loaded every session
+- 🧠 **Cross-session memory** — `MEMORY.md` + `RECENT.md` (with the open items)
+  loaded every session
 - 🧰 **Base toolset** — git, gh, python, nodejs, sqlite, jq, shellcheck, htop, ...
 - 📂 **Android storage** — runs `termux-setup-storage` when it is still missing
-- 🔄 **Update check** — sees new codemux/V1/V2/apt releases before you ask
+- 🔄 **Update check** — sees new codemux/V1/V2/apt releases before you ask, and
+  reminds you once inside a session
+- ⛽ **`kuota`** — estimates the remaining free-model quota from the local DBs
 - 🛡️ **Resume-safe** — killed midway? run it again, it continues
 
 ## 📦 Prerequisites
@@ -72,9 +75,28 @@ Answer `n` and nothing changes. Skip the menu with `OPENCODE_NO_AUTO=1 bash`.
 
 ## 🧠 Memory that survives sessions
 
-`MEMORY.md` (facts, decisions, paths) and `RECENT.md` (last sessions) are loaded
+`MEMORY.md` (facts, decisions, paths) and `RECENT.md` (last sessions **plus the
+open items** — questions waiting for an answer, explicit next steps) are loaded
 into every new session automatically — no "what were we doing?" anymore. The
 memory plugin also refreshes `RECENT.md` whenever a fact is saved.
+
+When codemux has a cached update, the plugins add one short line to the session
+context, so long sessions are told about it without opening the menu.
+
+## ⛽ Free-model quota
+
+`kuota` counts the assistant messages in the local databases (one message = one
+request; the free quota resets at 00:00 UTC = 07:00 WIB):
+
+```bash
+kuota                 # today, with a breakdown per model
+kuota --week          # the last 7 days
+kuota --warn          # one line, only when the warning threshold is reached
+kuota --json          # for scripts
+```
+
+The daily limit defaults to 200 (`KUOTA_LIMIT`, `--limit`) and the menu prints a
+warning line once you are close to it.
 
 ## 🔧 Everyday commands
 
@@ -82,7 +104,7 @@ memory plugin also refreshes `RECENT.md` whenever a fact is saved.
 |---|---|
 | `codemux check` | 📋 status of every module |
 | `codemux install` | ⚙️ install / resume / refresh (`--dry-run`, `--skip`) |
-| `codemux upgrade` | ⬆️ apt + only the payloads that are installed + launcher |
+| `codemux upgrade` | ⬆️ apt + installed payloads + launcher + memory mechanism |
 | `codemux update-check` | 🔍 compare local vs upstream versions |
 | `codemux doctor` | 🩺 deeper checks (bashrc, wrapper, memory size, disk) |
 | `codemux repair` | 🧯 fix stale lock, half-done dpkg, missing V2 shim |
@@ -99,7 +121,9 @@ codemux upgrade         # apt + installed payloads + launcher
 
 - `upgrade` without `--only` touches **only what is installed** — a V1-only
   device never gets V2 pushed in.
-- `upgrade --only apt,v1,launcher` — explicit, `--dry-run` to preview.
+- `upgrade --only apt,v1,launcher,memory` — explicit, `--dry-run` to preview.
+- The `memory` step refreshes the mechanism files (plugins, digest, `kuota`) and
+  keeps `MEMORY.md` untouched.
 - Update results are cached 24 h and shown as one line in the startup menu.
 
 ## 🆘 When something looks broken

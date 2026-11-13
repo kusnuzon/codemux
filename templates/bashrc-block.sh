@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 2
+# codemux:launcher version 3
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -214,6 +214,16 @@ _oc_update_notice() {
 _oc_cursor_hide() { printf '\033[?25l'; }
 _oc_cursor_show() { printf '\033[?25h'; }
 
+# Quota warning (one short line, only when `kuota` is installed and the free
+# model usage is close to the daily limit). Read-only, no network, ~0.1 s.
+_oc_kuota_notice() {
+  command -v kuota >/dev/null 2>&1 || return 0
+  local line
+  line="$(kuota --warn 2>/dev/null)" || true
+  [ -n "$line" ] && printf '   %s%s%s\n\n' "$ACC" "$line" "$R"
+  return 0
+}
+
 # Run a component. When its payload is missing, explain that first and ask for
 # confirmation before running `codemux install --only <component>`.
 # Returns 0 when the component ran, 1 when it is still missing.
@@ -293,6 +303,7 @@ _oc_menu_loop() {
       printf '\033[2J\033[H'
       _oc_banner
       _oc_update_notice
+      _oc_kuota_notice
       _oc_menu "$sel"
       full=0
     else

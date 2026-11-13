@@ -203,6 +203,12 @@ codemux_upgrade_step_launcher() {
   return 0
 }
 
+codemux_upgrade_step_memory() {
+  codemux_memory_sync_mechanism || { log_warn "failed to refresh the memory mechanism"; return 1; }
+  log_ok "memory mechanism in sync (${CODEMUX_MEMORY_CHANGED:-0} file(s) updated)"
+  return 0
+}
+
 codemux_cmd_upgrade() {
   local dry=0 only="" m rc=0 ok_n=0 fail_n=0
   while [ $# -gt 0 ]; do
@@ -212,10 +218,11 @@ codemux_cmd_upgrade() {
       --only) only="${2:-}"; shift ;;
       --only=*) only="${1#--only=}" ;;
       -h | --help)
-        printf '%s\n' 'usage: codemux upgrade [--dry-run] [--yes] [--only apt,v1,v2,launcher]' \
-          '' 'Update apt packages, the installed OpenCode payloads, then sync the launcher block.' \
+        printf '%s\n' 'usage: codemux upgrade [--dry-run] [--yes] [--only apt,v1,v2,launcher,memory]' \
+          '' 'Update apt packages, the installed OpenCode payloads, refresh the launcher block' \
+          'and the memory mechanism files (plugins, digest, kuota).' \
           'By default only the components that are actually installed are updated (V1, V2, or both).' \
-          'The apt opencode package stays held; memory & projects are untouched.'
+          'The apt opencode package stays held; MEMORY.md and projects are untouched.'
         return 0
         ;;
       *) log_warn "unknown option for upgrade: $1" ;;
@@ -227,7 +234,7 @@ codemux_cmd_upgrade() {
   local -a steps=() run=()
   if [ -n "$only" ]; then
     # An explicit --only may name any component, selected or not.
-    steps=(apt v1 v2 launcher)
+    steps=(apt v1 v2 launcher memory)
   else
     # Only what is actually installed: a V1-only device never pulls V2 in.
     local installed
@@ -235,13 +242,13 @@ codemux_cmd_upgrade() {
     steps=(apt)
     case " $installed " in *" v1 "*) steps+=(v1) ;; esac
     case " $installed " in *" v2 "*) steps+=(v2) ;; esac
-    steps+=(launcher)
+    steps+=(launcher memory)
   fi
   for m in "${steps[@]}"; do
     if [ -n "$only" ] && ! codemux_in_list "$m" "$only"; then continue; fi
     run+=("$m")
   done
-  [ "${#run[@]}" -gt 0 ] || { log_fail "--only does not match (apt,v1,v2,launcher)"; return 2; }
+  [ "${#run[@]}" -gt 0 ] || { log_fail "--only does not match (apt,v1,v2,launcher,memory)"; return 2; }
 
   printf '%s%s %s%s · upgrade%s\n\n' "$C_B" "$CODEMUX_NAME" "$CODEMUX_VERSION" "$C_R" \
     "$([ "$dry" -eq 1 ] && printf ' (dry-run)')"
@@ -251,6 +258,7 @@ codemux_cmd_upgrade() {
       v1) printf '  %-10s %s\n' v1 "V1 payload now $(opencode_v1_version)" ;;
       v2) printf '  %-10s %s\n' v2 "V2 payload now $(opencode_v2_version)" ;;
       launcher) printf '  %-10s %s\n' launcher 'sync the launcher block + digest wrapper' ;;
+      memory) printf '  %-10s %s\n' memory 'refresh the memory mechanism (plugins, digest, kuota)' ;;
     esac
   done
   printf '\n'

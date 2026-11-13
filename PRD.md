@@ -4,8 +4,8 @@ One command to make Termux "ready to use": OpenCode V1 + V2 + menu/banner + a
 base toolset + storage, both on a bare Termux and on a partially set-up one.
 New repo, public, idempotent (safe to run repeatedly).
 
-Status: **implemented — v0.7.3 (2026-11-12).** Every command in §6 exists and is
-tested: smoke 44 · launcher-memory 38 · maintenance 19 · resume 16 · release 7 ·
+Status: **implemented — v0.7.4 (2026-11-13).** Every command in §6 exists and is
+tested: smoke 44 · launcher-memory 45 · maintenance 19 · resume 16 · release 7 ·
 adapter 12. CI (`shellcheck -S warning` + `bash -n` + `check --json` + smoke) runs
 on every push. §18 keeps the decision log; §17 shows what is done and what is next.
 
@@ -36,13 +36,16 @@ with a single command.
    never overwrites user config.
 3. `codemux check` reports the status of each component (installed / missing / broken).
 4. `codemux upgrade` updates apt packages, **only the OpenCode payloads that are
-   actually installed**, and the launcher in one go.
+   actually installed**, the launcher and the memory mechanism in one go.
 5. Every step has detection (precheck) + action + verification + rollback.
 6. Transparent: every action is printed, `--dry-run` included.
 7. **Cross-session memory** for V1 *and* V2: a new conversation immediately knows
    the memory + summary of earlier sessions (§12A).
-8. **Update check**: a notice appears in the startup menu when an upstream repo has
-   a new release; updating is a single explicit command (`codemux upgrade`, §12B).
+8. **Update check**: a notice appears in the startup menu *and* once inside a
+   running session when an upstream repo has a new release; updating is a single
+   explicit command (`codemux upgrade`, §12B).
+9. **Quota awareness**: `kuota` estimates the remaining free-model allowance from
+   the local databases and warns before it runs out (§12C).
 
 ## 3. Non-goals (out of scope for v1)
 
@@ -94,7 +97,7 @@ commands:
   install            install what is missing; safe to repeat & resumes after a break
   check              status of each module (changes nothing)
   status             last install progress, lock, last 10 log lines
-  upgrade            apt + installed V1/V2 payloads + launcher
+  upgrade            apt + installed V1/V2 payloads + launcher + memory mechanism
   update-check       compare local versions with upstream releases (24h cache)
   repair             clean up leftovers from a process that died midway
   doctor             full diagnosis + repair suggestions
@@ -118,6 +121,7 @@ other options:
   check --json       machine-readable output
   update-check --json / --quiet
   repair --dry-run   show the repairs that would be made
+  upgrade --only X   apt,v1,v2,launcher,memory (default: everything installed)
   uninstall --purge  also delete ~/.config/codemux (memory/projects are never touched)
 
 progress:
@@ -246,7 +250,7 @@ only.
 | 7 | `v2` | payload at `$PREFIX/share/opencode-v2/opencode.real` + `lib/compat` shim + launcher | run the `opencode-termux-v2` installer (adapter) |
 | 8 | `launcher` | `~/.bashrc` has the `# codemux:launcher begin` block with `version 2` and passes `bash -n` | back up, insert the block from `templates/bashrc-block.sh` |
 | 9 | `dotfiles` | `~/.bash_profile`, `~/.hushlogin` | write/merge, never overwrite other content |
-| 10 | `memory` | plugins + `MEMORY.md`/`RECENT.md` + `instructions` entries | install templates + merge `opencode.jsonc`, never overwrite |
+| 10 | `memory` | plugins (`memory.js`, `session-title.js`, `update-notice.js`), tools (`bin/session-digest.py`, `bin/kuota`), `MEMORY.md`/`RECENT.md`, `instructions` entries | install the mechanism + templates (merge `opencode.jsonc`, never overwrite), symlink `kuota` into `$PREFIX/bin` |
 | 11 | `self` | `codemux` on `PATH` points at this checkout/install | symlink into `$PREFIX/bin` |
 | 12 | `update-cache` | `~/.config/codemux/update-cache.tsv` younger than 24 h | refresh the cache (`check` reports its age) |
 
@@ -339,7 +343,7 @@ The Android permission dialog cannot be fully automated. Mechanism:
 
 | Command | Contents |
 |---|---|
-| `codemux upgrade` | `pkg update && pkg upgrade -y` (opencode held) → V1/V2 adapters **only for the payloads that are installed** (detected via `$PREFIX/share/opencode{,-v2}/opencode.real`) → re-sync the launcher block → refresh the update cache |
+| `codemux upgrade` | `pkg update && pkg upgrade -y` (opencode held) → V1/V2 adapters **only for the payloads that are installed** (detected via `$PREFIX/share/opencode{,-v2}/opencode.real`) → re-sync the launcher block → refresh the memory mechanism (plugins, digest, `kuota`; `MEMORY.md` untouched) → refresh the update cache |
 | `codemux update-check` | compare local versions with the upstream releases (24 h cache), `--json`, `--quiet` |
 | `codemux self-update` | download the latest `codemux` release, verify sha256, back up `bin lib templates VERSION versions.env install.sh` to `backup/<ts>-selfupdate/`, swap, then run `--version`; failure = automatic restore |
 | `codemux repair` | drop a stale lock, mark dead `RUNNING` steps, `dpkg --configure -a` + `apt-get -f install` when apt was interrupted, reinstall the V2 compat shim, refresh the launcher block |
@@ -365,8 +369,10 @@ versions**: memory contents stay local, the repo only holds the mechanism
 | `~/.config/opencode/MEMORY.md` | permanent memory (facts, decisions, paths) | **not** overwritten |
 | `~/.config/opencode/AGENTS.md` | permanent rules (language, style, prohibitions) | not overwritten |
 | `~/.config/opencode/RECENT.md` | summary of the last 8 sessions (auto-generated) | created/overwritten by every digest |
-| `~/.config/opencode/bin/session-digest.py` | producer of `RECENT.md` | not overwritten (compare script versions) |
-| `~/.config/opencode/plugins/memory.js` | `memory_save` tool + compaction hook + digest refresh | not overwritten; when a newer version exists → offer `--force` |
+| `~/.config/opencode/bin/session-digest.py` | producer of `RECENT.md` (sessions + open items) | created when missing; `codemux upgrade` replaces a changed file (old copy backed up) |
+| `~/.config/opencode/bin/kuota` | quota estimator (§12C), symlinked to `$PREFIX/bin/kuota` | created when missing; replaced by `codemux upgrade` when it changed |
+| `~/.config/opencode/plugins/memory.js` | `memory_save` tool + compaction hook + digest refresh | created when missing; replaced by `codemux upgrade` when it changed |
+| `~/.config/opencode/plugins/update-notice.js` | injects the codemux update notice into the session context | same as above |
 | `~/.bashrc` (`# codemux:memory` block) | run the digest before opencode starts | only added when `_oc_refresh_digest` is missing |
 
 ### How one plugin serves two versions
@@ -394,6 +400,22 @@ loads V1 packages (that used to crash).
 The digest takes the **last 8 sessions from both**, one paragraph per session
 (the user's commands + the final result, truncated to ~600 characters), written
 to `RECENT.md`, which is loaded automatically through `instructions`.
+
+### Open items (what is still unfinished)
+
+A summary of finished work is not enough: a new session must know what was left
+hanging. The digest reads the **last message** of every session and adds an
+`## Open items` block above the session list:
+
+| Signal | Example output |
+|---|---|
+| the last message is the user's (no reply yet) | `[13 Nov · V2] waiting for a reply to: "and then?"` |
+| an explicit next step (`Next:`, `Selanjutnya:`, `## Next Move`, `TODO`, …) | `[13 Nov · V2] next: run the installer on the device` |
+| the final reply ends with a question | `[13 Nov · V2] asked: "Shall I continue now?"` |
+
+Limits: at most 6 items, 150 characters each, 1,100 bytes total, deduplicated.
+Only the final assistant message of each session is scanned, so the cost stays
+tiny (one row per session).
 
 ### Important rules
 
@@ -476,6 +498,22 @@ a newer version / apt packages exist:
 There is no `config` file: behaviour is fixed (notify + manual `codemux upgrade`)
 and the knobs are environment variables (`CODEMUX_HOME`) and CLI options.
 
+### The notice inside a session (not only in the menu)
+
+A long session never returns to the menu, so the same cache is also read by
+`plugins/update-notice.js`:
+
+| Version | Hook | Effect |
+|---|---|---|
+| V2 | `ctx.session.hook("context", …)` | runs before every model call (agent loop) |
+| V1 | `experimental.chat.system.transform` | same job through the V1 hook table |
+
+- The cache is re-read at most once a minute and ignored when older than 48 h.
+- The text is one line plus an instruction: mention it once, then say
+  `codemux upgrade` is available — nothing downloads by itself.
+- Missing file, unreadable TSV or any other error is swallowed (no notice, no
+  crash, startup unaffected).
+
 ### Safety & behaviour
 
 - The menu only **notifies**; nothing is downloaded or replaced without running
@@ -505,6 +543,35 @@ Implementation: `lib/update.sh` (`releases/latest` redirect, cache
 `lib/maintenance.sh` (doctor, upgrade, uninstall), the update notice in the
 launcher block (`_oc_update_notice`, at most one background check per 6 hours),
 `tests/maintenance.sh` and the menu tests in `tests/launcher-memory.sh`.
+
+---
+
+## 12C. Free-model quota (`kuota`)
+
+OpenCode exposes **no** usage endpoint for the free models (every `/usage` call
+returns 404, and a direct API request answers `429 FreeUsageLimitError`). What is
+available locally is the number of assistant messages — one answer = one request.
+The `memory` module installs `~/.config/opencode/bin/kuota` (+ symlink in
+`$PREFIX/bin`) which counts them per UTC day, because the free quota resets at
+`00:00 UTC` = `07:00 WIB`.
+
+| Command | Output |
+|---|---|
+| `kuota` | today: used / limit, bar, remaining, warning threshold, per-model counts |
+| `kuota --week` | the last 7 days (`--days N` for another window) + average |
+| `kuota --warn` | one line, printed only at/above the threshold (used by the menu) |
+| `kuota --json` | `date`, `limit`, `used`, `remaining`, `percent`, `warn`, `by_model` |
+| `kuota --limit N` / `--warn-at N` | daily limit (default 200) and threshold (default 80 %) |
+
+Rules:
+
+- Data comes from both databases (V2 `session_message`, V1 `message`); a missing
+  database counts as 0. Reads are `mode=ro`, ~0.1 s on a phone.
+- The menu prints `⚠ kuota 161/200 (81%) · run: kuota` in the same slot as the
+  update notice, only when `kuota` exists and the threshold is reached.
+- Exit code `0` below the limit, `1` at/above it (useful in scripts).
+- The limit is an estimate of the free-tier daily cap, not a server-side truth:
+  `KUOTA_LIMIT` exists so a device with a different allowance stays accurate.
 
 ---
 
@@ -578,6 +645,16 @@ launcher block (`_oc_update_notice`, at most one background check per 6 hours),
     `not installed · Enter to install`; choosing it asks `Install it now? [y/N]`,
     `n` prints `not installed — nothing changed`, and `y` runs
     `codemux install --only <component>` and then starts it.
+11. **S11 (quota)** Given `kuota` is installed and today's usage is below the
+    threshold, When the menu opens, Then no quota line appears; Given usage is at
+    or above 80 %, Then `⚠ kuota N/200 (P%) · run: kuota` is printed. Given
+    `kuota` is not installed, Then the menu prints nothing about the quota.
+12. **S12 (update notice in a session)** Given the codemux cache holds a row with
+    status `update`, When a model call is prepared, Then the system instructions
+    contain a single `[codemux] update available: …` line; Given the cache is
+    older than 48 h, empty, or absent, Then nothing is injected and the session
+    is unaffected. V1 uses `experimental.chat.system.transform`, V2 the
+    `context` session hook — verified in both plugin entry points.
 
 ---
 
@@ -612,12 +689,14 @@ launcher block (`_oc_update_notice`, at most one background check per 6 hours),
 | M5 | `doctor`, `upgrade`, `repair`, `uninstall`, **`update-check`** (§12B) | ✅ maintenance |
 | M6 | CI: shellcheck, `bash -n`, `check --json`, smoke, release tarball | ✅ 1.0 ready |
 | M7 | component picker (↑/↓), upgrade limited to installed payloads, menu install confirmation | ✅ **0.7.3** (§6A, §12, S9/S10) |
-| M8 | next: update notice **inside** an opencode session (plugin reading the cache), `memory prune --dry-run`, optional `--lang id` | ⏳ planned |
+| M8 | update notice **inside** an opencode session (plugin reading the cache), `memory prune --dry-run`, optional `--lang id` | 🟡 notice ✅ **0.7.4** · prune & `--lang id` still planned |
+| M9 | `kuota` (daily quota estimate + menu warning) and open items in `RECENT.md` | ✅ **0.7.4** (§12C, §12A) |
 
 Release history: `0.6.4` update-cache fix · `0.6.5` `kuota` menu line · `0.6.6`
 early dependency install · `0.7.0` component choice · `0.7.1` progress spinner ·
 `0.7.2` token-authenticated GitHub downloads · `0.7.3` picker + installed-only
-upgrade + menu install flow.
+upgrade + menu install flow · `0.7.4` in-session update notice, `kuota`, open
+items in `RECENT.md`, memory mechanism refresh on `upgrade`.
 
 ---
 
@@ -637,6 +716,8 @@ upgrade + menu install flow.
 | D10 | Update notice inside an opencode session | Not implemented (M8) |
 | D11 | Component default | **Both** (`v1 v2`) when nothing is saved; the picker remembers the answer |
 | D12 | Upgrade scope | **Only installed payloads** + apt + launcher; `--only` overrides |
+| D13 | Update notice placement | Both: one line in the startup menu **and** one line in the session context through the plugin (0.7.4) |
+| D14 | Quota source | Local databases (one assistant message = one request), 200/day default, `KUOTA_LIMIT` overrides — no server-side endpoint exists |
 
 ---
 
