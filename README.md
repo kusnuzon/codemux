@@ -22,7 +22,8 @@ run again and again.
 ## 📦 Prerequisites
 
 Termux on Android, **aarch64**, **not root**. That's it — dependencies are
-installed automatically.
+installed automatically. Disk: V2-only is the smallest footprint; adding V1
+also pulls `clang`/LLVM (~500 MB) because its package compiles the wrapper.
 
 ## ⚡ 1-Click Install
 
@@ -107,6 +108,7 @@ warning line once you are close to it.
 | Command | What it does |
 |---|---|
 | `codemux check` | 📋 status of every module |
+| `codemux status` | 🧾 lock, state file, last install progress |
 | `codemux install` | ⚙️ install / resume / refresh (`--dry-run`, `--skip`) |
 | `codemux upgrade` | ⬆️ apt + installed payloads + launcher + memory mechanism |
 | `codemux update-check` | 🔍 compare local vs upstream versions |
@@ -126,6 +128,8 @@ codemux upgrade         # apt + installed payloads + launcher
 - `upgrade` without `--only` touches **only what is installed** — a V1-only
   device never gets V2 pushed in.
 - `upgrade --only apt,v1,launcher,memory` — explicit, `--dry-run` to preview.
+- Inside V2, `/update` also works: it fetches the official payload and the
+  launcher adopts it on the next start.
 - The `memory` step refreshes the mechanism files (plugins, digest, `kuota`) and
   keeps `MEMORY.md` untouched.
 - Update results are cached 24 h and shown as one line in the startup menu.

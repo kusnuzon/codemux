@@ -41,6 +41,7 @@ run_cm() { # <sandbox> <command...>
 # 1. update-check: detects 3 new components + 24h cache
 # =============================================================================
 SB="$(new_sandbox update)"
+printf 'v1 v2\n' >"$SB/state/components"
 run_cm "$SB" update-check --json >"$SB/uc.json" 2>"$SB/uc.err"
 if python3 - <<PY 2>/dev/null
 import json
