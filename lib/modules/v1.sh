@@ -9,7 +9,7 @@ CODEMUX_UPSTREAM_V1="${CODEMUX_UPSTREAM_V1:-https://api.github.com/repos/kusnuzo
 m_v1_probe() {
   local payload="$PREFIX/share/opencode/opencode.real"
   local launcher="$PREFIX/bin/opencode"
-  local ver pkg_ver held=1 note
+  local ver pkg_ver held=0 note
 
   if [ ! -x "$payload" ]; then
     PROBE=MISS; NOTE="payload not installed yet ($payload)"; return
@@ -17,28 +17,23 @@ m_v1_probe() {
 
   ver="$(opencode_v1_version)"
   pkg_ver="$(dpkg-query -W -f='${Version}' opencode 2>/dev/null || true)"
-  apt-mark showhold 2>/dev/null | grep -qx opencode || held=0
+  apt-mark showhold 2>/dev/null | grep -qx opencode && held=1
 
   note="v$ver"
-  if [ -n "$pkg_ver" ] && [ "$pkg_ver" != "$ver" ]; then
+  if [ -n "$pkg_ver" ]; then
     note="$note (dpkg $pkg_ver)"
+    [ "$held" -eq 1 ] && note="$note · apt hold active"
+  else
+    note="$note · script launcher (no dpkg)"
   fi
   if [ -x "$launcher" ]; then
     note="$note · launcher ok"
+    PROBE=OK
   else
     note="$note · launcher MISSING"
+    PROBE=WARN
   fi
-  if [ "$held" -eq 1 ]; then
-    note="$note · apt hold active"
-  else
-    note="$note · NOT apt-mark held"
-  fi
-
-  if [ "$held" -eq 1 ] && [ -x "$launcher" ]; then
-    PROBE=OK; NOTE="$note"
-  else
-    PROBE=WARN; NOTE="$note"
-  fi
+  NOTE="$note"
 }
 
 m_v1_verify() { m_v1_probe; }

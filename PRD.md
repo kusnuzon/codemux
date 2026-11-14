@@ -110,8 +110,8 @@ commands:
 install options:
   --dry-run          show the plan, change nothing
   --fresh            start from step 1 (do not resume)
-  --only v1|v2|both  OpenCode V1 only, V2 only, or both (default: ask, or keep
-                     the saved choice; non-interactive → both)
+  --only v2|v1|both  OpenCode V2 only (default), V1 only, or both (default: ask,
+                     or keep the saved choice; non-interactive → v2)
   --components X     same as --only
   --skip a,b         skip modules (deps,mirror,storage,toolset,glibc,v1,v2,
                      launcher,dotfiles,memory,self)
@@ -145,15 +145,15 @@ The user picks which OpenCode to install; every shared dependency is installed
 either way, so any choice works on a fresh Termux.
 
 ```
+codemux install --only v2     # OpenCode V2 only (default)
 codemux install --only v1     # OpenCode V1 only (V2 is not touched)
-codemux install --only v2     # OpenCode V2 only
-codemux install --only both   # V1 + V2 (default)
+codemux install --only both   # V1 + V2 (more disk)
 ```
 
 - `--components X` is an alias; `CODEMUX_COMPONENTS=v1` does the same.
 - Without a flag/env (interactive): an arrow-key picker appears once
   (↑/↓ + Enter, or 1/2/3; q cancels). Without a TTY (CI, `curl | bash`) the
-  saved/default choice is used — default `v1 v2`.
+  saved/default choice is used — default `v2`.
 - The choice is saved in `~/.config/codemux/components` (`v1`, `v2`, `v1 v2`)
   and reused by `install`, `check`, `update-check`; `--only` overrides it.
 - Base modules are always installed: `deps mirror storage toolset glibc` +
@@ -714,7 +714,7 @@ items in `RECENT.md`, memory mechanism refresh on `upgrade`.
 | D8 | Update behaviour | **Notify only** (`update available … run: codemux upgrade`); nothing downloads automatically |
 | D9 | Update-check interval | **24 hours** cache, menu retries at most every 6 hours, `na` rows every hour |
 | D10 | Update notice inside an opencode session | Not implemented (M8) |
-| D11 | Component default | **Both** (`v1 v2`) when nothing is saved; the picker remembers the answer |
+| D11 | Component default | **V2 only** (`v2`) when nothing is saved; the picker remembers the answer |
 | D12 | Upgrade scope | **Only installed payloads** + apt + launcher; `--only` overrides |
 | D13 | Update notice placement | Both: one line in the startup menu **and** one line in the session context through the plugin (0.7.4) |
 | D14 | Quota source | Local databases (one assistant message = one request), 200/day default, `KUOTA_LIMIT` overrides — no server-side endpoint exists |
@@ -747,9 +747,9 @@ curl -fsSL -H 'Accept: application/vnd.github.raw' \
 Component-scoped variants (nothing else is touched):
 
 ```bash
+… | bash -s -- --only v2     # V2 only   (10 modules, default)
 … | bash -s -- --only v1     # V1 only   (10 modules)
-… | bash -s -- --only v2     # V2 only   (10 modules)
-… | bash -s -- --only both   # V1 + V2   (11 modules, default)
+… | bash -s -- --only both   # V1 + V2   (11 modules)
 ```
 
 ---

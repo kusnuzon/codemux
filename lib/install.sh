@@ -19,13 +19,13 @@ codemux_in_list() {
 # and has not chosen before). Everything stays English: repo output only.
 # Arrow keys (or j/k) move, Enter picks, 1/2/3 pick directly, q cancels.
 codemux_components_ask() {
-  local sel=2 key rest ch i
+  local sel=0 key rest ch i
   local -a labels=(
+    "OpenCode V2 only — new, separate DB (default)"
     "OpenCode V1 only — stable, legacy DB"
-    "OpenCode V2 only — new, separate DB"
-    "Both — V1 + V2 (default)"
+    "Both — V1 + V2 (more disk)"
   )
-  [ -t 2 ] || { printf 'v1 v2'; return 0; }
+  [ -t 2 ] || { printf 'v2'; return 0; }
 
   _ask_draw() {
     for i in 0 1 2; do
@@ -67,8 +67,8 @@ codemux_components_ask() {
     _ask_draw
   done
   case "$sel" in
-    0) printf 'v1' ;;
-    1) printf 'v2' ;;
+    0) printf 'v2' ;;
+    1) printf 'v1' ;;
     *) printf 'v1 v2' ;;
   esac
 }

@@ -44,11 +44,12 @@ else
   bad "check --json"
 fi
 
-# 6. install --dry-run: plan for 5 modules, changes nothing
+# 6. install --dry-run: default is V2 only, changes nothing
 out="$(bash bin/codemux install --dry-run 2>&1 || true)"
-rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/11 ' || true)"
-if [ "$rows" -eq 11 ] && printf '%s' "$out" | grep -q 'dry-run'; then
-  ok "install --dry-run (11 modules)"
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/10 ' || true)"
+if [ "$rows" -eq 10 ] && printf '%s' "$out" | grep -q 'dry-run' &&
+  printf '%s\n' "$out" | grep -q 'install \[v2\]'; then
+  ok "install --dry-run (default v2, 10 modules)"
 else
   bad "install --dry-run (plan rows=$rows)"
 fi

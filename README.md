@@ -1,6 +1,6 @@
 # 🚀 codemux — Termux Setup in One Command
 
-Installs and maintains **OpenCode V1 + V2** on Termux: startup menu, cross-session
+Installs and maintains **OpenCode V2 (default) or V1** on Termux: startup menu, cross-session
 memory, base toolset, Android storage, and update checks. Idempotent — safe to
 run again and again.
 
@@ -8,11 +8,11 @@ run again and again.
 
 ## ✨ What you get
 
-- 🤖 **OpenCode V1 and/or V2** — you choose, nothing extra is pulled in
+- 🤖 **OpenCode V2 by default, V1 optional** — you choose, nothing extra is pulled in
 - 🎛️ **Startup menu** — arrow keys, opens the component you pick
 - 🧠 **Cross-session memory** — `MEMORY.md` + `RECENT.md` (with the open items)
   loaded every session
-- 🧰 **Base toolset** — git, gh, python, nodejs, sqlite, jq, shellcheck, htop, ...
+- 🧰 **Base toolset** — git, gh, python, sqlite, jq, htop, ...
 - 📂 **Android storage** — runs `termux-setup-storage` when it is still missing
 - 🔄 **Update check** — sees new codemux/V1/V2/apt releases before you ask, and
   reminds you once inside a session
@@ -42,22 +42,25 @@ First install shows an arrow-key picker:
 
 ```
 Which OpenCode should be installed?
-  ❯ 1) OpenCode V1 only — stable, legacy DB
-    2) OpenCode V2 only — new, separate DB
-    3) Both — V1 + V2 (default)
+  ❯ 1) OpenCode V2 only — new, separate DB (default)
+    2) OpenCode V1 only — stable, legacy DB
+    3) Both — V1 + V2 (more disk)
 ```
 
 - ↑/↓ (or `j`/`k`) move · `Enter` run · `1`-`3` pick directly · `q` cancel
 - The answer is saved in `~/.config/codemux/components` and reused later
-- Skipping the picker (CI, `curl | bash`): saved choice, default `v1 v2`
+- Skipping the picker (CI, `curl | bash`): saved choice, default `v2`
 
 Non-interactive:
 
 ```bash
+… | bash -s -- --only v2     # V2 only (default, least disk)
 … | bash -s -- --only v1     # V1 only (V2 is never touched)
-… | bash -s -- --only v2     # V2 only
-… | bash -s -- --only both   # V1 + V2 (default)
+… | bash -s -- --only both   # V1 + V2 (more disk)
 ```
+
+V1 uses the bundled shell launcher, so it no longer pulls the `opencode` dpkg
+package and its clang/LLVM toolchain (~500 MB).
 
 ## ⌨️ Startup menu
 

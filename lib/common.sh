@@ -26,7 +26,7 @@ CODEMUX_APT_PACKAGES="${CODEMUX_APT_PACKAGES:-}"
 CODEMUX_APT_EXTRA="${CODEMUX_APT_EXTRA:-}"
 CODEMUX_APT_REPOS="${CODEMUX_APT_REPOS:-}"
 # Components installed by default (the user can pick V1 only, V2 only, or both).
-CODEMUX_COMPONENTS_DEFAULT="${CODEMUX_COMPONENTS_DEFAULT:-v1 v2}"
+CODEMUX_COMPONENTS_DEFAULT="${CODEMUX_COMPONENTS_DEFAULT:-v2}"
 
 # --- colors ------------------------------------------------------------------
 codemux_colors() {
@@ -449,8 +449,8 @@ check options:
 install options:
   --dry-run          show the plan, change nothing
   --fresh            start from step 1 (do not resume)
-  --only v1|v2|both  install OpenCode V1 only, V2 only, or both (default: ask,
-                     or keep the saved choice; non-interactive → both)
+  --only v2|v1|both  install OpenCode V2 only (default), V1 only, or both (default:
+                     ask, or keep the saved choice; non-interactive → v2)
   --components X     same as --only
   --skip a,b         skip modules (deps,mirror,storage,toolset,glibc,v1,v2,launcher,dotfiles,memory,self)
   -y, --yes          no confirmation, never ask (keep the saved/default choice)
