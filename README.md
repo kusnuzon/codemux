@@ -59,8 +59,9 @@ Non-interactive:
 … | bash -s -- --only both   # V1 + V2 (more disk)
 ```
 
-V1 uses the bundled shell launcher, so it no longer pulls the `opencode` dpkg
-package and its clang/LLVM toolchain (~500 MB).
+V1 is installed from the **TermuxVoid** APT repo: its `opencode` package downloads
+the official payload, verifies the sha256, and compiles the glibc wrapper that is
+known to work on Termux. That pulls `clang`/LLVM (~500 MB) as a build dependency.
 
 ## ⌨️ Startup menu
 

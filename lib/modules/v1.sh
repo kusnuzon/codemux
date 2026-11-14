@@ -21,22 +21,28 @@ m_v1_probe() {
 
   note="v$ver"
   if [ -n "$pkg_ver" ]; then
-    note="$note (dpkg $pkg_ver)"
-    [ "$held" -eq 1 ] && note="$note · apt hold active"
+    note="$note (termuxvoid dpkg $pkg_ver)"
   else
-    note="$note · script launcher (no dpkg)"
+    note="$note · termuxvoid dpkg MISSING"
   fi
   if [ -x "$launcher" ]; then
     note="$note · launcher ok"
-    PROBE=OK
   else
     note="$note · launcher MISSING"
+  fi
+  if [ "$held" -eq 1 ]; then
+    note="$note · apt hold active"
+  else
+    note="$note · NOT apt-mark held"
+  fi
+
+  if [ -n "$pkg_ver" ] && [ -x "$launcher" ] && [ "$held" -eq 1 ]; then
+    PROBE=OK
+  else
     PROBE=WARN
   fi
   NOTE="$note"
 }
-
-m_v1_verify() { m_v1_probe; }
 
 m_v1_apply() {
   local script rc
