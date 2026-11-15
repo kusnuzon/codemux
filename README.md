@@ -16,6 +16,8 @@ run again and again.
 - 📂 **Android storage** — runs `termux-setup-storage` when it is still missing
 - 🔄 **Update check** — sees new codemux/V1/V2/apt releases before you ask, and
   reminds you once inside a session
+- 📊 **Progress bar** — every install step and every download shows a percentage
+  (bar + bytes/total), so a slow mobile connection never looks frozen
 - ⛽ **`kuota`** — estimates the remaining free-model quota from the local DBs
 - 🛡️ **Resume-safe** — killed midway? run it again, it continues
 
@@ -144,14 +146,48 @@ codemux upgrade         # apt + installed payloads + launcher
 | V2 won't start | `codemux repair` (reinstalls the compat shim) |
 | Menu shows "outdated launcher block" | `codemux install` (refreshes `~/.bashrc`) |
 
+## 🧪 Tests
+
+Everything runs without touching the system: each suite builds its own sandbox
+(`HOME`, `PREFIX`, `CODEMUX_HOME`) and fakes the network.
+
+```bash
+bash tests/harness.sh     # cheap gate: portability + one suite in a mock Termux
+bash tests/smoke.sh       # syntax, help, check --json, progress bar, dry runs
+bash tests/resume.sh      # install killed midway, then resumed
+bash tests/adapter.sh     # V1/V2 adapters: download → run detached → verify
+bash tests/launcher-memory.sh  # menu, memory merge, update notice, kuota line
+bash tests/maintenance.sh # update-check, doctor, upgrade, uninstall
+bash tests/release.sh     # bootstrap tarball + self-update
+```
+
+**Run `tests/harness.sh` before pushing.** It catches the class of bug that only
+shows up on a plain runner: a raw `$PREFIX` read under `set -u`, a hardcoded
+`/data/data/com.termux` path, or a non-portable shebang.
+
+The CI runs every suite **twice** — once with a mock Termux `PREFIX` and once
+with it unset — plus `shellcheck`, `bash -n`, and a drift check on the shared
+progress bar. Locally you can copy the second layout with:
+
+```bash
+env -u PREFIX TMPDIR="$PREFIX/tmp" bash tests/smoke.sh
+```
+
+The ASCII progress bar is one block shared with the two
+`opencode-termux*` repos: it lives in `lib/progress-bar.sh`, and
+`bash tools/sync-progress-bar.sh` copies it into the siblings (`--check` reports
+drift and is what CI runs). Edit the source block, never a copy.
+
 ## 📁 Layout
 
 ```
 bin/codemux        entry point
 lib/*.sh           commands (install, check, upgrade, update, ...)
 lib/modules/       one file per module (deps, glibc, v1, v2, launcher, memory, ...)
+lib/progress-bar.sh  the ASCII progress bar, shared with the opencode-termux repos
+tools/             sync-progress-bar.sh (copy the bar, or --check for drift)
 templates/         bashrc block, memory files
-tests/             smoke, launcher-memory, maintenance, resume, release, adapter
+tests/             harness, smoke, launcher-memory, maintenance, resume, release, adapter
 install.sh         bootstrap (tarball + sha256)
 ```
 
@@ -162,6 +198,9 @@ install.sh         bootstrap (tarball + sha256)
   run `bash bin/codemux …`.
 - `raw.githubusercontent.com` may serve stale files on mobile networks → release
   downloads use a tarball + `sha256`.
+- The memory mechanism files (plugins, `kuota`, digest) are fetched from
+  `raw.githubusercontent.com`, not the GitHub API: the API allows only 60
+  anonymous requests per hour, and five files per install used to run it dry.
 - `uninstall` never deletes `MEMORY.md`, `AGENTS.md`, projects, or backups.
 
 ## 📜 License
