@@ -62,6 +62,9 @@ for f in "$SANDBOX/upstream/v1.sh" "$SANDBOX/upstream/v2.sh" \
 done
 
 export CODEMUX_ALLOW_NONANDROID=1
+# The install default is V2 only, but this suite exercises both adapters, so
+# pin the component choice instead of relying on the machine's saved choice.
+export CODEMUX_COMPONENTS="v1 v2"
 # The memory module still downloads from live api.github.com. Unauthenticated
 # calls are capped at 60/hour, so forward the gh token before HOME is sandboxed.
 if [ -z "${CODEMUX_GITHUB_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then

@@ -72,6 +72,16 @@ codemux_spin_size() { # [file]
   fi
 }
 
+# Total bytes of the active download, so the spinner can show a percentage.
+codemux_spin_total() { # [bytes]
+  [ -n "$CODEMUX_SPIN_DIR" ] || return 0
+  if [ -n "${1:-}" ] && [ "${1:-0}" -gt 0 ] 2>/dev/null; then
+    printf '%s' "$1" >"$CODEMUX_SPIN_DIR/.spin.total" 2>/dev/null || true
+  else
+    rm -f "$CODEMUX_SPIN_DIR/.spin.total" 2>/dev/null || true
+  fi
+}
+
 # codemux_spin_start <prefix> [message]
 # The prefix is the part that stays fixed (e.g. "[6/11] v1         "); the
 # caller prints the result right after codemux_spin_stop returns.
@@ -83,6 +93,7 @@ codemux_spin_start() {
   mkdir -p "$CODEMUX_SPIN_DIR" 2>/dev/null || { CODEMUX_SPIN_DIR=""; return 0; }
   codemux_spin_msg "${2:-working}"
   codemux_spin_size ""
+  codemux_spin_total ""
   (
     frames='|/-\'
     i=0
@@ -91,9 +102,16 @@ codemux_spin_start() {
       msg="$(cat "$CODEMUX_SPIN_DIR/.spin.msg" 2>/dev/null)" || msg=working
       extra=""
       sf="$(cat "$CODEMUX_SPIN_DIR/.spin.size" 2>/dev/null)"
+      tf="$(cat "$CODEMUX_SPIN_DIR/.spin.total" 2>/dev/null)"
       if [ -n "$sf" ] && [ -f "$sf" ]; then
         b="$(stat -c %s "$sf" 2>/dev/null || echo 0)"
-        extra=" · $(human_bytes "$b")"
+        if [ -n "$tf" ] && [ "$tf" -gt 0 ] 2>/dev/null; then
+          pct=$((b * 100 / tf))
+          [ "$pct" -gt 100 ] && pct=100
+          extra=" · $(codemux_bar "$pct" 8) $(human_bytes "$b")/$(human_bytes "$tf")"
+        else
+          extra=" · $(human_bytes "$b")"
+        fi
       fi
       printf '\r%s%s%s %s%s (%ss%s)\033[K' \
         "$CODEMUX_SPIN_PREFIX" "$C_INFO" "${frames:$((i % 4)):1}" "$C_R" \
@@ -115,7 +133,7 @@ codemux_spin_stop() {
   wait "$CODEMUX_SPIN_PID" 2>/dev/null || true
   CODEMUX_SPIN_PID=""
   printf '\r%s\033[K' "$CODEMUX_SPIN_PREFIX" >&2
-  rm -f "$CODEMUX_SPIN_DIR/.spin.msg" "$CODEMUX_SPIN_DIR/.spin.size" 2>/dev/null || true
+  rm -f "$CODEMUX_SPIN_DIR/.spin.msg" "$CODEMUX_SPIN_DIR/.spin.size" "$CODEMUX_SPIN_DIR/.spin.total" 2>/dev/null || true
   CODEMUX_SPIN_DIR=""
   return 0
 }
@@ -156,6 +174,46 @@ human_bytes() {
   else
     printf '%s B' "$b"
   fi
+}
+
+# ASCII progress bar shared with the opencode-termux repos. Kept in its own
+# file so tools/sync-progress-bar.sh can copy one block and detect drift.
+# shellcheck source=./progress-bar.sh
+. "$CODEMUX_ROOT/lib/progress-bar.sh"
+
+# codemux_bar is the old name; the shared bar defaults to width 16 to match
+# what the spinner and the install plan have always printed.
+codemux_bar() {
+  progress_bar "${1:-0}" "${2:-16}"
+}
+
+codemux_content_length() { # <url> — best-effort size, empty when unknown
+  have curl || return 0
+  # A redirect chain reports content-length: 0 on the 3xx hops, so only the
+  # last block of headers counts, and only when it is a 2xx — an error page
+  # also has a length, which would show a bogus 100% bar. Content-Range is
+  # the fallback for mirrors that answer HEAD without a length. CRLF must go
+  # first: with RS = "" awk only splits blocks on a truly empty line. The
+  # trailing echo always exits 0: otherwise the pipeline status would be
+  # curl's 22 on a 404 and `set -e` would kill the caller.
+  { curl -fsIL --max-time 15 "$1" 2>/dev/null ||
+    curl -fsL --max-time 15 --range 0-0 -D - -o /dev/null "$1" 2>/dev/null ||
+    echo; } |
+    tr -d '\r' |
+    awk 'BEGIN { RS = ""; FS = "\n" }
+         {
+           st = ""; n = ""; r = ""
+           for (i = 1; i <= NF; i++) {
+             line = tolower($i)
+             if (line ~ /^http\//) { st = line; sub(/^http\/[0-9.]+[ ]+/, "", st) }
+             if (line ~ /^content-length:/) { sub(/^[^:]*:[ ]*/, "", line); n = line }
+             if (line ~ /^content-range:/) { r = line }
+           }
+           if (r ~ /\//) { sub(/.*\//, "", r) } else { r = "" }
+           last_st = st
+           if (n != "" && n !~ /^0+$/) { last = n } else if (r != "") { last = r } else { last = "" }
+         }
+         END { if (last_st ~ /^2/ && last ~ /^[0-9]+$/) print last }'
 }
 
 # Safe path: must be inside $HOME or $CODEMUX_HOME.
@@ -316,15 +374,17 @@ PY
 # In a terminal it reports progress (spinner message + growing size), so a slow
 # mobile connection does not look frozen.
 codemux_download() {
-  local url="$1" dest="$2" accept="${3:-}" part="$2.part" name size
+  local url="$1" dest="$2" accept="${3:-}" part="$2.part" name size total
   name="$(basename "$dest")"
   mkdir -p "$(dirname "$dest")" || return 1
   rm -f "$part"
 
   if codemux_progress_tty; then
     if [ -n "$CODEMUX_SPIN_PID" ]; then
+      total="$(codemux_content_length "$url")"
       codemux_spin_msg "downloading $name"
       codemux_spin_size "$part"
+      codemux_spin_total "$total"
     else
       printf '  %s↓ downloading %s…%s\n' "$C_DIM" "$name" "$C_R" >&2
     fi
@@ -349,6 +409,7 @@ codemux_download() {
   if codemux_progress_tty; then
     if [ -n "$CODEMUX_SPIN_PID" ]; then
       codemux_spin_size ""
+      codemux_spin_total ""
       codemux_spin_msg "installing"
     else
       size="$(stat -c %s "$dest" 2>/dev/null || echo 0)"

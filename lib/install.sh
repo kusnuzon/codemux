@@ -180,7 +180,7 @@ codemux_cmd_install() {
     else
       act="INSTALL"; note="${PN[$m]}"; need=$((need + 1))
     fi
-    printf '  %d/%d %-10s %-7s %s\n' "$i" "$total" "$m" "$act" "$note"
+    printf '  %d/%d %-10s %s %-7s %s\n' "$i" "$total" "$m" "$(codemux_bar "$((i * 100 / total))" 12)" "$act" "$note"
   done
   printf '\n'
 
@@ -227,7 +227,8 @@ codemux_cmd_install() {
   i=0
   for m in "${CODEMUX_INSTALL_MODULES[@]}"; do
     i=$((i + 1))
-    printf '[%d/%d] %-10s ' "$i" "$total" "$m"
+    pct=$((i * 100 / total))
+    printf '  %d/%d %-10s %s ' "$i" "$total" "$m" "$(codemux_bar "$pct" 16)"
 
     if codemux_in_list "$m" "$skip"; then
       codemux_run_set "$m" SKIP "skipped (--skip)"
@@ -250,7 +251,7 @@ codemux_cmd_install() {
 
     codemux_run_set "$m" RUNNING ""
     APPLY_NOTE=""
-    codemux_spin_start "$(printf '[%d/%d] %-10s ' "$i" "$total" "$m")" "installing"
+    codemux_spin_start "$(printf '  %d/%d %-10s %s ' "$i" "$total" "$m" "$(codemux_bar "$pct" 16)")" "installing"
     if "m_${m}_apply" 2>>"$CODEMUX_LOG"; then :; fi
     codemux_spin_stop
     codemux_verify_module "$m"

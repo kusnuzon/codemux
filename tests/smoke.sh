@@ -164,7 +164,75 @@ case "$out" in
   *) bad "upgrade --dry-run" ;;
 esac
 
-# 9. shellcheck when available
+# 9. the shared progress bar renders a stable width, clamps out-of-range and
+#    non-numeric input, and keeps the codemux_bar default width at 16.
+#    It is a plain function from lib/progress-bar.sh (the plan and spinner call
+#    it), so source common.sh here instead of going through bin/codemux.
+CODEMUX_ROOT="$ROOT"
+# shellcheck source=../lib/common.sh
+. "$ROOT/lib/common.sh"
+bar_ok=1
+for c in "0|24|[------------------------]   0%" "50|24|[############------------]  50%" \
+  "100|24|[########################] 100%" "150|24|[########################] 100%" \
+  "-5|24|[------------------------]   0%" "abc|24|[------------------------]   0%" \
+  "50|0|[############------------]  50%"; do
+  pct="${c%%|*}"; rest="${c#*|}"; width="${rest%%|*}"; want="${rest#*|}"
+  got="$(progress_bar "$pct" "$width")"
+  if [ "$got" != "$want" ]; then
+    bad "progress_bar $pct/$width → '$got' (want '$want')"
+    bar_ok=0
+  fi
+done
+# a label is appended after two spaces, with no trailing newline from the bar
+if [ "$(progress_bar 50 8 'half')" = "[####----]  50%  half" ]; then
+  ok "progress_bar label"
+else
+  bad "progress_bar label → '$(progress_bar 50 8 half)'"
+  bar_ok=0
+fi
+# codemux_bar keeps its own defaults (width 16) for the spinner and the plan
+if [ "$(codemux_bar 100)" = "[################] 100%" ] &&
+  [ "$(codemux_bar 50 12)" = "[######------]  50%" ]; then
+  ok "codemux_bar defaults (width 16)"
+else
+  bad "codemux_bar defaults → '$(codemux_bar 100)' / '$(codemux_bar 50 12)'"
+  bar_ok=0
+fi
+# progress_step writes a numbered line
+if [ "$(progress_step 2 8 'Installing')" = "[######------------------]  25%  2/8 Installing" ]; then
+  ok "progress_step line"
+else
+  bad "progress_step → '$(progress_step 2 8 Installing)'"
+  bar_ok=0
+fi
+[ "$bar_ok" -eq 1 ] && ok "progress bar (width, clamping, label, defaults)"
+
+# 9b. the same block lives in the two opencode-termux repos; a silent copy
+#     that drifted is exactly the class of bug this file exists to stop.
+if [ -d "$ROOT/../opencode-termux" ] || [ -d "$ROOT/../opencode-termux-v2" ]; then
+  if out="$(bash "$ROOT/tools/sync-progress-bar.sh" --check 2>&1)"; then
+    ok "progress bar synced with the sibling repos"
+  else
+    bad "$out"
+  fi
+else
+  printf 'skip progress bar sync (sibling repos not checked out)\n'
+fi
+
+# 10. codemux_content_length: only a 2xx length counts, never an error page
+#     (a 404 body has a length too, which would show a bogus 100% bar).
+#     Network is optional: skipped when github.com is unreachable.
+if curl -fsI --max-time 8 https://github.com >/dev/null 2>&1; then
+  # cd out of the repo first: a 404 URL must not fall through to a file here.
+  n="$(cd / && codemux_content_length https://github.com/kusnuzon/codemux/raw/main/VERSION)"
+  if [ "$n" = "6" ]; then ok "content-length 200 ($n)"; else bad "content-length 200 ($n, want 6)"; fi
+  n="$(cd / && codemux_content_length https://github.com/kusnuzon/codemux/raw/main/NOPE-$$.txt)"
+  if [ -z "$n" ]; then ok "content-length 404 (empty)"; else bad "content-length 404 ($n, want empty)"; fi
+else
+  printf 'skip content-length (no network)\n'
+fi
+
+# 11. shellcheck when available
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck -S warning bin/codemux lib/*.sh lib/modules/*.sh; then
     ok "shellcheck"
