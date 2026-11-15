@@ -6,7 +6,8 @@ on:
   pull_request:
 
 jobs:
-  test:
+  # Fast, host-independent checks: nothing here may depend on Termux.
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,20 +16,40 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
 
       - name: shellcheck
-        run: shellcheck -S warning install.sh bin/codemux lib/*.sh lib/modules/*.sh tools/*.sh
+        run: shellcheck -S warning install.sh bin/codemux lib/*.sh lib/modules/*.sh tools/*.sh tests/*.sh
 
       - name: syntax
         run: |
-          for f in install.sh bin/codemux lib/*.sh lib/modules/*.sh tools/*.sh; do
+          for f in install.sh bin/codemux lib/*.sh lib/modules/*.sh tools/*.sh tests/*.sh; do
             bash -n "$f"
           done
 
+      # The suites must pass both as a Termux user (PREFIX set, Termux layout)
+      # and as a plain runner (no PREFIX, /usr/bin layout). Skipping the second
+      # run is how four broken test assumptions reached main.
+      - name: harness check (mock Termux + plain runner)
+        run: bash tests/harness.sh
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # with-prefix mocks Termux; without-prefix is a plain runner.
+        env: [with-prefix, without-prefix]
+    steps:
+      - uses: actions/checkout@v4
+
       - name: check --json valid
         run: |
-          bash bin/codemux check --json > /tmp/out.json || true
-          python3 - <<'PY'
-          import json
-          d = json.load(open("/tmp/out.json"))
+          if [ "${{ matrix.env }}" = "with-prefix" ]; then
+            export PREFIX="$RUNNER_TEMP/prefix" TMPDIR="$RUNNER_TEMP"
+            mkdir -p "$PREFIX/bin" "$PREFIX/tmp"
+          fi
+          bash bin/codemux check --json > "$RUNNER_TEMP/out.json" || true
+          python3 - "$RUNNER_TEMP/out.json" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1]))
           assert d["codemux"] == "codemux"
           assert len(d["modul"]) == 13
           r = d["ringkasan"]
@@ -37,22 +58,38 @@ jobs:
           print("json ok:", r)
           PY
 
-      - name: smoke
-        run: bash tests/smoke.sh
+      - name: suites (${{ matrix.env }})
+        run: |
+          if [ "${{ matrix.env }}" = "with-prefix" ]; then
+            export PREFIX="$RUNNER_TEMP/prefix" TMPDIR="$RUNNER_TEMP"
+            mkdir -p "$PREFIX/bin" "$PREFIX/tmp"
+            env | grep -E '^PREFIX=' # prove the run really had a Termux-like PREFIX
+            run=bash
+          else
+            unset PREFIX
+            env | grep -E '^PREFIX=' && { echo "PREFIX must not be set here"; exit 1; }
+            run=bash
+          fi
+          for t in smoke resume adapter launcher-memory maintenance release; do
+            printf '\n===== %s =====\n' "$t"
+            $run "tests/$t.sh"
+          done
 
-      - name: resume (install killed midway)
-        run: bash tests/resume.sh
-
-      - name: V1/V2 adapters
-        run: bash tests/adapter.sh
-      - name: launcher + memory
-        run: bash tests/launcher-memory.sh
-      - name: maintenance (update/doctor/upgrade/uninstall)
-        run: bash tests/maintenance.sh
-      - name: release (bootstrap + self-update)
-        run: bash tests/release.sh
-
-      # The progress bar lives in three repos; fail when a copy drifted.
+  # The progress bar lives in three repos. Check out the siblings next to
+  # this repo so the drift check is real; a drifted copy fails the job.
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: codemux
+      - uses: actions/checkout@v4
+        with:
+          repository: kusnuzon/opencode-termux
+          path: opencode-termux
+      - uses: actions/checkout@v4
+        with:
+          repository: kusnuzon/opencode-termux-v2
+          path: opencode-termux-v2
       - name: sync check (progress bar)
-        run: bash tools/sync-progress-bar.sh --check
-        continue-on-error: true
+        run: bash codemux/tools/sync-progress-bar.sh --check
