@@ -493,8 +493,11 @@ SB5C="$(new_sandbox pi-module)"
 # leave it alone. The launcher module (skipped below) is the one that repairs
 # .bashrc, so nothing in this sandbox can make the file valid again.
 printf 'if [ ; then\n' >"$SB5C/home/.bashrc"
-printf '#!/bin/sh\n' >"$SB5C/prefix/bin/pi"
-chmod +x "$SB5C/prefix/bin/pi"
+# The module looks for free-pi-cli, not for the upstream `pi` bin. The fake has
+# to be named exactly that: on a CI runner without the npx cache an empty
+# PREFIX/bin sends the module down the "not installed" path instead.
+printf '#!/bin/sh\n' >"$SB5C/prefix/bin/free-pi-cli"
+chmod +x "$SB5C/prefix/bin/free-pi-cli"
 run_cm "$SB5C" install --only pi --skip "$SKIP_ONLY_PI" >"$SB5C/out.log" 2>&1 || true
 if ! grep -q 'codemux:pi begin' "$SB5C/home/.bashrc"; then
   ok "pi module: a broken .bashrc is left alone"
