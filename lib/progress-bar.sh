@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # progress-bar.sh — the one ASCII progress bar used by codemux,
 # opencode-termux and opencode-termux-v2.
 #

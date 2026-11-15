@@ -55,11 +55,15 @@ else
 fi
 
 # 6b. component choice: V1 only / V2 only / both
-SB="$PREFIX/tmp/codemux-smoke-$$"
+#     A plain CI runner has no $PREFIX; fall back to $TMPDIR rather than
+#     dying on an unbound variable in the sandbox setup.
+BASE="${TMPDIR:-/tmp}"
+if [ -n "${PREFIX:-}" ] && [ -d "${PREFIX:-}/tmp" ]; then BASE="$PREFIX/tmp"; fi
+SB="$BASE/codemux-smoke-$$"
 rm -rf "$SB"
 mkdir -p "$SB/home" "$SB/state"
 sel() { # <args...> → stdout of `codemux install --dry-run` in the sandbox
-  env HOME="$SB/home" CODEMUX_HOME="$SB/state" PREFIX="$SB/prefix" TMPDIR="${TMPDIR:-/tmp}" \
+  env HOME="$SB/home" CODEMUX_HOME="$SB/state" PREFIX="$SB/prefix" TMPDIR="$BASE" \
     CODEMUX_ALLOW_NONANDROID=1 CODEMUX_NO_APT_CHECK=1 \
     bash bin/codemux install --dry-run "$@" 2>&1 || true
 }
