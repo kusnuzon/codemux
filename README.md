@@ -175,7 +175,17 @@ bash tools/tests-tmux.sh --kill           # stop the session
 ```
 
 Inside the session `Ctrl-b n` / `Ctrl-b p` move between windows, `Ctrl-b <n>` jumps
-to one, `Ctrl-b d` detaches and leaves the run going.
+to one, `Ctrl-b d` detaches and leaves the run going. `--wait` blocks until the run
+finishes and exits with its result, so a script never has to poll with `sleep`.
+
+Shorter and longer waits get the same treatment from `tools/watch-tmux.sh`: it
+runs any command in a tmux window, keeps the output, and blocks on a tmux
+channel instead of sleeping. Use it for CI, upgrades or anything slow:
+
+```bash
+bash tools/watch-tmux.sh -n ci -- gh run watch 12345 --exit-status
+echo $?    # the command's own status, no polling
+```
 
 The suites, if you want to run one by hand:
 

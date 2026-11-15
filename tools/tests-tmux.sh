@@ -9,6 +9,7 @@
 #   bash tools/tests-tmux.sh                 # all suites, session codemux-tests
 #   bash tools/tests-tmux.sh smoke resume    # only these suites
 #   bash tools/tests-tmux.sh --attach        # start, then attach (needs a tty)
+#   bash tools/tests-tmux.sh --wait          # block until done, exit with the result
 #   bash tools/tests-tmux.sh --status        # 0 pass · 1 fail · 2 running · 3 no run
 #   bash tools/tests-tmux.sh --kill          # stop the session
 #
@@ -28,10 +29,12 @@ STATUS="$BASE/$NAME.status"
 ALL="smoke launcher-memory maintenance resume release adapter"
 
 attach=0
+wait_mode=0
 suites=()
 while [ $# -gt 0 ]; do
   case "$1" in
     -a | --attach) attach=1; shift ;;
+    -w | --wait) wait_mode=1; shift ;;
     --status)
       if [ -f "$STATUS" ]; then
         if [ "$(cat "$STATUS" 2>/dev/null)" = 0 ]; then printf 'passed\n'; exit 0; fi
@@ -48,7 +51,7 @@ while [ $# -gt 0 ]; do
       exit 0
       ;;
     -h | --help)
-      sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     -*) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
@@ -76,6 +79,7 @@ fi
 tmux kill-session -t "$NAME" 2>/dev/null || true
 rm -f "$STATUS"
 
+CHANNEL="$NAME-finished"
 RUN="$BASE/$NAME.d"
 rm -rf "$RUN"
 mkdir -p "$RUN"
@@ -85,7 +89,7 @@ date +%s >"$RUN/start"
 # The summary window waits for every suite to drop its .rc file, then reports.
 {
   printf '#!/usr/bin/env bash\n'
-  printf 'set -u\nRUN=%q\nSTATUS=%q\n' "$RUN" "$STATUS"
+  printf 'set -u\nRUN=%q\nSTATUS=%q\nCHANNEL=%q\n' "$RUN" "$STATUS" "$CHANNEL"
   printf 'names=('
   for s in "${names[@]}"; do printf ' %q' "$s"; done
   printf ' )\n'
@@ -111,6 +115,7 @@ done
 elapsed=$(( $(date +%s) - $(cat "$RUN/start" 2>/dev/null || echo 0) ))
 printf '\n%s suites · %s failed · %ss · logs: %s\n' "$total" "$failed" "$elapsed" "$RUN"
 if [ "$failed" -eq 0 ]; then printf '0\n' >"$STATUS"; else printf '1\n' >"$STATUS"; fi
+tmux wait-for -S "$CHANNEL" 2>/dev/null || true
 printf '\n— finished. Ctrl-b n/p to switch windows, Ctrl-b d to detach.\n'
 exec sleep infinity
 EOS
@@ -133,6 +138,17 @@ printf '  watch live : tmux attach -t %s\n' "$NAME"
 printf '  summary    : tmux attach -t %s:%s\n' "$NAME" summary
 printf '  log files  : %s\n' "$RUN"
 printf '  ask status : bash tools/tests-tmux.sh --status\n'
+
+# --wait blocks on a tmux channel the summary window signals, so a caller never
+# polls with sleeps. A finished run answers immediately from the status file.
+if [ "$wait_mode" -eq 1 ]; then
+  if [ ! -f "$STATUS" ]; then
+    tmux wait-for "$CHANNEL"
+  fi
+  tmux capture-pane -p -t "$NAME:summary" 2>/dev/null | grep -v '^$' | grep -v '^— finished' || true
+  if [ "$(cat "$STATUS" 2>/dev/null)" = 0 ]; then exit 0; fi
+  exit 1
+fi
 
 if [ "$attach" -eq 1 ]; then
   if [ -t 0 ] && [ -t 1 ]; then
