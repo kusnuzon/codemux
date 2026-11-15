@@ -376,7 +376,9 @@ if [ -z "$(kuota_line "$SB5")" ]; then
 else
   bad "menu: quota line printed below the threshold"
 fi
-printf '#!%s/bin/sh\nprintf "warn 161/200\\n"\n' "$PREFIX" >"$SB5/prefix/bin/kuota"
+# The fake interpreter must be a path that exists on this machine: $PREFIX is
+# unset on a plain CI runner, so resolve bash instead of assuming its layout.
+printf '#!%s\nprintf "warn 161/200\\n"\n' "$(command -v bash)" >"$SB5/prefix/bin/kuota"
 chmod +x "$SB5/prefix/bin/kuota"
 case "$(kuota_line "$SB5")" in
   *"161/200"*) ok "menu: quota warning is shown when the limit is near" ;;
