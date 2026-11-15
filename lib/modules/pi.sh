@@ -51,6 +51,11 @@ m_pi_probe() {
       NOTE="the pi alias exists but the free-pi-cli command does not (npx cache was cleared)"
     else
       NOTE="pi (free-pi) is not installed yet"
+      # free-pi is fetched by `npx free-pi-cli` on first run; until then the
+      # step is not a failure, only something left to do. install.sh re-probes
+      # after apply and only looks at PROBE, so WARN (never MISS) keeps it out
+      # of the failed count.
+      PROBE=WARN
     fi
     return
   fi
@@ -85,7 +90,7 @@ m_pi_apply() {
     # Installing free-pi non-interactively would download ~40 MB and then sit
     # waiting for a login, which an installer must not do. Print the exact
     # command instead; the menu asks for confirmation before running it.
-    APPLY_NOTE="run it once to install: npx -y free-pi-cli@latest"
+    APPLY_NOTE="pi is not installed yet — run it once to fetch it: npx -y free-pi-cli@latest"
     return 0
   fi
 
