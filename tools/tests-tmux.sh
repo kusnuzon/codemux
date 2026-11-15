@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# tools/tests-tmux.sh — run the suites inside tmux so the progress is watchable.
+# tools/tests-tmux.sh — run the suites in one tmux window each, all at once.
 #
-# pi cannot show a long command's output while it runs, and a plain log file
-# stays silent until the run ends. A detached tmux session fixes both: the run
-# happens in a real terminal the user can attach to, and every suite appears as
-# it finishes. The wrapper returns immediately, so nobody waits on a blind log.
+# Every suite gets its own window, so all of them run in parallel (total time is
+# the slowest suite, not the sum) and each window shows that suite's own output
+# live. The `summary` window waits for the others and prints one line per suite.
+# The wrapper returns immediately: nobody has to sit in front of a silent log.
 #
 #   bash tools/tests-tmux.sh                 # all suites, session codemux-tests
 #   bash tools/tests-tmux.sh smoke resume    # only these suites
@@ -12,7 +12,8 @@
 #   bash tools/tests-tmux.sh --status        # 0 pass · 1 fail · 2 running · 3 no run
 #   bash tools/tests-tmux.sh --kill          # stop the session
 #
-# Extra flags after the suites (for example -j1, -k) go to run-tests.sh.
+# Switching windows: Ctrl-b n (next), Ctrl-b p (previous), Ctrl-b 0..9 directly.
+# For a single pane with the same summary, use tools/run-tests.sh instead.
 # shellcheck shell=bash
 set -Eeuo pipefail
 
@@ -23,37 +24,23 @@ BASE="${CODEMUX_TEST_TMP:-${TMPDIR:-/tmp}}"
 if [ -n "${PREFIX:-}" ] && [ -d "${PREFIX:-}/tmp" ]; then BASE="$PREFIX/tmp"; fi
 
 NAME="${CODEMUX_TEST_SESSION:-codemux-tests}"
-LOG="$BASE/$NAME.log"
 STATUS="$BASE/$NAME.status"
-PANE_SIZE="120x40"
+ALL="smoke launcher-memory maintenance resume release adapter"
 
 attach=0
-args=()
-
-status_text() {
-  if [ -f "$STATUS" ]; then
-    case "$(cat "$STATUS" 2>/dev/null)" in
-      0) printf 'passed\n' ;;
-      *) printf 'failed\n' ;;
-    esac
-  elif tmux has-session -t "$NAME" 2>/dev/null; then
-    printf 'running\n'
-  else
-    printf 'no run\n'
-  fi
-}
-
+suites=()
 while [ $# -gt 0 ]; do
   case "$1" in
     -a | --attach) attach=1; shift ;;
     --status)
-      printf '%s\n' "$(status_text)"
-      case "$(status_text)" in
-        passed) exit 0 ;;
-        failed) exit 1 ;;
-        running) exit 2 ;;
-        *) exit 3 ;;
-      esac
+      if [ -f "$STATUS" ]; then
+        if [ "$(cat "$STATUS" 2>/dev/null)" = 0 ]; then printf 'passed\n'; exit 0; fi
+        printf 'failed\n'
+        exit 1
+      fi
+      if tmux has-session -t "$NAME" 2>/dev/null; then printf 'running\n'; exit 2; fi
+      printf 'no run\n'
+      exit 3
       ;;
     --kill)
       tmux kill-session -t "$NAME" 2>/dev/null || true
@@ -61,35 +48,90 @@ while [ $# -gt 0 ]; do
       exit 0
       ;;
     -h | --help)
-      sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
-    *) args+=("$1"); shift ;;
+    -*) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
+    *) suites+=("$1"); shift ;;
   esac
+done
+[ "${#suites[@]}" -eq 0 ] && read -r -a suites <<<"$ALL"
+
+names=()
+for s in "${suites[@]}"; do
+  s="${s%.sh}"
+  if [ ! -f "tests/$s.sh" ]; then
+    printf 'no such suite: %s\n' "$s" >&2
+    exit 2
+  fi
+  names+=("$s")
 done
 
 if ! command -v tmux >/dev/null 2>&1; then
-  printf 'tmux is missing — installing it is part of the codemux toolset (pkg install tmux)\n' >&2
+  printf 'tmux is missing — it is part of the codemux toolset (pkg install tmux)\n' >&2
   exit 1
 fi
 
-# One run per session name: an old session would hide the new output.
+# One run per session name: leftovers would hide the new output.
 tmux kill-session -t "$NAME" 2>/dev/null || true
-rm -f "$LOG" "$STATUS"
+rm -f "$STATUS"
 
-# Build the inner command with %q so suite names and flags survive the extra
-# shell layer tmux adds. pipefail makes the recorded status the suite's own,
-# not tee's.
-inner="set -o pipefail; cd $(printf '%q' "$ROOT") && bash tools/run-tests.sh"
-for a in "${args[@]}"; do inner+=" $(printf '%q' "$a")"; done
-inner+=" 2>&1 | tee $(printf '%q' "$LOG"); rc=\$?; printf '%s\\n' \"\$rc\" > $(printf '%q' "$STATUS")"
-inner+="; printf '\\n— run finished (status %s). Ctrl-b d to detach.\\n' \"\$rc\"; exec sleep infinity"
+RUN="$BASE/$NAME.d"
+rm -rf "$RUN"
+mkdir -p "$RUN"
+printf '%s\n' "${#names[@]}" >"$RUN/total"
+date +%s >"$RUN/start"
 
-tmux new-session -d -s "$NAME" -x "${PANE_SIZE%x*}" -y "${PANE_SIZE#*x}" "$inner"
+# The summary window waits for every suite to drop its .rc file, then reports.
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'set -u\nRUN=%q\nSTATUS=%q\n' "$RUN" "$STATUS"
+  printf 'names=('
+  for s in "${names[@]}"; do printf ' %q' "$s"; done
+  printf ' )\n'
+  cat <<'EOS'
+total=${#names[@]}
+while :; do
+  n=0
+  for s in "${names[@]}"; do [ -f "$RUN/$s.rc" ] && n=$((n + 1)); done
+  [ "$n" -ge "$total" ] && break
+  sleep 1
+done
+failed=0
+for s in "${names[@]}"; do
+  line="$(grep -E '[0-9]+ passed · [0-9]+ failed' "$RUN/$s.log" 2>/dev/null | tail -1 || true)"
+  if printf '%s' "$line" | grep -qE ' 0 failed'; then
+    printf '%-16s %s\n' "$s" "${line# }"
+  else
+    failed=$((failed + 1))
+    printf '%-16s %s\n' "$s" "${line:-CRASHED (no summary)}"
+    grep -E '^FAIL' "$RUN/$s.log" | sed 's/^/                 /' || true
+  fi
+done
+elapsed=$(( $(date +%s) - $(cat "$RUN/start" 2>/dev/null || echo 0) ))
+printf '\n%s suites · %s failed · %ss · logs: %s\n' "$total" "$failed" "$elapsed" "$RUN"
+if [ "$failed" -eq 0 ]; then printf '0\n' >"$STATUS"; else printf '1\n' >"$STATUS"; fi
+printf '\n— finished. Ctrl-b n/p to switch windows, Ctrl-b d to detach.\n'
+exec sleep infinity
+EOS
+} >"$RUN/summary.sh"
+chmod +x "$RUN/summary.sh"
 
-printf 'running in tmux session "%s"\n' "$NAME"
+tmux new-session -d -s "$NAME" -n summary -x 120 -y 40 "bash $(printf '%q' "$RUN/summary.sh")"
+
+for s in "${names[@]}"; do
+  # pipefail so the .rc holds the suite's status, not tee's.
+  inner="set -o pipefail; cd $(printf '%q' "$ROOT")"
+  inner+=" && bash $(printf '%q' "tests/$s.sh") </dev/null 2>&1 | tee $(printf '%q' "$RUN/$s.log")"
+  inner+="; printf '%s\\n' \"\$?\" > $(printf '%q' "$RUN/$s.rc"); exec sleep infinity"
+  tmux new-window -d -t "$NAME" -n "$s" "$inner"
+done
+
+printf 'running %s suite(s) in tmux session "%s" — one window each, in parallel\n' \
+  "${#names[@]}" "$NAME"
 printf '  watch live : tmux attach -t %s\n' "$NAME"
-printf '  log file   : %s\n' "$LOG"
+printf '  summary    : tmux attach -t %s:%s\n' "$NAME" summary
+printf '  log files  : %s\n' "$RUN"
 printf '  ask status : bash tools/tests-tmux.sh --status\n'
 
 if [ "$attach" -eq 1 ]; then

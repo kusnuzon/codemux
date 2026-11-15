@@ -157,21 +157,25 @@ Everything runs without touching the system: each suite builds its own sandbox
 (`HOME`, `PREFIX`, `CODEMUX_HOME`) and fakes the network.
 
 ```bash
-bash tools/tests-tmux.sh  # same run inside a tmux session you can watch live
+bash tools/tests-tmux.sh  # one tmux window per suite, all at once, watch live
 bash tools/run-tests.sh   # every suite in parallel (~85 s), one line per suite
 bash tools/run-tests.sh smoke resume   # only these, -j1 for a serial run
 bash tests/harness.sh     # cheap gate: portability + one suite in a mock Termux
 ```
 
-`tools/tests-tmux.sh` starts the run in a detached `codemux-tests` session and
-returns at once, so nothing waits on a silent log. Each suite is printed the
-moment it finishes, and the session stays open for attaching until the next run:
+`tools/tests-tmux.sh` gives every suite its own tmux window and starts them all
+at once, then returns immediately — the run costs the slowest suite, not the sum,
+and no window stays silent while it waits. A `summary` window collects the lines:
 
 ```bash
-tmux attach -t codemux-tests              # watch it happen
+tmux attach -t codemux-tests              # watch all of them
+tmux attach -t codemux-tests:summary      # one line per suite, as they end
 bash tools/tests-tmux.sh --status         # 0 pass, 1 fail, 2 running, 3 no run
 bash tools/tests-tmux.sh --kill           # stop the session
 ```
+
+Inside the session `Ctrl-b n` / `Ctrl-b p` move between windows, `Ctrl-b <n>` jumps
+to one, `Ctrl-b d` detaches and leaves the run going.
 
 The suites, if you want to run one by hand:
 
