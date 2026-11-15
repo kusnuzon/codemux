@@ -70,10 +70,10 @@ jobs:
             env | grep -E '^PREFIX=' && { echo "PREFIX must not be set here"; exit 1; }
             run=bash
           fi
-          for t in smoke resume adapter launcher-memory maintenance release; do
-            printf '\n===== %s =====\n' "$t"
-            $run "tests/$t.sh"
-          done
+          # tools/run-tests.sh runs the suites in parallel (one sandbox each) and
+          # prints one summary. -j1 keeps CI logs readable and its runners only
+          # have two cores; a failure still shows the FAIL lines.
+          $run tools/run-tests.sh -j1 -k
 
   # The progress bar lives in three repos. Check out the siblings next to
   # this repo so the drift check is real; a drifted copy fails the job.

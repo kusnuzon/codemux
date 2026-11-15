@@ -82,6 +82,19 @@ CODEMUX="$ROOT/bin/codemux"
 SKIP_ALL="deps,mirror,storage,toolset,glibc"
 
 TEST_FAIL=""
+# wait_state <module> <state> [timeout] — poll instead of a fixed sleep: a busy
+# machine can take longer than 3 s to reach RUNNING, and a slow one converges
+# sooner. Returns 1 when the timeout expires.
+wait_state() {
+  local m="$1" want="$2" limit="${3:-10}" i=0
+  while [ "$i" -lt $((limit * 10)) ]; do
+    [ "$(run_state "$m")" = "$want" ] && return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  return 1
+}
+
 run_install() { # <sleep>
   env CM_TEST_SLEEP="$1" CM_TEST_FAIL="$TEST_FAIL" bash "$CODEMUX" install \
     --skip "$SKIP_ALL" "${@:2}" >>"$SANDBOX/out.log" 2>&1
@@ -108,8 +121,8 @@ rm -rf "$PREFIX/share/opencode" "$PREFIX/bin/opencode" "$PREFIX/share/opencode-v
 rm -f "$CODEMUX_HOME/run/v1.rc" "$CODEMUX_HOME/run/v2.rc"
 CM_TEST_SLEEP=8 bash "$CODEMUX" install --fresh --skip "$SKIP_ALL" >>"$SANDBOX/out.log" 2>&1 &
 parent=$!
-sleep 3
-if [ "$(run_state v1)" = "RUNNING" ]; then ok "V1 adapter recorded as RUNNING"; else bad "adapter status $(run_state v1)"; fi
+
+if wait_state v1 RUNNING; then ok "V1 adapter recorded as RUNNING"; else bad "adapter status $(run_state v1)"; fi
 kill -9 "$parent" 2>/dev/null
 if run_install 10; then ok "second run resumes the adapter"; else bad "second run failed"; fi
 if [ "$(run_state v1)" = "DONE" ] && [ "$(run_state v2)" = "DONE" ]; then

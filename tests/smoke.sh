@@ -13,7 +13,7 @@ ok() { pass=$((pass + 1)); printf 'ok   %s\n' "$1"; }
 bad() { fail=$((fail + 1)); printf 'FAIL %s\n' "$1"; }
 
 # 1. syntax of every script
-for f in bin/codemux lib/*.sh lib/modules/*.sh; do
+for f in bin/codemux lib/*.sh lib/modules/*.sh tools/*.sh; do
   if bash -n "$f" 2>/dev/null; then ok "syntax $f"; else bad "syntax $f"; fi
 done
 
@@ -45,7 +45,11 @@ else
 fi
 
 # 6. install --dry-run: default is V2 only, changes nothing
-out="$(bash bin/codemux install --dry-run 2>&1 || true)"
+# CODEMUX_HOME points at a scratch dir: the developer's ~/.config/codemux/components
+# (e.g. "pi") would otherwise decide the default and the row count.
+tmp_home="$(mktemp -d)"
+out="$(CODEMUX_HOME="$tmp_home" bash bin/codemux install --dry-run 2>&1 || true)"
+rm -rf "$tmp_home"
 rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/1[12] ' || true)"
 if [ "$rows" -ge 11 ] && printf '%s' "$out" | grep -q 'dry-run' &&
   printf '%s\n' "$out" | grep -q 'install \[v2\]'; then
@@ -63,7 +67,7 @@ SB="$BASE/codemux-smoke-$$"
 rm -rf "$SB"
 mkdir -p "$SB/home" "$SB/state"
 sel() { # <args...> → stdout of `codemux install --dry-run` in the sandbox
-  env HOME="$SB/home" CODEMUX_HOME="$SB/state" PREFIX="$SB/prefix" TMPDIR="$BASE" \
+  env -u CODEMUX_COMPONENTS HOME="$SB/home" CODEMUX_HOME="$SB/state" PREFIX="$SB/prefix" TMPDIR="$BASE" \
     CODEMUX_ALLOW_NONANDROID=1 CODEMUX_NO_APT_CHECK=1 \
     bash bin/codemux install --dry-run "$@" 2>&1 || true
 }

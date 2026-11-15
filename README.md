@@ -157,7 +157,14 @@ Everything runs without touching the system: each suite builds its own sandbox
 (`HOME`, `PREFIX`, `CODEMUX_HOME`) and fakes the network.
 
 ```bash
+bash tools/run-tests.sh   # every suite in parallel (~90 s), one summary line each
+bash tools/run-tests.sh smoke resume   # only these, -j1 for a serial run
 bash tests/harness.sh     # cheap gate: portability + one suite in a mock Termux
+```
+
+The suites, if you want to run one by hand:
+
+```bash
 bash tests/smoke.sh       # syntax, help, check --json, progress bar, dry runs
 bash tests/resume.sh      # install killed midway, then resumed
 bash tests/adapter.sh     # V1/V2 adapters: download → run detached → verify
@@ -165,6 +172,9 @@ bash tests/launcher-memory.sh  # menu, memory merge, update notice, kuota line
 bash tests/maintenance.sh # update-check, doctor, upgrade, uninstall
 bash tests/release.sh     # bootstrap tarball + self-update
 ```
+
+Each suite waits for a state with `wait_state` (a 0.1 s poll) rather than a fixed
+`sleep 3`, so running them side by side does not make them flaky.
 
 **Run `tests/harness.sh` before pushing.** It catches the class of bug that only
 shows up on a plain runner: a raw `$PREFIX` read under `set -u`, a hardcoded

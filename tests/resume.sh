@@ -59,6 +59,19 @@ export CM_TEST_SLEEP=0
 CODEXUX="$ROOT/bin/codemux"
 
 TEST_FAIL=""
+# wait_state <module> <state> [timeout] — poll instead of a fixed sleep: a busy
+# machine can take longer than 3 s to reach RUNNING, and a slow one converges
+# sooner. Returns 1 when the timeout expires.
+wait_state() {
+  local m="$1" want="$2" limit="${3:-10}" i=0
+  while [ "$i" -lt $((limit * 10)) ]; do
+    [ "$(run_state "$m")" = "$want" ] && return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  return 1
+}
+
 run_install() { # <sleep> [install options...]
   local sleep_s="$1"
   shift
@@ -86,9 +99,8 @@ rm -f "$SANDBOX/installed/fakepkg1" "$SANDBOX/installed/fakepkg2"
 CM_TEST_SLEEP=8 bash "$CODEXUX" install --fresh \
   --skip deps,mirror,storage,glibc,v1,v2,launcher,dotfiles,memory,self >>"$SANDBOX/out.log" 2>&1 &
 parent=$!
-sleep 3
 
-if [ "$(run_state toolset)" = "RUNNING" ]; then ok "step recorded as RUNNING before finishing"; else bad "initial status $(run_state toolset)"; fi
+if wait_state toolset RUNNING; then ok "step recorded as RUNNING before finishing"; else bad "initial status $(run_state toolset)"; fi
 kill -9 "$parent" 2>/dev/null
 
 # a stale lock must be dropped automatically, the second install may run
@@ -103,7 +115,7 @@ rm -f "$SANDBOX/installed/fakepkg1" "$SANDBOX/installed/fakepkg2" "$SANDBOX/stat
 CM_TEST_SLEEP=30 bash "$CODEXUX" install --fresh \
   --skip deps,mirror,storage,glibc,v1,v2,launcher,dotfiles,memory,self >>"$SANDBOX/out.log" 2>&1 &
 parent=$!
-sleep 3
+wait_state toolset RUNNING || true
 child="$(cat "$SANDBOX/state/run/toolset.pid" 2>/dev/null || true)"
 kill -9 "$parent" 2>/dev/null
 [ -n "$child" ] && kill -9 "$child" 2>/dev/null
