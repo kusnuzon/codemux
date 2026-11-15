@@ -106,6 +106,18 @@ else
 fi
 if grep -q '_oc_refresh_digest()' "$rc_file"; then ok "fresh: digest wrapper present"; else bad "fresh: digest wrapper missing"; fi
 
+# The pi menu row shows the installed free-pi version. free-pi writes no
+# VERSION file, so the number must come from the npx package manifest.
+mkdir -p "$SB/home/.npm/_npx/deadbeef/node_modules/free-pi-cli"
+printf '{\n  "name": "free-pi-cli",\n  "version": "9.9.9"\n}\n' \
+  >"$SB/home/.npm/_npx/deadbeef/node_modules/free-pi-cli/package.json"
+pi_ver="$(HOME="$SB/home" bash -c 'eval "$(sed -n "/^_oc_ver()/,/^}/p" "$1")"; _oc_ver pi' _ "$rc_file" 2>/dev/null)"
+if [ "$pi_ver" = "9.9.9" ]; then
+  ok "fresh: _oc_ver pi reads the npx manifest (9.9.9)"
+else
+  bad "fresh: _oc_ver pi = '$pi_ver' (expected 9.9.9)"
+fi
+
 [ -f "$SB/home/.bash_profile" ] && ok "fresh: .bash_profile created" || bad "fresh: .bash_profile missing"
 [ -f "$SB/home/.hushlogin" ] && ok "fresh: .hushlogin created" || bad "fresh: .hushlogin missing"
 

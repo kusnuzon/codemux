@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 5
+# codemux:launcher version 6
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -17,7 +17,26 @@ _oc_ver() {
       [ -n "$v" ] || v="$(dpkg-query -W -f='${Version}' opencode 2>/dev/null)"
       ;;
     v2) v="$(cat "$PREFIX/share/opencode-v2/VERSION" 2>/dev/null)" ;;
-    pi) v="$(cat "$HOME/.free-pi/agent/VERSION" 2>/dev/null)" ;;
+    pi)
+      # free-pi writes no VERSION file into its agent dir, so the number comes
+      # from the package npx actually installed (read straight from the
+      # manifest: `free-pi-cli --version` boots node and is too slow for a
+      # menu redraw).
+      v="$(cat "$HOME/.free-pi/agent/VERSION" 2>/dev/null)"
+      if [ -z "$v" ]; then
+        local pj
+        for pj in "$HOME"/.npm/_npx/*/node_modules/free-pi-cli/package.json; do
+          [ -f "$pj" ] || continue
+          v="$(grep -m1 -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$pj" 2>/dev/null |
+               sed 's/.*"\([^"]*\)"$/\1/')"
+          [ -n "$v" ] && break
+        done
+      fi
+      if [ -z "$v" ] && command -v free-pi-cli >/dev/null 2>&1; then
+        v="$(timeout 5 free-pi-cli --version 2>/dev/null | head -n 1 | tr -d '[:space:]')"
+        v="${v#free-pi-cli}"
+      fi
+      ;;
   esac
   printf '%s' "${v:-?}"
 }
