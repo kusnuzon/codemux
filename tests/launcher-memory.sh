@@ -55,7 +55,10 @@ chmod 700 "$FIXTURE/kuota"
 new_sandbox() {
   local d="${SANDBOX_ROOT:?}/$1"
   rm -rf "$d"
-  mkdir -p "$d/home" "$d/state" "$d/prefix"
+  # The pi module resolves free-pi-cli on PATH. Give every sandbox an empty
+  # prefix/bin as the first entry: without it the module looks at whatever the
+  # host has, which differs between a developer machine (npx cache) and CI.
+  mkdir -p "$d/home" "$d/state" "$d/prefix/bin"
   printf '%s' "$d"
 }
 
@@ -493,9 +496,10 @@ SB5C="$(new_sandbox pi-module)"
 # leave it alone. The launcher module (skipped below) is the one that repairs
 # .bashrc, so nothing in this sandbox can make the file valid again.
 printf 'if [ ; then\n' >"$SB5C/home/.bashrc"
-# The module looks for free-pi-cli, not for the upstream `pi` bin. The fake has
-# to be named exactly that: on a CI runner without the npx cache an empty
-# PREFIX/bin sends the module down the "not installed" path instead.
+# The module looks for free-pi-cli, not for the upstream `pi` bin, so the fake
+# has to be named exactly that. It also has to be on PATH: run_cm sets PREFIX
+# but not PATH, so without this a CI runner (no npx cache) would resolve
+# nothing and the module would take the "not installed" path instead.
 printf '#!/bin/sh\n' >"$SB5C/prefix/bin/free-pi-cli"
 chmod +x "$SB5C/prefix/bin/free-pi-cli"
 run_cm "$SB5C" install --only pi --skip "$SKIP_ONLY_PI" >"$SB5C/out.log" 2>&1 || true
@@ -507,13 +511,13 @@ fi
 # Now a valid .bashrc: the alias must appear exactly once, and the next run
 # must not add a second block.
 printf 'echo keep\n' >"$SB5C/home/.bashrc"
-run_cm "$SB5C" install --only pi --skip "$SKIP_ONLY_PI" >"$SB5C/out2.log" 2>&1 || true
+PATH="$SB5C/prefix/bin:$PATH" run_cm "$SB5C" install --only pi --skip "$SKIP_ONLY_PI" >"$SB5C/out2.log" 2>&1 || true
 if grep -q 'codemux:pi begin' "$SB5C/home/.bashrc" && grep -q 'alias pi=' "$SB5C/home/.bashrc"; then
   ok "pi module: the alias is added once .bashrc is valid"
 else
   bad "pi module: alias not added to a valid .bashrc"
 fi
-run_cm "$SB5C" install --only pi --skip "$SKIP_ONLY_PI" >"$SB5C/out3.log" 2>&1 || true
+PATH="$SB5C/prefix/bin:$PATH" run_cm "$SB5C" install --only pi --skip "$SKIP_ONLY_PI" >"$SB5C/out3.log" 2>&1 || true
 if [ "$(grep -c 'codemux:pi begin' "$SB5C/home/.bashrc")" -eq 1 ]; then
   ok "pi module: idempotent (one alias block)"
 else
