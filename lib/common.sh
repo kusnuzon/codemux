@@ -181,6 +181,11 @@ human_bytes() {
 # shellcheck source=./progress-bar.sh
 . "$CODEMUX_ROOT/lib/progress-bar.sh"
 
+# Managed ~/.tmux.conf block shared with the opencode-termux repos; same
+# single-source + drift-check scheme as the progress bar above.
+# shellcheck source=./tmux-config.sh
+. "$CODEMUX_ROOT/lib/tmux-config.sh"
+
 # codemux_bar is the old name; the shared bar defaults to width 16 to match
 # what the spinner and the install plan have always printed.
 codemux_bar() {

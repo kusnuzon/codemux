@@ -228,6 +228,17 @@ else
   printf 'skip progress bar sync (sibling repos not checked out)\n'
 fi
 
+# 9c. the managed tmux block is a second single-source copy; same drift rule.
+if [ -d "$ROOT/../opencode-termux" ] || [ -d "$ROOT/../opencode-termux-v2" ]; then
+  if out="$(bash "$ROOT/tools/sync-tmux-config.sh" --check 2>&1)"; then
+    ok "tmux config synced with the sibling repos"
+  else
+    bad "$out"
+  fi
+else
+  printf 'skip tmux config sync (sibling repos not checked out)\n'
+fi
+
 # 10. codemux_content_length: only a 2xx length counts, never an error page
 #     (a 404 body has a length too, which would show a bogus 100% bar).
 #     Network is optional: skipped when github.com is unreachable.

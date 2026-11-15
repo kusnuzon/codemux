@@ -26,7 +26,7 @@ if [ -n "${PREFIX:-}" ] && [ -d "${PREFIX:-}/tmp" ]; then BASE="$PREFIX/tmp"; fi
 
 NAME="${CODEMUX_TEST_SESSION:-codemux-tests}"
 STATUS="$BASE/$NAME.status"
-ALL="smoke launcher-memory maintenance resume release adapter"
+ALL="smoke launcher-memory maintenance resume release adapter tmuxconf"
 
 attach=0
 wait_mode=0

@@ -132,6 +132,26 @@ warning line once you are close to it.
 > The command was called `kuota` before 0.7.6. `codemux install` / `codemux
 > upgrade` remove the old file and symlink, so `quota` is the only name left.
 
+## 🎨 tmux theme
+
+`codemux install` writes a managed block into `~/.tmux.conf`: a dark status bar
+(tmux 3.8 otherwise ships green on black) plus `extended-keys on` with the `csi-u`
+format, which is what the pi TUI needs for Shift+Enter and friends:
+
+```tmux
+# --- codemux:tmux begin (managed; edits inside this block are overwritten) ---
+set -g extended-keys on
+set -g extended-keys-format csi-u
+set -g status-style "bg=#101010,fg=#c0c0c0"
+...
+# --- codemux:tmux end ---
+```
+
+Only that region is touched: your own settings outside the markers stay as they
+are, and the previous file is kept as `~/.tmux.conf.bak-tmuxconf-<timestamp>`.
+Applying it needs no restart — `tmux source-file ~/.tmux.conf` updates every
+running session.
+
 ## 🔧 Everyday commands
 
 | Command | What it does |
@@ -235,10 +255,11 @@ progress bar. Locally you can copy the second layout with:
 env -u PREFIX TMPDIR="$PREFIX/tmp" bash tests/smoke.sh
 ```
 
-The ASCII progress bar is one block shared with the two
-`opencode-termux*` repos: it lives in `lib/progress-bar.sh`, and
-`bash tools/sync-progress-bar.sh` copies it into the siblings (`--check` reports
-drift and is what CI runs). Edit the source block, never a copy.
+Two blocks are shared with the two `opencode-termux*` repos: the ASCII progress
+bar (`lib/progress-bar.sh`) and the tmux config (`lib/tmux-config.sh`). Run
+`bash tools/sync-progress-bar.sh` / `bash tools/sync-tmux-config.sh` to copy
+them into the siblings; `--check` reports drift and is what CI runs. Edit the
+source block, never a copy.
 
 ## 📁 Layout
 
@@ -247,9 +268,10 @@ bin/codemux        entry point
 lib/*.sh           commands (install, check, upgrade, update, ...)
 lib/modules/       one file per module (deps, glibc, v1, v2, launcher, memory, ...)
 lib/progress-bar.sh  the ASCII progress bar, shared with the opencode-termux repos
-tools/             sync-progress-bar.sh (copy the bar, or --check for drift)
+lib/tmux-config.sh   the managed ~/.tmux.conf block, shared the same way
+tools/             sync-progress-bar.sh, sync-tmux-config.sh (copy, or --check for drift)
 templates/         bashrc block, memory files
-tests/             harness, smoke, launcher-memory, maintenance, resume, release, adapter
+tests/             harness, smoke, launcher-memory, maintenance, resume, release, adapter, tmuxconf
 install.sh         bootstrap (tarball + sha256)
 ```
 

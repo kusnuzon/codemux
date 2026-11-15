@@ -72,7 +72,9 @@ for t in "${TARGETS[@]}"; do
     rm -f "$tmp"
   elif [ "$check" -eq 1 ]; then
     printf 'DRIFT %s\n' "$label"
-    diff -u "$file" "$tmp" | sed -n '1,40p'
+    # sed stops early, so the pipeline exits on SIGPIPE under pipefail; the
+    # drift report is best-effort and must not abort before the temp file goes.
+    diff -u "$file" "$tmp" | sed -n '1,40p' || true
     rm -f "$tmp"
     drift=1
   else
