@@ -42,15 +42,15 @@ with open(os.path.join(base, "RECENT.md"), "w", encoding="utf-8") as fh:
     fh.write("# RECENT\n\n- created by the digest fixture\n")
 EOS
 chmod 700 "$FIXTURE/digest.py"
-cat >"$FIXTURE/kuota" <<'EOS'
+cat >"$FIXTURE/quota" <<'EOS'
 #!/usr/bin/env python3
 import sys
 if "--warn" in sys.argv:
-    print("\u26a0 kuota 161/200 (81%) · run: kuota")
+    print("\u26a0 quota 161/200 (81%) · run: quota")
     raise SystemExit(0)
-print("kuota fixture")
+print("quota fixture")
 EOS
-chmod 700 "$FIXTURE/kuota"
+chmod 700 "$FIXTURE/quota"
 
 new_sandbox() {
   local d="${SANDBOX_ROOT:?}/$1"
@@ -71,7 +71,7 @@ run_cm() { # <sandbox> <command...>
     CODEMUX_MEMORY_TITLE_URL="$FIXTURE/title.js" \
     CODEMUX_MEMORY_NOTICE_URL="$FIXTURE/notice.js" \
     CODEMUX_MEMORY_DIGEST_URL="$FIXTURE/digest.py" \
-    CODEMUX_MEMORY_KUOTA_URL="$FIXTURE/kuota" \
+    CODEMUX_MEMORY_QUOTA_URL="$FIXTURE/quota" \
     bash "$ROOT/bin/codemux" "$@"
 }
 
@@ -84,6 +84,10 @@ SKIP_ONLY_PI="deps,mirror,storage,toolset,glibc,v1,v2,launcher,dotfiles,memory"
 # 1. Fresh: every M4 module installed from scratch
 # =============================================================================
 SB="$(new_sandbox fresh)"
+# A pre-0.7.6 install left a `kuota` script + symlink behind: they must go away.
+mkdir -p "$SB/home/.config/opencode/bin"
+printf '#!/bin/sh\necho old\n' >"$SB/home/.config/opencode/bin/kuota"
+ln -sf "$SB/home/.config/opencode/bin/kuota" "$SB/prefix/bin/kuota"
 run_cm "$SB" install --skip "$SKIP_ALL_BUT_M4" >"$SB/install.log" 2>&1
 rc=$?
 if [ "$rc" -eq 0 ]; then ok "fresh: install finished (exit 0)"; else
@@ -146,8 +150,13 @@ fi
 [ -s "$SB/home/.config/opencode/plugins/session-title.js" ] && ok "fresh: plugins/session-title.js downloaded" || bad "fresh: plugins/session-title.js missing"
 [ -x "$SB/home/.config/opencode/bin/session-digest.py" ] && ok "fresh: session-digest.py executable" || bad "fresh: session-digest.py not executable"
 [ -s "$SB/home/.config/opencode/plugins/update-notice.js" ] && ok "fresh: plugins/update-notice.js downloaded" || bad "fresh: plugins/update-notice.js missing"
-[ -x "$SB/home/.config/opencode/bin/kuota" ] && ok "fresh: bin/kuota executable" || bad "fresh: bin/kuota not executable"
-[ -L "$SB/prefix/bin/kuota" ] && ok "fresh: kuota on PATH (symlink)" || bad "fresh: kuota symlink missing"
+[ -x "$SB/home/.config/opencode/bin/quota" ] && ok "fresh: bin/quota executable" || bad "fresh: bin/quota not executable"
+[ -L "$SB/prefix/bin/quota" ] && ok "fresh: quota on PATH (symlink)" || bad "fresh: quota symlink missing"
+if [ ! -e "$SB/home/.config/opencode/bin/kuota" ] && [ ! -e "$SB/prefix/bin/kuota" ]; then
+  ok "fresh: legacy kuota file + symlink dropped"
+else
+  bad "fresh: legacy kuota leftovers remain"
+fi
 
 # check: the three M4 modules must be OK
 if run_cm "$SB" check --json >"$SB/check.json" 2>/dev/null; then :; fi
@@ -367,42 +376,42 @@ else
   bad "menu: Ctrl+C not handled (cursor may be left hidden)"
 fi
 
-# quota warning line: shown only when `kuota` reports one, empty otherwise
-kuota_line() { # <sandbox> → the notice line
+# quota warning line: shown only when `quota` reports one, empty otherwise
+quota_line() { # <sandbox> → the notice line
   local sb="$1"
   env HOME="$sb/home" PREFIX="$sb/prefix" PATH="$sb/prefix/bin" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" \
     "${BASH:-bash}" -c '
     ACC=""; DIM=""; R=""
     . "$1"
-    _oc_kuota_notice
+    _oc_quota_notice
   ' _ "$TPL" 2>/dev/null
 }
-if grep -q '_oc_kuota_notice$' "$TPL" || grep -q '^      _oc_kuota_notice' "$TPL"; then
+if grep -q '_oc_quota_notice$' "$TPL" || grep -q '^      _oc_quota_notice' "$TPL"; then
   ok "menu: quota warning is rendered with the menu"
 else
   bad "menu: quota warning is never called"
 fi
-if [ -z "$(kuota_line "$SB5")" ]; then
-  ok "menu: no kuota installed → no quota line"
+if [ -z "$(quota_line "$SB5")" ]; then
+  ok "menu: no quota installed → no quota line"
 else
-  bad "menu: quota line printed without kuota"
+  bad "menu: quota line printed without quota"
 fi
-printf '#!/bin/sh\nexit 0\n' >"$SB5/prefix/bin/kuota"
-chmod +x "$SB5/prefix/bin/kuota"
-if [ -z "$(kuota_line "$SB5")" ]; then
+printf '#!/bin/sh\nexit 0\n' >"$SB5/prefix/bin/quota"
+chmod +x "$SB5/prefix/bin/quota"
+if [ -z "$(quota_line "$SB5")" ]; then
   ok "menu: quota below the threshold → silent"
 else
   bad "menu: quota line printed below the threshold"
 fi
 # The fake interpreter must be a path that exists on this machine: $PREFIX is
 # unset on a plain CI runner, so resolve bash instead of assuming its layout.
-printf '#!%s\nprintf "warn 161/200\\n"\n' "$(command -v bash)" >"$SB5/prefix/bin/kuota"
-chmod +x "$SB5/prefix/bin/kuota"
-case "$(kuota_line "$SB5")" in
+printf '#!%s\nprintf "warn 161/200\\n"\n' "$(command -v bash)" >"$SB5/prefix/bin/quota"
+chmod +x "$SB5/prefix/bin/quota"
+case "$(quota_line "$SB5")" in
   *"161/200"*) ok "menu: quota warning is shown when the limit is near" ;;
   *) bad "menu: quota warning not shown" ;;
 esac
-rm -f "$SB5/prefix/bin/kuota"
+rm -f "$SB5/prefix/bin/quota"
 
 # =============================================================================
 # 5b. one install confirmation for every row (V1, V2, Pi) + the bashrc entry

@@ -220,7 +220,7 @@ codemux_cmd_upgrade() {
       -h | --help)
         printf '%s\n' 'usage: codemux upgrade [--dry-run] [--yes] [--only apt,v1,v2,launcher,memory]' \
           '' 'Update apt packages, the installed OpenCode payloads, refresh the launcher block' \
-          'and the memory mechanism files (plugins, digest, kuota).' \
+          'and the memory mechanism files (plugins, digest, quota).' \
           'By default only the components that are actually installed are updated (V1, V2, or both).' \
           'The apt opencode package stays held; MEMORY.md and projects are untouched.'
         return 0
@@ -258,7 +258,7 @@ codemux_cmd_upgrade() {
       v1) printf '  %-10s %s\n' v1 "V1 payload now $(opencode_v1_version)" ;;
       v2) printf '  %-10s %s\n' v2 "V2 payload now $(opencode_v2_version)" ;;
       launcher) printf '  %-10s %s\n' launcher 'sync the launcher block + digest wrapper' ;;
-      memory) printf '  %-10s %s\n' memory 'refresh the memory mechanism (plugins, digest, kuota)' ;;
+      memory) printf '  %-10s %s\n' memory 'refresh the memory mechanism (plugins, digest, quota)' ;;
     esac
   done
   printf '\n'

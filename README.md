@@ -18,7 +18,7 @@ run again and again.
   reminds you once inside a session
 - 📊 **Progress bar** — every install step and every download shows a percentage
   (bar + bytes/total), so a slow mobile connection never looks frozen
-- ⛽ **`kuota`** — estimates the remaining free-model quota from the local DBs
+- ⛽ **`quota`** — estimates the remaining free-model quota from the local DBs
 - 🛡️ **Resume-safe** — killed midway? run it again, it continues
 
 ## 📦 Prerequisites
@@ -97,18 +97,21 @@ context, so long sessions are told about it without opening the menu.
 
 ## ⛽ Free-model quota
 
-`kuota` counts the assistant messages in the local databases (one message = one
+`quota` counts the assistant messages in the local databases (one message = one
 request; the free quota resets at 00:00 UTC = 07:00 WIB):
 
 ```bash
-kuota                 # today, with a breakdown per model
-kuota --week          # the last 7 days
-kuota --warn          # one line, only when the warning threshold is reached
-kuota --json          # for scripts
+quota                 # today, with a breakdown per model
+quota --week          # the last 7 days
+quota --warn          # one line, only when the warning threshold is reached
+quota --json          # for scripts
 ```
 
-The daily limit defaults to 200 (`KUOTA_LIMIT`, `--limit`) and the menu prints a
+The daily limit defaults to 200 (`QUOTA_LIMIT`, `--limit`) and the menu prints a
 warning line once you are close to it.
+
+> The command was called `kuota` before 0.7.6. `codemux install` / `codemux
+> upgrade` remove the old file and symlink, so `quota` is the only name left.
 
 ## 🔧 Everyday commands
 
@@ -137,7 +140,7 @@ codemux upgrade         # apt + installed payloads + launcher
 - `upgrade --only apt,v1,launcher,memory` — explicit, `--dry-run` to preview.
 - Inside V2, `/update` also works: it fetches the official payload and the
   launcher adopts it on the next start.
-- The `memory` step refreshes the mechanism files (plugins, digest, `kuota`) and
+- The `memory` step refreshes the mechanism files (plugins, digest, `quota`) and
   keeps `MEMORY.md` untouched.
 - Update results are cached 24 h and shown as one line in the startup menu.
 
@@ -193,7 +196,7 @@ The suites, if you want to run one by hand:
 bash tests/smoke.sh       # syntax, help, check --json, progress bar, dry runs
 bash tests/resume.sh      # install killed midway, then resumed
 bash tests/adapter.sh     # V1/V2 adapters: download → run detached → verify
-bash tests/launcher-memory.sh  # menu, memory merge, update notice, kuota line
+bash tests/launcher-memory.sh  # menu, memory merge, update notice, quota line
 bash tests/maintenance.sh # update-check, doctor, upgrade, uninstall
 bash tests/release.sh     # bootstrap tarball + self-update
 ```
@@ -238,7 +241,7 @@ install.sh         bootstrap (tarball + sha256)
   run `bash bin/codemux …`.
 - `raw.githubusercontent.com` may serve stale files on mobile networks → release
   downloads use a tarball + `sha256`.
-- The memory mechanism files (plugins, `kuota`, digest) are fetched from
+- The memory mechanism files (plugins, `quota`, digest) are fetched from
   `raw.githubusercontent.com`, not the GitHub API: the API allows only 60
   anonymous requests per hour, and five files per install used to run it dry.
 - `uninstall` never deletes `MEMORY.md`, `AGENTS.md`, projects, or backups.

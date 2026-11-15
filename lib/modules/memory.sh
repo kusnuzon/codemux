@@ -8,7 +8,7 @@ CODEMUX_MEMORY_PLUGIN_URL="${CODEMUX_MEMORY_PLUGIN_URL:-https://raw.githubuserco
 CODEMUX_MEMORY_TITLE_URL="${CODEMUX_MEMORY_TITLE_URL:-https://raw.githubusercontent.com/kusnuzon/opencode-termux-v2/main/plugins/session-title.js}"
 CODEMUX_MEMORY_NOTICE_URL="${CODEMUX_MEMORY_NOTICE_URL:-https://raw.githubusercontent.com/kusnuzon/opencode-termux-v2/main/plugins/update-notice.js}"
 CODEMUX_MEMORY_DIGEST_URL="${CODEMUX_MEMORY_DIGEST_URL:-https://raw.githubusercontent.com/kusnuzon/opencode-termux-v2/main/plugins/session-digest.py}"
-CODEMUX_MEMORY_KUOTA_URL="${CODEMUX_MEMORY_KUOTA_URL:-https://raw.githubusercontent.com/kusnuzon/opencode-termux-v2/main/plugins/kuota.py}"
+CODEMUX_MEMORY_QUOTA_URL="${CODEMUX_MEMORY_QUOTA_URL:-https://raw.githubusercontent.com/kusnuzon/opencode-termux-v2/main/plugins/quota.py}"
 CODEMUX_MEMORY_LIMIT="${CODEMUX_MEMORY_LIMIT:-24000}"
 
 codemux_memory_base() { printf '%s/.config/opencode' "$HOME"; }
@@ -18,6 +18,16 @@ codemux_py_shebang() {
   local f="$1"
   [ -f "$f" ] || return 1
   sed -i "1s|^#!.*|#!$PREFIX/bin/python3|" "$f" 2>/dev/null || return 1
+  return 0
+}
+
+# The estimator used to be called `kuota` (< 0.7.6). Drop the old file and
+# symlink so only one name stays reachable.
+codemux_memory_drop_legacy() {
+  rm -f "$(codemux_memory_base)/bin/kuota" 2>/dev/null || true
+  if [ -L "$PREFIX/bin/kuota" ]; then
+    rm -f "$PREFIX/bin/kuota" 2>/dev/null || true
+  fi
   return 0
 }
 
@@ -34,7 +44,7 @@ codemux_memory_sync_mechanism() {
     "600|plugins/session-title.js|$CODEMUX_MEMORY_TITLE_URL"
     "600|plugins/update-notice.js|$CODEMUX_MEMORY_NOTICE_URL"
     "700|bin/session-digest.py|$CODEMUX_MEMORY_DIGEST_URL"
-    "700|bin/kuota|$CODEMUX_MEMORY_KUOTA_URL"
+    "700|bin/quota|$CODEMUX_MEMORY_QUOTA_URL"
   )
   for pair in "${pairs[@]}"; do
     IFS='|' read -r mode rel url <<<"$pair"
@@ -63,10 +73,11 @@ codemux_memory_sync_mechanism() {
       rc=1
     fi
   done
-  if [ -x "$base/bin/kuota" ]; then
+  if [ -x "$base/bin/quota" ]; then
     mkdir -p "$PREFIX/bin" 2>/dev/null || true
-    ln -sf "$base/bin/kuota" "$PREFIX/bin/kuota" 2>/dev/null || true
+    ln -sf "$base/bin/quota" "$PREFIX/bin/quota" 2>/dev/null || true
   fi
+  codemux_memory_drop_legacy
   CODEMUX_MEMORY_CHANGED="$changed"
   return "$rc"
 }
@@ -80,7 +91,7 @@ m_memory_probe() {
   local base need miss=() f size pct
   base="$(codemux_memory_base)"
   need=("MEMORY.md" "AGENTS.md" "RECENT.md" "plugins/memory.js" "plugins/session-title.js"
-    "plugins/update-notice.js" "bin/session-digest.py" "bin/kuota")
+    "plugins/update-notice.js" "bin/session-digest.py" "bin/quota")
 
   for f in "${need[@]}"; do
     [ -f "$base/$f" ] || miss+=("$f")
@@ -246,7 +257,7 @@ m_memory_apply() {
     fi
   done
 
-  # 2) mechanism (plugins + digest + kuota) — fetched from the upstream repo
+  # 2) mechanism (plugins + digest + quota) — fetched from the upstream repo
   if [ ! -s "$base/plugins/memory.js" ]; then
     codemux_fetch_raw "$CODEMUX_MEMORY_PLUGIN_URL" "$base/plugins/memory.js" || {
       APPLY_NOTE="failed to download plugins/memory.js"; return 1
@@ -276,20 +287,21 @@ m_memory_apply() {
     chmod 700 "$base/bin/session-digest.py" 2>/dev/null || true
     made+=("bin/session-digest.py")
   fi
-  if [ ! -s "$base/bin/kuota" ]; then
-    codemux_fetch_raw "$CODEMUX_MEMORY_KUOTA_URL" "$base/bin/kuota" || {
-      APPLY_NOTE="failed to download bin/kuota"; return 1
+  if [ ! -s "$base/bin/quota" ]; then
+    codemux_fetch_raw "$CODEMUX_MEMORY_QUOTA_URL" "$base/bin/quota" || {
+      APPLY_NOTE="failed to download bin/quota"; return 1
     }
-    codemux_py_shebang "$base/bin/kuota"
-    chmod 700 "$base/bin/kuota" 2>/dev/null || true
-    made+=("bin/kuota")
+    codemux_py_shebang "$base/bin/quota"
+    chmod 700 "$base/bin/quota" 2>/dev/null || true
+    made+=("bin/quota")
   fi
-  # `kuota` must be reachable from PATH (the launcher menu checks `command -v`).
-  if [ -x "$base/bin/kuota" ]; then
+  # `quota` must be reachable from PATH (the launcher menu checks `command -v`).
+  if [ -x "$base/bin/quota" ]; then
     mkdir -p "$PREFIX/bin" 2>/dev/null || true
-    ln -sf "$base/bin/kuota" "$PREFIX/bin/kuota" 2>/dev/null ||
-      APPLY_NOTE="kuota installed, but the symlink in $PREFIX/bin failed"
+    ln -sf "$base/bin/quota" "$PREFIX/bin/quota" 2>/dev/null ||
+      APPLY_NOTE="quota installed, but the symlink in $PREFIX/bin failed"
   fi
+  codemux_memory_drop_legacy
 
   # 3) RECENT.md: generate it now if missing
   if [ ! -f "$base/RECENT.md" ]; then

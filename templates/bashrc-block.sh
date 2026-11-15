@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 6
+# codemux:launcher version 7
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -278,12 +278,12 @@ _oc_update_notice() {
 _oc_cursor_hide() { printf '\033[?25l'; }
 _oc_cursor_show() { printf '\033[?25h'; }
 
-# Quota warning (one short line, only when `kuota` is installed and the free
+# Quota warning (one short line, only when `quota` is installed and the free
 # model usage is close to the daily limit). Read-only, no network, ~0.1 s.
-_oc_kuota_notice() {
-  command -v kuota >/dev/null 2>&1 || return 0
+_oc_quota_notice() {
+  command -v quota >/dev/null 2>&1 || return 0
   local line
-  line="$(kuota --warn 2>/dev/null)" || true
+  line="$(quota --warn 2>/dev/null)" || true
   [ -n "$line" ] && printf '   %s%s%s\n\n' "$ACC" "$line" "$R"
   return 0
 }
@@ -434,7 +434,7 @@ _oc_menu_loop() {
       printf '\033[2J\033[H'
       _oc_banner
       _oc_update_notice
-      _oc_kuota_notice
+      _oc_quota_notice
       _oc_menu "$sel"
       full=0
     else
@@ -515,8 +515,8 @@ _oc_guide() {
   [ -f "$PREFIX/share/opencode-v2/doctor.sh" ] &&
     _oc_cmd_row doctor      'health check for the OpenCode V2 install'
   _oc_cmd_row version       'show the installed OpenCode versions'
-  command -v kuota >/dev/null 2>&1 &&
-    _oc_cmd_row kuota       'estimated remaining free-model quota'
+  command -v quota >/dev/null 2>&1 &&
+    _oc_cmd_row quota       'estimated remaining free-model quota'
   _oc_cmd_row codemux       'check & maintain Termux (check / install / status)'
   _oc_cmd_row 'keluar|exit' 'close Termux'
   printf '\n  %sType %smenu%s at any time to return to this menu.%s\n' "$DIM" "$BOLD" "$R" "$R"
