@@ -291,6 +291,14 @@ fi
 # 5. menu flicker guard: cursor hidden + only 4 rows redrawn
 # =============================================================================
 TPL="$ROOT/templates/bashrc-block.sh"
+# The version marker lives in the template header, the probe compares it against
+# CODEMUX_LAUNCHER_BLOCK_VERSION: bumping only one of the two leaves `check` at
+# WARN (and users never receive the new block).
+if grep -qF "# codemux:launcher version $(sed -n 's/^CODEMUX_LAUNCHER_BLOCK_VERSION="\(.*\)"$/\1/p' "$ROOT/lib/modules/launcher.sh")" "$TPL"; then
+  ok "menu: template header version matches CODEMUX_LAUNCHER_BLOCK_VERSION"
+else
+  bad "menu: launcher block version in the template header is out of sync"
+fi
 if grep -qF '\033[?25l' "$TPL" && grep -qF '\033[?25h' "$TPL"; then
   ok "menu: cursor hidden & restored"
 else
@@ -351,11 +359,29 @@ menu_version() { # <sandbox> → the `version` command output
       version
     ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
 }
+menu_meta() { # <sandbox> <key> → meta of one row
+  local sb="$1" k="$2"
+  env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
+      PATH="$3"
+      . "$1"
+      _oc_meta "$2"
+    ' _ "$TPL" "$k" "$sb/prefix/bin" 2>/dev/null
+}
+menu_launch() { # <sandbox> <key> [TMUX] → run one row, output discarded
+  local sb="$1" k="$2" tmuxval="${3:-}"
+  env -u TMUX HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 \
+    TMPDIR="$BASE" TMUX="$tmuxval" bash -c '
+      PATH="$3"
+      . "$1"
+      _oc_colors
+      _oc_launch_component "$2"
+    ' _ "$TPL" "$k" "$sb/prefix/bin" >/dev/null 2>&1
+}
 SB5="$(new_sandbox menu-items)"
 mkdir -p "$SB5/prefix/bin"
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode-v2"
 chmod +x "$SB5/prefix/bin/opencode-v2"
-if [ "$(menu_keys "$SB5")" = "v1 v2 pi shell quit" ] &&
+if [ "$(menu_keys "$SB5")" = "v1 v2 pi pitmux shell quit" ] &&
   menu_descs "$SB5" | sed -n '1p' | grep -q 'not installed'; then
   ok "menu: V2-only install still offers V1, marked not installed"
 else
@@ -364,7 +390,7 @@ fi
 rm -f "$SB5/prefix/bin/opencode-v2"
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode"
 chmod +x "$SB5/prefix/bin/opencode"
-if [ "$(menu_keys "$SB5")" = "v1 v2 pi shell quit" ] &&
+if [ "$(menu_keys "$SB5")" = "v1 v2 pi pitmux shell quit" ] &&
   menu_descs "$SB5" | sed -n '2p' | grep -q 'not installed'; then
   ok "menu: V1-only install still offers V2, marked not installed"
 else
@@ -373,16 +399,16 @@ fi
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode-v2"
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/pi"
 chmod +x "$SB5/prefix/bin/opencode-v2" "$SB5/prefix/bin/pi"
-if [ "$(menu_keys "$SB5")" = "v1 v2 pi shell quit" ] &&
+if [ "$(menu_keys "$SB5")" = "v1 v2 pi pitmux shell quit" ] &&
   ! menu_descs "$SB5" | grep -q 'not installed'; then
-  ok "menu: both installed → five rows, no install note"
+  ok "menu: both installed → six rows, no install note"
 else
   bad "menu: both rows are $(menu_keys "$SB5")"
 fi
 rm -f "$SB5/prefix/bin/opencode" "$SB5/prefix/bin/opencode-v2" "$SB5/prefix/bin/pi"
-if [ "$(menu_keys "$SB5")" = "v1 v2 pi shell quit" ] &&
-  [ "$(menu_descs "$SB5" | grep -c 'not installed')" -eq 3 ]; then
-  ok "menu: nothing installed → V1/V2/Pi all marked not installed"
+if [ "$(menu_keys "$SB5")" = "v1 v2 pi pitmux shell quit" ] &&
+  [ "$(menu_descs "$SB5" | grep -c 'not installed')" -eq 4 ]; then
+  ok "menu: nothing installed → V1/V2/Pi (and the tmux row) marked not installed"
 else
   bad "menu: empty rows are $(menu_keys "$SB5")"
 fi
@@ -390,6 +416,53 @@ if [ "$(menu_names "$SB5" | sed -n '3p')" = "Free-pi (Pi)" ]; then
   ok "menu: the free-pi row is labelled Free-pi (Pi)"
 else
   bad "menu: free-pi row label is '$(menu_names "$SB5" | sed -n '3p')'"
+fi
+if [ "$(menu_names "$SB5" | sed -n '4p')" = "Free-pi (Pi) · tmux" ]; then
+  ok "menu: the tmux row sits right below pi and is labelled Free-pi (Pi) · tmux"
+else
+  bad "menu: tmux row label is '$(menu_names "$SB5" | sed -n '4p')'"
+fi
+# The tmux row must install the `pi` component, not a `pitmux` one (there is no
+# such component: `codemux install --only pitmux` would fail).
+if [ "$(menu_meta "$SB5" pitmux)" = 'pi|Free-pi (Pi) · tmux|Pi' ]; then
+  ok "menu: the tmux row reuses the pi binary and the pi component"
+else
+  bad "menu: tmux row meta is '$(menu_meta "$SB5" pitmux)'"
+fi
+# --- menu: the tmux row launches pi through tmux, with sane fallbacks ---
+SB6="$(new_sandbox menu-tmux)"
+mkdir -p "$SB6/prefix/bin"
+cat >"$SB6/prefix/bin/pi" <<EOF
+#!/bin/sh
+echo pi >>"$SB6/pi.calls"
+EOF
+cat >"$SB6/prefix/bin/tmux" <<EOF
+#!/bin/sh
+echo "\$*" >>"$SB6/tmux.calls"
+EOF
+chmod +x "$SB6/prefix/bin/pi" "$SB6/prefix/bin/tmux"
+menu_launch "$SB6" pitmux
+if [ "$(cat "$SB6/tmux.calls" 2>/dev/null)" = 'new-session -A -s pi OPENCODE_NO_AUTO=1 bash -ic pi' ] &&
+  [ ! -s "$SB6/pi.calls" ]; then
+  ok "menu: the tmux row opens (or attaches) a session named pi and runs pi inside it"
+else
+  bad "menu: tmux row ran '$(cat "$SB6/tmux.calls" 2>/dev/null)' (pi calls: $(cat "$SB6/pi.calls" 2>/dev/null))"
+fi
+: >"$SB6/tmux.calls"
+menu_launch "$SB6" pitmux "$SB6/tmux-1,1,1"
+if [ "$(cat "$SB6/pi.calls" 2>/dev/null)" = "pi" ] && [ ! -s "$SB6/tmux.calls" ]; then
+  ok "menu: inside tmux the row runs pi in the current session (no nesting)"
+else
+  bad "menu: inside tmux the row ran tmux '$(cat "$SB6/tmux.calls" 2>/dev/null)' / pi '$(cat "$SB6/pi.calls" 2>/dev/null)'"
+fi
+: >"$SB6/tmux.calls"
+: >"$SB6/pi.calls"
+rm -f "$SB6/prefix/bin/tmux"
+menu_launch "$SB6" pitmux
+if [ "$(cat "$SB6/pi.calls" 2>/dev/null)" = "pi" ] && [ ! -s "$SB6/tmux.calls" ]; then
+  ok "menu: without tmux the row still starts pi (warning, no failure)"
+else
+  bad "menu: without tmux the row did not fall back to pi"
 fi
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/pi"
 chmod +x "$SB5/prefix/bin/pi"

@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 8
+# codemux:launcher version 9
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -99,13 +99,22 @@ _oc_items() {
     _OC_KEYS+=("v2"); _OC_NAMES+=("OpenCode V2")
     _OC_DESCS+=("not installed · Enter to install"); _OC_STATE+=("missing")
   fi
+  # Two rows for the same agent: plain pi, and pi inside a tmux session (so it
+  # can be detached with Ctrl+b d and reattached later). The version probe runs
+  # once and feeds both rows.
+  local pidesc="not installed · Enter to install" pistate="missing"
   if command -v pi >/dev/null 2>&1; then
-    _OC_KEYS+=("pi"); _OC_NAMES+=("Free-pi (Pi)")
-    _OC_DESCS+=("$(_oc_ver pi) · free-pi agent"); _OC_STATE+=("installed")
-  else
-    _OC_KEYS+=("pi"); _OC_NAMES+=("Free-pi (Pi)")
-    _OC_DESCS+=("not installed · Enter to install"); _OC_STATE+=("missing")
+    pidesc="$(_oc_ver pi) · free-pi agent"; pistate="installed"
   fi
+  _OC_KEYS+=("pi"); _OC_NAMES+=("Free-pi (Pi)")
+  _OC_DESCS+=("$pidesc"); _OC_STATE+=("$pistate")
+  _OC_KEYS+=("pitmux"); _OC_NAMES+=("Free-pi (Pi) · tmux")
+  if [ "$pistate" = "installed" ]; then
+    _OC_DESCS+=("$(_oc_ver pi) · inside tmux")
+  else
+    _OC_DESCS+=("not installed · Enter to install")
+  fi
+  _OC_STATE+=("$pistate")
   # `bashrc` is not a row: the block is edited with `b` (see the hint line).
   _OC_KEYS+=("shell"); _OC_NAMES+=("Shell only"); _OC_DESCS+=("no agent"); _OC_STATE+=("installed")
   _OC_KEYS+=("quit"); _OC_NAMES+=("Quit"); _OC_DESCS+=("close Termux"); _OC_STATE+=("installed")
@@ -296,6 +305,8 @@ _oc_meta() {
     v1) printf 'opencode|OpenCode V1|V1' ;;
     v2) printf 'opencode-v2|OpenCode V2|V2' ;;
     pi) printf 'pi|Free-pi (Pi)|Pi' ;;
+    # Same binary and same install path as `pi`; only the launcher differs.
+    pitmux) printf 'pi|Free-pi (Pi) · tmux|Pi' ;;
     *) return 1 ;;
   esac
 }
@@ -319,8 +330,11 @@ _oc_confirm_install() {
 # Run a component. When its payload is missing, ask first, then install it.
 # Returns 0 when the component ran, 1 when it is still missing/cancelled.
 _oc_launch_component() {
-  local key="$1" meta bin label short rc
+  local key="$1" meta bin label short rc install_key
   meta="$(_oc_meta "$key")" || return 1
+  # `pitmux` is not a component name: it installs exactly like `pi`.
+  install_key="$key"
+  [ "$install_key" = "pitmux" ] && install_key="pi"
   bin="${meta%%|*}"
   meta="${meta#*|}"
   label="${meta%%|*}"
@@ -329,9 +343,9 @@ _oc_launch_component() {
     _oc_confirm_install "$label" || return 1
     printf '  %s→ installing %s (this can take a while)…%s\n\n' "$DIM" "$label" "$R"
     if command -v codemux >/dev/null 2>&1; then
-      codemux install --only "$key"
+      codemux install --only "$install_key"
     elif [ -x "$CODEMUX_ROOT/bin/codemux" ]; then
-      "$CODEMUX_ROOT/bin/codemux" install --only "$key"
+      "$CODEMUX_ROOT/bin/codemux" install --only "$install_key"
     else
       printf '  %scodemux not found — cannot install.%s\n\n' "$DIM" "$R"
       return 1
@@ -356,6 +370,22 @@ _oc_launch_component() {
         pi
       else
         npx -y free-pi-cli@latest
+      fi
+      ;;
+    pitmux)
+      if [ -n "$TMUX" ]; then
+        # Already inside a tmux session: nesting one only garbles the terminal.
+        printf '  %salready inside tmux — running pi in this session%s\n\n' "$DIM" "$R"
+        pi
+      elif command -v tmux >/dev/null 2>&1; then
+        # -A attaches to the existing `pi` session, otherwise creates it. The
+        # command string runs an interactive bash so the `pi` alias applies, and
+        # OPENCODE_NO_AUTO keeps that bash from drawing the codemux menu first.
+        tmux new-session -A -s pi "OPENCODE_NO_AUTO=1 bash -ic pi"
+      else
+        printf '  %stmux is not installed — running pi without tmux%s\n' "$DIM" "$R"
+        printf '  %sinstall it with: pkg install tmux%s\n\n' "$DIM" "$R"
+        pi
       fi
       ;;
     *) return 1 ;;
@@ -448,7 +478,7 @@ _oc_menu_loop() {
       enter)
         key="${_OC_KEYS[$sel]}"
         case "$key" in
-          v1|v2|pi)
+          v1|v2|pi|pitmux)
             if _oc_launch_component "$key"; then
               mkdir -p "$HOME/.local/state" 2>/dev/null
               printf '%s\n' "$key" >"$choice_file" 2>/dev/null
@@ -475,7 +505,7 @@ _oc_menu_loop() {
           if [ "$full" = "1" ]; then :; else _oc_redraw "$sel"; full=1; fi
           KEY=enter
           case "${_OC_KEYS[$sel]}" in
-            v1|v2|pi)
+            v1|v2|pi|pitmux)
               if _oc_launch_component "${_OC_KEYS[$sel]}"; then
                 mkdir -p "$HOME/.local/state" 2>/dev/null
                 printf '%s\n' "${_OC_KEYS[$sel]}" >"$choice_file" 2>/dev/null
@@ -514,6 +544,8 @@ _oc_guide() {
     _oc_cmd_row opencode-v2 'run OpenCode V2 directly'
   command -v pi >/dev/null 2>&1 &&
     _oc_cmd_row pi          'run free-pi directly'
+  command -v pi >/dev/null 2>&1 && command -v tmux >/dev/null 2>&1 &&
+    _oc_cmd_row 'tmux new -A -s pi' 'free-pi in tmux (Ctrl+b d detaches)'
   [ -f "$PREFIX/share/opencode-v2/doctor.sh" ] &&
     _oc_cmd_row doctor      'health check for the OpenCode V2 install'
   _oc_cmd_row version       'show the installed agent versions'

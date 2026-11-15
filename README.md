@@ -71,12 +71,18 @@ known to work on Termux. That pulls `clang`/LLVM (~500 MB) as a build dependency
 Every new Termux session opens a menu — nothing is hidden:
 
 ```
-❯ 1 OpenCode V1    1.19.5 · stable · legacy DB
-  2 OpenCode V2    not installed · Enter to install
-  3 Free-pi (Pi)   0.6.21 · free-pi agent
-  4 Shell only     no agent
-  5 Quit           close Termux
+❯ 1 OpenCode V1            1.19.5 · stable · legacy DB
+  2 OpenCode V2            not installed · Enter to install
+  3 Free-pi (Pi)           0.6.22 · free-pi agent
+  4 Free-pi (Pi) · tmux    0.6.22 · inside tmux
+  5 Shell only             no agent
+  6 Quit                   close Termux
 ```
+
+The tmux row runs the same free-pi inside a session named `pi`: choosing it again
+attaches to the running session, `Ctrl+b d` detaches (pi keeps running), and
+`tmux kill-session -t pi` ends it. Without tmux installed the row warns and starts
+plain `pi` instead. Inside tmux it never nests a second session.
 
 Choosing a component that is not installed asks `Install it now? [y/N]` first —
 one dialog shared by every row (V1, V2, Pi). Answer `n` and nothing changes.
