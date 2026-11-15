@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 4
+# codemux:launcher version 5
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -146,9 +146,35 @@ _oc_read_key() {
   # Wait at most 0.2 s per round for a key: that way a Ctrl+C signal is handled
   # before the next key, so no key gets swallowed (and the cursor is never left
   # hidden).
+  #
+  # A component that exits can leave stdin at EOF (a terminal that a full-screen
+  # UI handed back, or a closed fd): `read` then fails instantly and forever, so
+  # a plain retry loop spins at 100% CPU and the menu never comes back. Count the
+  # failures, reopen the terminal once, and give up with `eof` if it is gone.
+  local empty=0 rc
+  _oc_eof=0
   while :; do
     IFS= read -rsn1 -t 0.2 KEY && break
+    rc=$?
     if [ "${_oc_int:-0}" = "1" ]; then KEY="cancel"; return 0; fi
+    # rc > 128 means the timeout expired (128+SIGALRM): the fd is still fine,
+    # so the empty-failure counter has to start over.
+    if [ "$rc" -gt 128 ]; then
+      empty=0
+      continue
+    fi
+    empty=$((empty + 1))
+    if [ "$empty" -ge 5 ]; then
+      if [ -r /dev/tty ] && exec 0</dev/tty 2>/dev/null; then
+        empty=0
+        continue
+      fi
+      # No terminal left to read from: report EOF so the caller can leave the
+      # menu instead of redrawing it in a loop that no key can ever end.
+      KEY="eof"
+      _oc_eof=1
+      return 0
+    fi
   done
   case "$KEY" in
     $'\033')
@@ -315,6 +341,12 @@ _oc_launch_component() {
       ;;
     *) return 1 ;;
   esac
+  # A full-screen agent (pi, opencode) can leave the shared stdin at EOF when it
+  # exits with /quit: the shell then has a terminal that answers nothing, so the
+  # menu would never read another key. Reopen the controlling terminal here.
+  if [ -t 1 ] && [ -r /dev/tty ]; then
+    exec 0</dev/tty 2>/dev/null || true
+  fi
   _oc_cursor_hide
   return 0
 }
@@ -440,6 +472,9 @@ _oc_menu_loop() {
         ;;
       q|Q) sel=$((_OC_COUNT - 1)); return 1 ;;
       esc|cancel|ctrl-c) ;;
+      # stdin is gone (the terminal that a full-screen agent handed back is at
+      # EOF): leave the menu so the shell prompt comes back.
+      eof) return 1 ;;
     esac
   done
 }

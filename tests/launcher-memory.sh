@@ -459,6 +459,33 @@ else
 fi
 
 # =============================================================================
+# 5d. a dead stdin never traps the menu (the /quit bug)
+# =============================================================================
+# A full-screen agent can hand back a terminal that answers nothing, so `read`
+# fails instantly and forever. The menu used to spin on that EOF and never came
+# back. It must give up and return instead.
+SB5D="$(new_sandbox eof)"
+mkdir -p "$SB5D/prefix/bin" "$SB5D/home"
+out="$(env HOME="$SB5D/home" PREFIX="$SB5D/prefix" PATH="$SB5D/prefix/bin:$PATH" \
+  CODEMUX_ROOT="$ROOT" CODEMUX_HOME="$SB5D/state" CODEMUX_ALLOW_NONANDROID=1 \
+  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
+    C1=""; C2=""; ACC=""; DIM=""; BOLD=""; HL=""; R=""
+    _oc_cursor_show() { :; }
+    _oc_cursor_hide() { :; }
+    . "$1"
+    _oc_items
+    _oc_read_key
+    printf "first=%s\n" "$KEY"
+    _oc_menu_loop
+    printf "menu rc=%s\n" "$?"
+  ' _ "$TPL" 2>/dev/null </dev/null)"
+case "$out" in
+  *"first=eof"*"menu rc="*)
+    ok "menu: a dead stdin ends the menu instead of spinning" ;;
+  *) bad "menu: a dead stdin hangs the menu → $(printf '%s' "$out" | tr '\n' ' ')" ;;
+esac
+
+# =============================================================================
 # 5c. the pi module never touches a broken .bashrc
 # =============================================================================
 SB5C="$(new_sandbox pi-module)"
