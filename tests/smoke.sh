@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # tests/smoke.sh — quick test that does not touch the system.
 # shellcheck shell=bash
 set -Eeuo pipefail

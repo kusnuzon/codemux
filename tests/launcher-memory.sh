@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # tests/launcher-memory.sh — test the launcher, dotfiles, and memory modules (M4).
 # Full sandbox: dedicated HOME, PREFIX, CODEMUX_HOME. The system is NOT touched.
 # shellcheck shell=bash
@@ -432,9 +432,9 @@ esac
 
 # an upstream check once failed (status na) → do not lock for 24h, retry within ≤1h
 mkdir -p "$SB6/prefix/bin"
-cat >"$SB6/prefix/bin/codemux" <<'EOS'
-#!/data/data/com.termux/files/usr/bin/bash
-: >"$HOME/retry-marker"
+cat >"$SB6/prefix/bin/codemux" <<EOS
+#!$(command -v bash)
+: >"\$HOME/retry-marker"
 EOS
 chmod 700 "$SB6/prefix/bin/codemux"
 printf 'codemux\t0.6.3\t-\tna\nopencode-v1\t1.19.5\t-\tna\nopencode-v2\t2.2.3\t-\tna\n' \

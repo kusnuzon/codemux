@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # tests/release.sh — test the install.sh bootstrap + codemux self-update (M6).
 # The tarball is built from this checkout (git archive); nothing touches the system.
 # shellcheck shell=bash

@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # tests/adapter.sh — test the V1/V2 adapters (download → run detached → verify).
 # Full sandbox: dedicated PREFIX, HOME, CODEMUX_HOME; upstream is faked.
 # shellcheck shell=bash

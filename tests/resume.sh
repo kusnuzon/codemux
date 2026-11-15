@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # tests/resume.sh — prove the install survives being killed midway.
 # Sandbox: HOME, CODEMUX_HOME, fake apt-get & dpkg-query. The system is NOT touched.
 # shellcheck shell=bash

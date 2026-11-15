@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # tests/maintenance.sh — test update-check, doctor, upgrade, uninstall (M5).
 # Full sandbox: dedicated HOME, PREFIX, CODEMUX_HOME. The system is NOT touched.
 # shellcheck shell=bash
