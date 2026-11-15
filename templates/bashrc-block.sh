@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 7
+# codemux:launcher version 8
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -69,7 +69,7 @@ _oc_banner() {
     bits="${bits:+$bits  ·  }v2 $(_oc_ver v2)"
   fi
   if command -v pi >/dev/null 2>&1; then
-    bits="${bits:+$bits  ·  }pi $(_oc_ver pi)"
+    bits="${bits:+$bits  ·  }free-pi $(_oc_ver pi)"
   fi
   if [ -n "$bits" ]; then
     printf '   %sTermux · Android arm64%s   %s%s%s\n\n' "$DIM" "$R" "$DIM" "$bits" "$R"
@@ -100,10 +100,10 @@ _oc_items() {
     _OC_DESCS+=("not installed · Enter to install"); _OC_STATE+=("missing")
   fi
   if command -v pi >/dev/null 2>&1; then
-    _OC_KEYS+=("pi"); _OC_NAMES+=("Pi (free-pi)")
+    _OC_KEYS+=("pi"); _OC_NAMES+=("Free-pi (Pi)")
     _OC_DESCS+=("$(_oc_ver pi) · free-pi agent"); _OC_STATE+=("installed")
   else
-    _OC_KEYS+=("pi"); _OC_NAMES+=("Pi (free-pi)")
+    _OC_KEYS+=("pi"); _OC_NAMES+=("Free-pi (Pi)")
     _OC_DESCS+=("not installed · Enter to install"); _OC_STATE+=("missing")
   fi
   # `bashrc` is not a row: the block is edited with `b` (see the hint line).
@@ -295,7 +295,7 @@ _oc_meta() {
   case "$1" in
     v1) printf 'opencode|OpenCode V1|V1' ;;
     v2) printf 'opencode-v2|OpenCode V2|V2' ;;
-    pi) printf 'pi|Pi (free-pi)|Pi' ;;
+    pi) printf 'pi|Free-pi (Pi)|Pi' ;;
     *) return 1 ;;
   esac
 }
@@ -505,22 +505,24 @@ _oc_cmd_row() {
 
 # Short guide shown after choosing "Shell only".
 _oc_guide() {
-  printf '  %sShell only selected — opencode was not started.%s\n\n' "$DIM" "$R"
+  printf '  %sShell only selected — no agent was started.%s\n\n' "$DIM" "$R"
   printf '  %sAvailable commands:%s\n' "$BOLD" "$R"
   _oc_cmd_row menu          'back to the choice menu'
   command -v opencode >/dev/null 2>&1 &&
     _oc_cmd_row opencode    'run OpenCode V1 directly'
   command -v opencode-v2 >/dev/null 2>&1 &&
     _oc_cmd_row opencode-v2 'run OpenCode V2 directly'
+  command -v pi >/dev/null 2>&1 &&
+    _oc_cmd_row pi          'run free-pi directly'
   [ -f "$PREFIX/share/opencode-v2/doctor.sh" ] &&
     _oc_cmd_row doctor      'health check for the OpenCode V2 install'
-  _oc_cmd_row version       'show the installed OpenCode versions'
+  _oc_cmd_row version       'show the installed agent versions'
   command -v quota >/dev/null 2>&1 &&
     _oc_cmd_row quota       'estimated remaining free-model quota'
   _oc_cmd_row codemux       'check & maintain Termux (check / install / status)'
   _oc_cmd_row 'keluar|exit' 'close Termux'
   printf '\n  %sType %smenu%s at any time to return to this menu.%s\n' "$DIM" "$BOLD" "$R" "$R"
-  printf '  %sInside opencode, type exit or press Ctrl+C → back to the menu.%s\n\n' "$DIM" "$R"
+  printf '  %sInside an agent, type exit or press Ctrl+C → back to the menu.%s\n\n' "$DIM" "$R"
 }
 
 # Run the launcher; used at startup and by the `menu` command.
@@ -551,7 +553,11 @@ version() {
     printf 'OpenCode V2 : %s\n' "$(_oc_ver v2)"
     found=1
   fi
-  [ "$found" -eq 1 ] || printf 'no OpenCode installed — run: codemux install\n'
+  if command -v pi >/dev/null 2>&1; then
+    printf 'Pi (free-pi): %s\n' "$(_oc_ver pi)"
+    found=1
+  fi
+  [ "$found" -eq 1 ] || printf 'no agent installed — run: codemux install\n'
 }
 doctor() {
   if [ -f "$PREFIX/share/opencode-v2/doctor.sh" ]; then

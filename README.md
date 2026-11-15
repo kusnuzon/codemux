@@ -73,7 +73,7 @@ Every new Termux session opens a menu — nothing is hidden:
 ```
 ❯ 1 OpenCode V1    1.19.5 · stable · legacy DB
   2 OpenCode V2    not installed · Enter to install
-  3 Pi (free-pi)   0.6.21 · free-pi agent
+  3 Free-pi (Pi)   0.6.21 · free-pi agent
   4 Shell only     no agent
   5 Quit           close Termux
 ```

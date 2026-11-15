@@ -325,6 +325,32 @@ menu_descs() { # <sandbox> → descriptions of the menu rows
       printf "%s\n" "${_OC_DESCS[@]}"
     ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
 }
+menu_names() { # <sandbox> → names of the menu rows
+  local sb="$1"
+  env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
+      PATH="$2"
+      . "$1"
+      _oc_items
+      printf "%s\n" "${_OC_NAMES[@]}"
+    ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
+}
+menu_guide() { # <sandbox> → the "Shell only" command guide
+  local sb="$1"
+  env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" NO_COLOR=1 bash -c '
+      PATH="$2"
+      . "$1"
+      _oc_colors
+      _oc_guide
+    ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
+}
+menu_version() { # <sandbox> → the `version` command output
+  local sb="$1"
+  env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
+      PATH="$2"
+      . "$1"
+      version
+    ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
+}
 SB5="$(new_sandbox menu-items)"
 mkdir -p "$SB5/prefix/bin"
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode-v2"
@@ -359,6 +385,39 @@ if [ "$(menu_keys "$SB5")" = "v1 v2 pi shell quit" ] &&
   ok "menu: nothing installed → V1/V2/Pi all marked not installed"
 else
   bad "menu: empty rows are $(menu_keys "$SB5")"
+fi
+if [ "$(menu_names "$SB5" | sed -n '3p')" = "Free-pi (Pi)" ]; then
+  ok "menu: the free-pi row is labelled Free-pi (Pi)"
+else
+  bad "menu: free-pi row label is '$(menu_names "$SB5" | sed -n '3p')'"
+fi
+printf '#!/bin/sh\n' >"$SB5/prefix/bin/pi"
+chmod +x "$SB5/prefix/bin/pi"
+# Capture first: `menu_guide | grep -q` fails under `set -o pipefail` because grep
+# exits early and the producer dies of SIGPIPE (141).
+guide_pi="$(menu_guide "$SB5")"
+if grep -q 'pi *run free-pi directly' <<<"$guide_pi"; then
+  ok "menu: the Shell only guide lists the pi command"
+else
+  bad "menu: the Shell only guide hides pi (guide: $(tr '\n' '|' <<<"$guide_pi"))"
+fi
+if grep -q 'no agent was started' <<<"$guide_pi" &&
+  ! grep -q 'opencode was not started' <<<"$guide_pi"; then
+  ok "menu: the Shell only guide is not OpenCode-specific"
+else
+  bad "menu: the Shell only guide still says opencode was not started"
+fi
+version_out="$(menu_version "$SB5")"
+if grep -q '^Pi (free-pi):' <<<"$version_out"; then
+  ok "menu: version prints the free-pi version row"
+else
+  bad "menu: version hides free-pi ($(tr '\n' '|' <<<"$version_out"))"
+fi
+rm -f "$SB5/prefix/bin/pi"
+if ! grep -q 'run free-pi directly' <<<"$(menu_guide "$SB5")"; then
+  ok "menu: no pi on PATH → no pi line in the guide"
+else
+  bad "menu: the guide offers pi although it is not installed"
 fi
 if grep -q '_oc_launch_component()' "$TPL" && grep -q 'Install it now?' "$TPL"; then
   ok "menu: choosing a missing component asks before installing"
