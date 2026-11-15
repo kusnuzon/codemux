@@ -51,10 +51,11 @@ jobs:
           import json, sys
           d = json.load(open(sys.argv[1]))
           assert d["codemux"] == "codemux"
-          assert len(d["modul"]) == 13
+          mods = d["modul"]
           r = d["ringkasan"]
-          assert r["ok"] + r["warn"] + r["miss"] + r["fail"] + r["skip"] == 13
-          assert d["komponen"] in ("v1", "v2", "v1 v2")
+          assert len(mods) == 14, len(mods)   # pi module joined the list
+          assert r["ok"] + r["warn"] + r["miss"] + r["fail"] + r["skip"] == len(mods), r
+          assert d["komponen"] in ("v1", "v2", "v1 v2", "pi"), d["komponen"]
           print("json ok:", r)
           PY
 
