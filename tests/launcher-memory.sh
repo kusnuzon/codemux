@@ -53,7 +53,7 @@ EOS
 chmod 700 "$FIXTURE/kuota"
 
 new_sandbox() {
-  local name="$1" d="$SANDBOX_ROOT/$1"
+  local d="${SANDBOX_ROOT:?}/$1"
   rm -rf "$d"
   mkdir -p "$d/home" "$d/state" "$d/prefix"
   printf '%s' "$d"

@@ -172,6 +172,7 @@ esac
 #    non-numeric input, and keeps the codemux_bar default width at 16.
 #    It is a plain function from lib/progress-bar.sh (the plan and spinner call
 #    it), so source common.sh here instead of going through bin/codemux.
+# shellcheck disable=SC2034  # read by the sourced common.sh
 CODEMUX_ROOT="$ROOT"
 # shellcheck source=../lib/common.sh
 . "$ROOT/lib/common.sh"

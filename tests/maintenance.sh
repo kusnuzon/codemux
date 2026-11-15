@@ -19,7 +19,7 @@ ok() { pass=$((pass + 1)); printf 'ok   %s\n' "$1"; }
 bad() { fail=$((fail + 1)); printf 'FAIL %s\n' "$1"; }
 
 new_sandbox() {
-  local name="$1" d="$SANDBOX_ROOT/$1"
+  local d="${SANDBOX_ROOT:?}/$1"
   rm -rf "$d"
   mkdir -p "$d/home" "$d/state" "$d/prefix/bin" "$d/prefix/share"
   printf '%s' "$d"
