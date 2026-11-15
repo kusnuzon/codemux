@@ -578,7 +578,8 @@ Rules:
 ## 13. Security & reliability
 
 - Every download is `sha256`-verified (release tarball, self-update; payload
-  checksums come from the upstream installer / npm registry sha512).
+  checksums come from the upstream installer — GitHub mirror `sha256` first,
+  npm registry `sha512` fallback).
 - No layered `curl | bash`: the bootstrap downloads a tarball and only falls back
   to `codeload` for `main` (documented in the output as "no sha256").
 - No token is ever written by codemux; `gh` login is the user's own business.
