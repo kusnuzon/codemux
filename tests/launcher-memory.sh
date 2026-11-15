@@ -74,6 +74,8 @@ run_cm() { # <sandbox> <command...>
 
 SKIP_ALL_BUT_M4="deps,mirror,storage,toolset,glibc,v1,v2"
 SKIP_ONLY_LAUNCHER="deps,mirror,storage,toolset,glibc,v1,v2,dotfiles,memory"
+# `--only pi` is a tail module: everything else is skipped to keep it focused.
+SKIP_ONLY_PI="deps,mirror,storage,toolset,glibc,v1,v2,launcher,dotfiles,memory"
 
 # =============================================================================
 # 1. Fresh: every M4 module installed from scratch
@@ -303,7 +305,7 @@ SB5="$(new_sandbox menu-items)"
 mkdir -p "$SB5/prefix/bin"
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode-v2"
 chmod +x "$SB5/prefix/bin/opencode-v2"
-if [ "$(menu_keys "$SB5")" = "v1 v2 shell quit" ] &&
+if [ "$(menu_keys "$SB5")" = "v1 v2 pi shell quit" ] &&
   menu_descs "$SB5" | sed -n '1p' | grep -q 'not installed'; then
   ok "menu: V2-only install still offers V1, marked not installed"
 else
@@ -312,24 +314,25 @@ fi
 rm -f "$SB5/prefix/bin/opencode-v2"
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode"
 chmod +x "$SB5/prefix/bin/opencode"
-if [ "$(menu_keys "$SB5")" = "v1 v2 shell quit" ] &&
+if [ "$(menu_keys "$SB5")" = "v1 v2 pi shell quit" ] &&
   menu_descs "$SB5" | sed -n '2p' | grep -q 'not installed'; then
   ok "menu: V1-only install still offers V2, marked not installed"
 else
   bad "menu: V1-only rows are $(menu_keys "$SB5")"
 fi
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode-v2"
-chmod +x "$SB5/prefix/bin/opencode-v2"
-if [ "$(menu_keys "$SB5")" = "v1 v2 shell quit" ] &&
+printf '#!/bin/sh\n' >"$SB5/prefix/bin/pi"
+chmod +x "$SB5/prefix/bin/opencode-v2" "$SB5/prefix/bin/pi"
+if [ "$(menu_keys "$SB5")" = "v1 v2 pi shell quit" ] &&
   ! menu_descs "$SB5" | grep -q 'not installed'; then
-  ok "menu: both installed → four rows, no install note"
+  ok "menu: both installed → five rows, no install note"
 else
   bad "menu: both rows are $(menu_keys "$SB5")"
 fi
-rm -f "$SB5/prefix/bin/opencode" "$SB5/prefix/bin/opencode-v2"
-if [ "$(menu_keys "$SB5")" = "v1 v2 shell quit" ] &&
-  [ "$(menu_descs "$SB5" | grep -c 'not installed')" -eq 2 ]; then
-  ok "menu: nothing installed → both rows marked not installed"
+rm -f "$SB5/prefix/bin/opencode" "$SB5/prefix/bin/opencode-v2" "$SB5/prefix/bin/pi"
+if [ "$(menu_keys "$SB5")" = "v1 v2 pi shell quit" ] &&
+  [ "$(menu_descs "$SB5" | grep -c 'not installed')" -eq 3 ]; then
+  ok "menu: nothing installed → V1/V2/Pi all marked not installed"
 else
   bad "menu: empty rows are $(menu_keys "$SB5")"
 fi
@@ -385,6 +388,107 @@ case "$(kuota_line "$SB5")" in
   *) bad "menu: quota warning not shown" ;;
 esac
 rm -f "$SB5/prefix/bin/kuota"
+
+# =============================================================================
+# 5b. one install confirmation for every row (V1, V2, Pi) + the bashrc entry
+# =============================================================================
+# The dialog must exist once and be used by every installable row: a row that
+# installs without asking is a bug that only shows up when a user presses Enter
+# on something they did not expect to install.
+if grep -q '_oc_confirm_install()' "$TPL" && [ "$(grep -c '_oc_confirm_install "' "$TPL")" -eq 1 ]; then
+  ok "menu: a single install confirmation shared by all rows"
+else
+  bad "menu: install confirmation is not shared (or duplicated)"
+fi
+if grep -qF 'Install it now? [y/N]' "$TPL" && grep -qF 'not installed — nothing changed.' "$TPL"; then
+  ok "menu: the dialog offers [y/N] and reports 'nothing changed' on no"
+else
+  bad "menu: install dialog wording missing"
+fi
+for k in v1 v2 pi; do
+  if _meta="$(env OPENCODE_NO_AUTO=1 bash -c '. "$1"; _oc_meta "$2"' _ "$TPL" "$k" 2>/dev/null)" &&
+    [ -n "$_meta" ]; then
+    ok "menu: row $k goes through the install path (${_meta%%|*})"
+  else
+    bad "menu: row $k has no install metadata"
+  fi
+done
+# Enter on a missing row: "n" must change nothing and must not call codemux
+ask_no() { # <key> → every line printed while answering "n"
+  local sb="$1" key="$2"
+  # The sandbox bin comes first but the real PATH stays behind it: `env bash` is
+  # at $PREFIX/bin/bash on Termux and at /bin/bash on a plain runner, so a PATH
+  # holding only the sandbox would not even find the interpreter.
+  #
+  # Set CODEMUX_ROOT too, not just its value: the block short-circuits on
+  # `command -v codemux` first, and a real codemux on the host PATH would then
+  # run a real install here instead of the sandbox one.
+  env HOME="$sb/home" PREFIX="$sb/prefix" PATH="$sb/prefix/bin:$PATH" \
+    CODEMUX_ROOT="$ROOT" CODEMUX_HOME="$sb/state" CODEMUX_ALLOW_NONANDROID=1 \
+    OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
+      C1=""; C2=""; ACC=""; DIM=""; BOLD=""; HL=""; R=""
+      _oc_cursor_show() { :; }
+      _oc_cursor_hide() { :; }
+      # Force the "missing" path for every row: a real opencode/pi on the host
+      # PATH would otherwise be launched instead of asking the question.
+      command() { [ "$1" = -v ] && return 1; builtin command "$@"; }
+      . "$1"
+      printf "n\n" | _oc_launch_component "$2"
+      printf "rc=%s\n" "$?"
+    ' _ "$TPL" "$key" 2>/dev/null
+}
+SB5B="$(new_sandbox confirm)"
+mkdir -p "$SB5B/prefix/bin" "$SB5B/home"
+for k in v1 v2 pi; do
+  out="$(ask_no "$SB5B" "$k")"
+  case "$out" in
+    *"is not installed yet"*"rc=1"*)
+      ok "menu: $k missing + answer n → nothing installed" ;;
+    *) bad "menu: $k missing + answer n → $(printf '%s' "$out" | tr '\n' ' ')" ;;
+  esac
+done
+if grep -q 'bashrc) ' "$TPL" || grep -q '_oc_bashrc()' "$TPL"; then
+  ok "menu: ~/.bashrc is reachable from the menu"
+else
+  bad "menu: no ~/.bashrc entry in the menu"
+fi
+if grep -qE "^      \[bB\]\)" "$TPL"; then
+  ok "menu: b opens the ~/.bashrc options"
+else
+  bad "menu: no key hint for ~/.bashrc"
+fi
+
+# =============================================================================
+# 5c. the pi module never touches a broken .bashrc
+# =============================================================================
+SB5C="$(new_sandbox pi-module)"
+# A broken file must stay broken through the whole run, and the pi module has to
+# leave it alone. The launcher module (skipped below) is the one that repairs
+# .bashrc, so nothing in this sandbox can make the file valid again.
+printf 'if [ ; then\n' >"$SB5C/home/.bashrc"
+printf '#!/bin/sh\n' >"$SB5C/prefix/bin/pi"
+chmod +x "$SB5C/prefix/bin/pi"
+run_cm "$SB5C" install --only pi --skip "$SKIP_ONLY_PI" >"$SB5C/out.log" 2>&1 || true
+if ! grep -q 'codemux:pi begin' "$SB5C/home/.bashrc"; then
+  ok "pi module: a broken .bashrc is left alone"
+else
+  bad "pi module: appended to an already broken .bashrc"
+fi
+# Now a valid .bashrc: the alias must appear exactly once, and the next run
+# must not add a second block.
+printf 'echo keep\n' >"$SB5C/home/.bashrc"
+run_cm "$SB5C" install --only pi --skip "$SKIP_ONLY_PI" >"$SB5C/out2.log" 2>&1 || true
+if grep -q 'codemux:pi begin' "$SB5C/home/.bashrc" && grep -q 'alias pi=' "$SB5C/home/.bashrc"; then
+  ok "pi module: the alias is added once .bashrc is valid"
+else
+  bad "pi module: alias not added to a valid .bashrc"
+fi
+run_cm "$SB5C" install --only pi --skip "$SKIP_ONLY_PI" >"$SB5C/out3.log" 2>&1 || true
+if [ "$(grep -c 'codemux:pi begin' "$SB5C/home/.bashrc")" -eq 1 ]; then
+  ok "pi module: idempotent (one alias block)"
+else
+  bad "pi module: the alias block was duplicated"
+fi
 
 # =============================================================================
 # 6. update notice: stale cache rows are hidden

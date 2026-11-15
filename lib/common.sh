@@ -427,7 +427,7 @@ codemux_components_file() { printf '%s/components' "$CODEMUX_HOME"; }
 # codemux_components_norm <v1|v2|both|v1,v2|...> → "v1 v2" (ordered, unique)
 # Returns 1 for anything unrecognised.
 codemux_components_norm() {
-  local raw="${1:-}" item seen_v1=0 seen_v2=0 out=""
+  local raw="${1:-}" item seen_v1=0 seen_v2=0 seen_pi=0 out=""
   raw="${raw//,/ }"
   for item in $raw; do
     case "$item" in
@@ -435,12 +435,16 @@ codemux_components_norm() {
         seen_v1=1; seen_v2=1 ;;
       v1) seen_v1=1 ;;
       v2) seen_v2=1 ;;
+      pi) seen_pi=1 ;;
       *) return 1 ;;
     esac
   done
   [ "$seen_v1" -eq 1 ] && out="v1"
   if [ "$seen_v2" -eq 1 ]; then
     out="${out:+$out }v2"
+  fi
+  if [ "$seen_pi" -eq 1 ]; then
+    out="${out:+$out }pi"
   fi
   [ -n "$out" ] || return 1
   printf '%s' "$out"
@@ -512,8 +516,9 @@ install options:
   --fresh            start from step 1 (do not resume)
   --only v2|v1|both  install OpenCode V2 only (default), V1 only, or both (default:
                      ask, or keep the saved choice; non-interactive → v2)
+  --only pi          add the pi (free-pi) menu row and its `pi` alias
   --components X     same as --only
-  --skip a,b         skip modules (deps,mirror,storage,toolset,glibc,v1,v2,launcher,dotfiles,memory,self)
+  --skip a,b         skip modules (deps,mirror,storage,toolset,glibc,v1,v2,pi,launcher,dotfiles,memory,self)
   -y, --yes          no confirmation, never ask (keep the saved/default choice)
 
 component choice:

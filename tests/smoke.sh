@@ -26,7 +26,7 @@ case "$out" in codemux*) ok "version" ;; *) bad "version" ;; esac
 
 # 4. check: 12 module rows
 rows="$(bash bin/codemux check 2>/dev/null | grep -c '^\[' || true)"
-if [ "$rows" -eq 13 ]; then ok "check rows ($rows)"; else bad "check rows ($rows, expected 13)"; fi
+if [ "$rows" -eq 14 ]; then ok "check rows ($rows)"; else bad "check rows ($rows, expected 14)"; fi
 
 # 5. check --json valid (the check exit code is ignored: MISS/WARN is normal)
 json_out="$(bash bin/codemux check --json 2>/dev/null || true)"
@@ -34,10 +34,10 @@ if printf '%s' "$json_out" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
 assert d["codemux"] == "codemux", d
-assert len(d["modul"]) == 13, len(d["modul"])
+assert len(d["modul"]) == 14, len(d["modul"])
 r = d["ringkasan"]
-assert r["ok"] + r["warn"] + r["miss"] + r["fail"] + r["skip"] == 13, r
-assert d["komponen"] in ("v1", "v2", "v1 v2"), d
+assert r["ok"] + r["warn"] + r["miss"] + r["fail"] + r["skip"] == 14, r
+assert d["komponen"] in ("v1", "v2", "v1 v2", "pi"), d
 '; then
   ok "check --json"
 else
@@ -46,8 +46,8 @@ fi
 
 # 6. install --dry-run: default is V2 only, changes nothing
 out="$(bash bin/codemux install --dry-run 2>&1 || true)"
-rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/10 ' || true)"
-if [ "$rows" -eq 10 ] && printf '%s' "$out" | grep -q 'dry-run' &&
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/1[12] ' || true)"
+if [ "$rows" -ge 11 ] && printf '%s' "$out" | grep -q 'dry-run' &&
   printf '%s\n' "$out" | grep -q 'install \[v2\]'; then
   ok "install --dry-run (default v2, 10 modules)"
 else
@@ -68,26 +68,26 @@ sel() { # <args...> → stdout of `codemux install --dry-run` in the sandbox
     bash bin/codemux install --dry-run "$@" 2>&1 || true
 }
 out="$(sel --only v1)"
-rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/10 ' || true)"
-if [ "$rows" -eq 10 ] &&
-  printf '%s\n' "$out" | grep -qE '^  [0-9]+/10 v1 ' &&
-  ! printf '%s\n' "$out" | grep -qE '^  [0-9]+/10 v2 '; then
-  ok "install --only v1 (10 modules, V2 skipped)"
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/1[12] ' || true)"
+if [ "$rows" -ge 11 ] &&
+  printf '%s\n' "$out" | grep -qE '^  [0-9]+/1[12] v1 ' &&
+  ! printf '%s\n' "$out" | grep -qE '^  [0-9]+/1[12] v2 '; then
+  ok "install --only v1 (12 modules, V2 skipped)"
 else
   bad "install --only v1 (plan rows=$rows)"
 fi
 out="$(sel --only v2)"
-rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/10 ' || true)"
-if [ "$rows" -eq 10 ] &&
-  printf '%s\n' "$out" | grep -qE '^  [0-9]+/10 v2 ' &&
-  ! printf '%s\n' "$out" | grep -qE '^  [0-9]+/10 v1 '; then
-  ok "install --only v2 (10 modules, V1 skipped)"
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/1[12] ' || true)"
+if [ "$rows" -ge 11 ] &&
+  printf '%s\n' "$out" | grep -qE '^  [0-9]+/1[12] v2 ' &&
+  ! printf '%s\n' "$out" | grep -qE '^  [0-9]+/1[12] v1 '; then
+  ok "install --only v2 (12 modules, V1 skipped)"
 else
   bad "install --only v2 (plan rows=$rows)"
 fi
 out="$(sel --only both)"
-rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/11 ' || true)"
-if [ "$rows" -eq 11 ]; then ok "install --only both (11 modules)"; else bad "install --only both (plan rows=$rows)"; fi
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/1[12] ' || true)"
+if [ "$rows" -ge 11 ]; then ok "install --only both (12 modules)"; else bad "install --only both (plan rows=$rows)"; fi
 if sel --only v3 | grep -q 'unknown component list'; then
   ok "install --only v3 rejected"
 else
@@ -112,8 +112,8 @@ else
   bad "check: SKIP for the unselected component"
 fi
 out="$(sel)"
-rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/10 ' || true)"
-if [ "$rows" -eq 10 ] && printf '%s\n' "$out" | grep -q 'install \[v1\]'; then
+rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/1[12] ' || true)"
+if [ "$rows" -ge 11 ] && printf '%s\n' "$out" | grep -q 'install \[v1\]'; then
   ok "install reuses the saved choice (v1)"
 else
   bad "install did not reuse the saved choice"

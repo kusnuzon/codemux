@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 3
+# codemux:launcher version 4
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -17,6 +17,7 @@ _oc_ver() {
       [ -n "$v" ] || v="$(dpkg-query -W -f='${Version}' opencode 2>/dev/null)"
       ;;
     v2) v="$(cat "$PREFIX/share/opencode-v2/VERSION" 2>/dev/null)" ;;
+    pi) v="$(cat "$HOME/.free-pi/agent/VERSION" 2>/dev/null)" ;;
   esac
   printf '%s' "${v:-?}"
 }
@@ -48,10 +49,13 @@ _oc_banner() {
   if command -v opencode-v2 >/dev/null 2>&1; then
     bits="${bits:+$bits  ·  }v2 $(_oc_ver v2)"
   fi
+  if command -v pi >/dev/null 2>&1; then
+    bits="${bits:+$bits  ·  }pi $(_oc_ver pi)"
+  fi
   if [ -n "$bits" ]; then
     printf '   %sTermux · Android arm64%s   %s%s%s\n\n' "$DIM" "$R" "$DIM" "$bits" "$R"
   else
-    printf '   %sTermux · Android arm64%s   %sno OpenCode yet%s\n\n' "$DIM" "$R" "$DIM" "$R"
+    printf '   %sTermux · Android arm64%s   %sno agent yet%s\n\n' "$DIM" "$R" "$DIM" "$R"
   fi
 }
 
@@ -76,9 +80,24 @@ _oc_items() {
     _OC_KEYS+=("v2"); _OC_NAMES+=("OpenCode V2")
     _OC_DESCS+=("not installed · Enter to install"); _OC_STATE+=("missing")
   fi
-  _OC_KEYS+=("shell"); _OC_NAMES+=("Shell only"); _OC_DESCS+=("no opencode"); _OC_STATE+=("installed")
+  if command -v pi >/dev/null 2>&1; then
+    _OC_KEYS+=("pi"); _OC_NAMES+=("Pi (free-pi)")
+    _OC_DESCS+=("$(_oc_ver pi) · free-pi agent"); _OC_STATE+=("installed")
+  else
+    _OC_KEYS+=("pi"); _OC_NAMES+=("Pi (free-pi)")
+    _OC_DESCS+=("not installed · Enter to install"); _OC_STATE+=("missing")
+  fi
+  # `bashrc` is not a row: the block is edited with `b` (see the hint line).
+  _OC_KEYS+=("shell"); _OC_NAMES+=("Shell only"); _OC_DESCS+=("no agent"); _OC_STATE+=("installed")
   _OC_KEYS+=("quit"); _OC_NAMES+=("Quit"); _OC_DESCS+=("close Termux"); _OC_STATE+=("installed")
   _OC_COUNT="${#_OC_KEYS[@]}"
+  # Column width follows the longest name: adding a row must not misalign the
+  # descriptions (a hardcoded width did exactly that once).
+  local n w=13
+  for n in "${_OC_NAMES[@]}"; do
+    [ "${#n}" -gt "$w" ] && w="${#n}"
+  done
+  _OC_NAMEW=$((w + 1))
 }
 
 # One menu row: <index> <selected index>
@@ -89,7 +108,7 @@ _oc_row() {
   else
     arrow=" "; pad=""
   fi
-  printf -v namepad '%-13s' "${_OC_NAMES[$idx]}"
+  printf -v namepad '%-*s' "${_OC_NAMEW:-14}" "${_OC_NAMES[$idx]}"
   printf '  %s %s%s%s%s %s%s%s%s  %s%s%s\033[K\n' \
     "$arrow" "$pad" "$BOLD" "$((idx + 1))" "$R" \
     "$pad" "$BOLD" "$namepad" "$R" \
@@ -109,8 +128,8 @@ _oc_menu() {
   printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
   _oc_rows "$1"
   printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
-  printf '  %s↑/↓ select%s   %sEnter run/install%s   %s1-%d/q%s   %sCtrl+C cancel%s\n\n' \
-    "$DIM" "$R" "$DIM" "$R" "$DIM" "$_OC_COUNT" "$R" "$DIM" "$R"
+  printf '  %s↑/↓ select%s   %sEnter run/install%s   %s1-%d/q%s   %sb .bashrc%s   %sCtrl+C cancel%s\n\n' \
+    "$DIM" "$R" "$DIM" "$R" "$DIM" "$_OC_COUNT" "$R" "$DIM" "$R" "$DIM" "$R"
 }
 
 # Redraw only the option rows: from the blank line below the menu move up
@@ -224,37 +243,54 @@ _oc_kuota_notice() {
   return 0
 }
 
-# Run a component. When its payload is missing, explain that first and ask for
-# confirmation before running `codemux install --only <component>`.
-# Returns 0 when the component ran, 1 when it is still missing.
-_oc_launch_component() {
-  local key="$1" bin label ans rc
-  case "$key" in
-    v1) bin="opencode"; label="V1" ;;
-    v2) bin="opencode-v2"; label="V2" ;;
+# Meta of one row: <key> -> "<binary>|<label>|<missing text>".
+# Every row that can be installed goes through the same confirmation path, so
+# Pi and V1/V2 cannot drift apart.
+_oc_meta() {
+  case "$1" in
+    v1) printf 'opencode|OpenCode V1|V1' ;;
+    v2) printf 'opencode-v2|OpenCode V2|V2' ;;
+    pi) printf 'pi|Pi (free-pi)|Pi' ;;
     *) return 1 ;;
   esac
+}
+
+# One question for every installable row: "… is not installed yet. Install it
+# now? [y/N]". Enter alone is a no, and the answer never changes anything else.
+_oc_confirm_install() {
+  local label="$1" ans=""
+  printf '\n  %s%s is not installed yet.%s\n' "$BOLD" "$label" "$R"
+  printf '  Install it now? [y/N] '
+  _oc_cursor_show
+  IFS= read -r ans || ans=""
+  _oc_cursor_hide
+  case "$ans" in
+    y | Y | yes | YES | Ya | ya) return 0 ;;
+  esac
+  printf '  %snot installed — nothing changed.%s\n\n' "$DIM" "$R"
+  return 1
+}
+
+# Run a component. When its payload is missing, ask first, then install it.
+# Returns 0 when the component ran, 1 when it is still missing/cancelled.
+_oc_launch_component() {
+  local key="$1" meta bin label short rc
+  meta="$(_oc_meta "$key")" || return 1
+  bin="${meta%%|*}"
+  meta="${meta#*|}"
+  label="${meta%%|*}"
+  short="${meta#*|}"
   if ! command -v "$bin" >/dev/null 2>&1; then
-    printf '\n  %sOpenCode %s is not installed yet.%s\n' "$BOLD" "$label" "$R"
-    printf '  Install it now? [y/N] '
-    _oc_cursor_show
-    ans=""
-    IFS= read -r ans || ans=""
-    case "$ans" in
-      y | Y | yes | YES) ;;
-      *)
-        printf '  %snot installed — nothing changed.%s\n\n' "$DIM" "$R"
-        _oc_cursor_hide
-        return 1
-        ;;
-    esac
-    if ! command -v codemux >/dev/null 2>&1; then
+    _oc_confirm_install "$label" || return 1
+    printf '  %s→ installing %s (this can take a while)…%s\n\n' "$DIM" "$label" "$R"
+    if command -v codemux >/dev/null 2>&1; then
+      codemux install --only "$key"
+    elif [ -x "$CODEMUX_ROOT/bin/codemux" ]; then
+      "$CODEMUX_ROOT/bin/codemux" install --only "$key"
+    else
       printf '  %scodemux not found — cannot install.%s\n\n' "$DIM" "$R"
-      _oc_cursor_hide
       return 1
     fi
-    printf '  %s→ installing OpenCode %s (this can take a while)…%s\n\n' "$DIM" "$label" "$R"
-    codemux install --only "$key"
     rc=$?
     hash -r 2>/dev/null || true
     _oc_cursor_hide
@@ -265,13 +301,57 @@ _oc_launch_component() {
   fi
   printf '\n'
   _oc_cursor_show
-  if [ "$key" = "v1" ]; then
-    printf '  %s→ OpenCode V1%s\n\n' "$DIM" "$R"
-    opencode
-  else
-    printf '  %s→ OpenCode V2%s\n\n' "$DIM" "$R"
-    opencode-v2
+  printf '  %s→ %s%s\n\n' "$DIM" "$label" "$R"
+  case "$key" in
+    v1) opencode ;;
+    v2) opencode-v2 ;;
+    pi)
+      # the pi alias should already exist; fall back to the official entry
+      if alias pi >/dev/null 2>&1 || command -v pi >/dev/null 2>&1; then
+        pi
+      else
+        npx -y free-pi-cli@latest
+      fi
+      ;;
+    *) return 1 ;;
+  esac
+  _oc_cursor_hide
+  return 0
+}
+
+# `~/.bashrc` is a real choice on this menu: the block lives in that file, so a
+# user must be able to open, back up, adopt or remove it from the menu itself.
+_oc_bashrc() {
+  local ans
+  if [ -x "$CODEMUX_ROOT/bin/launcher.sh" ]; then
+    printf '\n'
+    _oc_cursor_show
+    "$CODEMUX_ROOT/bin/launcher.sh" --bashrc
+    _oc_cursor_hide
+    return 0
   fi
+  if ! command -v codemux >/dev/null 2>&1; then
+    printf '\n  %scodemux not found — cannot manage ~/.bashrc.%s\n\n' "$DIM" "$R"
+    return 1
+  fi
+  printf '\n  %s~/.bashrc%s\n' "$BOLD" "$R"
+  printf '    %s1%s open in an editor\n' "$ACC" "$R"
+  printf '    %s2%s back up to ~/.bashrc.bak\n' "$ACC" "$R"
+  printf '    %s3%s reinstall the codemux block\n' "$ACC" "$R"
+  printf '    %s4%s remove the codemux block\n' "$ACC" "$R"
+  printf '    %s5%s show the block\n' "$ACC" "$R"
+  printf '  %s[1-5, Enter to cancel]%s ' "$DIM" "$R"
+  _oc_cursor_show
+  ans=""
+  IFS= read -r ans || ans=""
+  case "$ans" in
+    1) if command -v nano >/dev/null 2>&1; then nano "$HOME/.bashrc"; else vi "$HOME/.bashrc"; fi ;;
+    2) cp "$HOME/.bashrc" "$HOME/.bashrc.bak.$(date +%s)" && printf '  %sbackup written%s\n' "$DIM" "$R" ;;
+    3) codemux install --only launcher ;;
+    4) codemux uninstall --keep-bashrc >/dev/null 2>&1 || printf '  %sremove the block by hand%s\n' "$DIM" "$R" ;;
+    5) awk '/codemux:launcher b(egin)/{f=1} f{print} /codemux:launcher e(nd)/{f=0}' "$HOME/.bashrc" ;;
+    *) printf '  %snothing changed.%s\n' "$DIM" "$R" ;;
+  esac
   _oc_cursor_hide
   return 0
 }
@@ -317,7 +397,7 @@ _oc_menu_loop() {
       enter)
         key="${_OC_KEYS[$sel]}"
         case "$key" in
-          v1|v2)
+          v1|v2|pi)
             if _oc_launch_component "$key"; then
               mkdir -p "$HOME/.local/state" 2>/dev/null
               printf '%s\n' "$key" >"$choice_file" 2>/dev/null
@@ -330,10 +410,33 @@ _oc_menu_loop() {
           shell) printf '\n'; return 0 ;;
           quit) printf '\n'; return 1 ;;
         esac
+        # a redraw is needed whatever happened (an install changes the rows)
+        _oc_items
+        [ "$sel" -ge "$_OC_COUNT" ] && sel=$((_OC_COUNT - 1))
+        full=1
         ;;
+      [bB]) key="bashrc" ; sel=0; ;;
       [1-9])
-        # number keys select a row directly (1..N)
-        if [ "$KEY" -le "$_OC_COUNT" ]; then sel=$((KEY - 1)); fi
+        # number keys select a row directly (1..N); Enter starts the selection
+        if [ "$KEY" -le "$_OC_COUNT" ]; then
+          sel=$((KEY - 1))
+          # draw the new selection first, so the answer is visible
+          if [ "$full" = "1" ]; then :; else _oc_redraw "$sel"; full=1; fi
+          KEY=enter
+          case "${_OC_KEYS[$sel]}" in
+            v1|v2|pi)
+              if _oc_launch_component "${_OC_KEYS[$sel]}"; then
+                mkdir -p "$HOME/.local/state" 2>/dev/null
+                printf '%s\n' "${_OC_KEYS[$sel]}" >"$choice_file" 2>/dev/null
+              fi
+              ;;
+            shell) printf '\n'; return 0 ;;
+            quit) printf '\n'; return 1 ;;
+          esac
+          _oc_items
+          [ "$sel" -ge "$_OC_COUNT" ] && sel=$((_OC_COUNT - 1))
+          full=1
+        fi
         ;;
       q|Q) sel=$((_OC_COUNT - 1)); return 1 ;;
       esc|cancel|ctrl-c) ;;

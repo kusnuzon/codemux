@@ -5,7 +5,7 @@
 # Base modules: always installed, whatever OpenCode components are chosen.
 # The V1/V2 payload modules are appended only when selected.
 CODEMUX_INSTALL_BASE=(deps mirror storage toolset glibc)
-CODEMUX_INSTALL_TAIL=(launcher dotfiles memory self)
+CODEMUX_INSTALL_TAIL=(launcher dotfiles pi memory self)
 CODEMUX_INSTALL_CRITICAL="deps glibc"
 
 codemux_in_list() {
@@ -80,6 +80,9 @@ codemux_install_modules() {
   case " $comps " in *" v1 "*) list+=(v1) ;; esac
   case " $comps " in *" v2 "*) list+=(v2) ;; esac
   list+=("${CODEMUX_INSTALL_TAIL[@]}")
+  # pi is agent-agnostic: Port of the tail always runs. `--only pi` must still be
+  # accepted, so the component name maps onto the tail module that follows the
+  # same key.
   CODEMUX_INSTALL_MODULES=("${list[@]}")
   return 0
 }
@@ -121,12 +124,12 @@ codemux_cmd_install() {
   compfile="$(codemux_components_file)"
   if [ -n "$only" ]; then
     comps="$(codemux_components_norm "$only")" || {
-      log_fail "unknown component list '$only' — use: v1, v2, or both"
+      log_fail "unknown component list '$only' — use: v1, v2, pi, or both"
       return 2
     }
   elif [ -n "${CODEMUX_COMPONENTS:-}" ]; then
     comps="$(codemux_components_norm "$CODEMUX_COMPONENTS")" || {
-      log_fail "unknown CODEMUX_COMPONENTS '${CODEMUX_COMPONENTS}' — use: v1, v2, or both"
+      log_fail "unknown CODEMUX_COMPONENTS '${CODEMUX_COMPONENTS}' — use: v1, v2, pi, or both"
       return 2
     }
   elif [ -f "$compfile" ]; then
