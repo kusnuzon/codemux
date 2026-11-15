@@ -4,11 +4,11 @@
 # Rule: NEVER overwrite an existing MEMORY.md/AGENTS.md.
 
 # Source of the mechanism (code, not personal data). Can be overridden via env for tests.
-CODEMUX_MEMORY_PLUGIN_URL="${CODEMUX_MEMORY_PLUGIN_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/memory.js}"
-CODEMUX_MEMORY_TITLE_URL="${CODEMUX_MEMORY_TITLE_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/session-title.js}"
-CODEMUX_MEMORY_NOTICE_URL="${CODEMUX_MEMORY_NOTICE_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/update-notice.js}"
-CODEMUX_MEMORY_DIGEST_URL="${CODEMUX_MEMORY_DIGEST_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/session-digest.py}"
-CODEMUX_MEMORY_KUOTA_URL="${CODEMUX_MEMORY_KUOTA_URL:-https://api.github.com/repos/kusnuzon/opencode-termux-v2/contents/plugins/kuota.py}"
+CODEMUX_MEMORY_PLUGIN_URL="${CODEMUX_MEMORY_PLUGIN_URL:-https://raw.githubusercontent.com/kusnuzon/opencode-termux-v2/main/plugins/memory.js}"
+CODEMUX_MEMORY_TITLE_URL="${CODEMUX_MEMORY_TITLE_URL:-https://raw.githubusercontent.com/kusnuzon/opencode-termux-v2/main/plugins/session-title.js}"
+CODEMUX_MEMORY_NOTICE_URL="${CODEMUX_MEMORY_NOTICE_URL:-https://raw.githubusercontent.com/kusnuzon/opencode-termux-v2/main/plugins/update-notice.js}"
+CODEMUX_MEMORY_DIGEST_URL="${CODEMUX_MEMORY_DIGEST_URL:-https://raw.githubusercontent.com/kusnuzon/opencode-termux-v2/main/plugins/session-digest.py}"
+CODEMUX_MEMORY_KUOTA_URL="${CODEMUX_MEMORY_KUOTA_URL:-https://raw.githubusercontent.com/kusnuzon/opencode-termux-v2/main/plugins/kuota.py}"
 CODEMUX_MEMORY_LIMIT="${CODEMUX_MEMORY_LIMIT:-24000}"
 
 codemux_memory_base() { printf '%s/.config/opencode' "$HOME"; }
