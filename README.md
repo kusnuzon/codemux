@@ -73,12 +73,17 @@ Every new Termux session opens a menu — nothing is hidden:
 ```
 ❯ 1 OpenCode V1    1.19.5 · stable · legacy DB
   2 OpenCode V2    not installed · Enter to install
-  3 Shell only     no opencode
-  4 Quit           close Termux
+  3 Pi (free-pi)   2.3.0 · free-pi agent
+  4 Shell only     no agent
+  5 Quit           close Termux
 ```
 
-Choosing a component that is not installed asks `Install it now? [y/N]` first.
-Answer `n` and nothing changes. Skip the menu with `OPENCODE_NO_AUTO=1 bash`.
+Choosing a component that is not installed asks `Install it now? [y/N]` first —
+one dialog shared by every row (V1, V2, Pi). Answer `n` and nothing changes.
+`b` opens the `~/.bashrc` options. Skip the menu with `OPENCODE_NO_AUTO=1 bash`.
+
+`--only pi` adds the `pi` row and its `alias pi` without touching the OpenCode
+choice; `codemux check` shows it as its own row.
 
 ## 🧠 Memory that survives sessions
 
