@@ -4,10 +4,13 @@ One command to make Termux "ready to use": OpenCode V1 + V2 + menu/banner + a
 base toolset + storage, both on a bare Termux and on a partially set-up one.
 New repo, public, idempotent (safe to run repeatedly).
 
-Status: **implemented — v0.7.4 (2026-11-13).** Every command in §6 exists and is
-tested: smoke 44 · launcher-memory 45 · maintenance 19 · resume 16 · release 7 ·
-adapter 12. CI (`shellcheck -S warning` + `bash -n` + `check --json` + smoke) runs
-on every push. §18 keeps the decision log; §17 shows what is done and what is next.
+Status: **implemented — v0.7.5 (2026-11-15).** Every command in §6 exists and is
+tested: smoke 51 · launcher-memory 45 · maintenance 19 · resume 16 · release 7 ·
+adapter 12, plus `tests/harness.sh` (4 portability checks). CI runs four jobs on
+every push: `lint` (shellcheck + `bash -n`, tests included), `test` in a matrix
+(**with a mock Termux `PREFIX`** and **without one**), and `sync` (checks that
+the shared progress bar has not drifted from the two sibling repos). §18 keeps the
+decision log; §17 shows what is done and what is next.
 
 ---
 
@@ -80,9 +83,9 @@ with a single command.
 4. **No `jq`/python needed for orchestration.** State = a plain TSV.
 5. **Single source of truth.** V1/V2 logic is not duplicated; `codemux` calls the
    official installers from the `opencode-termux` and `opencode-termux-v2` repos.
-6. **Adapter, not a copy.** `lib/v1.sh` & `lib/v2.sh` call the official installer of
-   each repo; when a repo is unreachable, use the last release tarball cached in
-   `~/.cache/codemux/`.
+6. **Adapter, not a copy.** `lib/adapter.sh` (driven by `lib/modules/v1.sh` and
+   `lib/modules/v2.sh`) calls the official installer of each repo; when a repo is
+   unreachable, use the last release tarball cached in `~/.cache/codemux/`.
 7. **Safe on a busy Termux.** `apt-mark hold opencode` so `pkg upgrade` does not
    overwrite the V1 payload (a bug that really happened).
 
@@ -171,18 +174,41 @@ codemux install --only both   # V1 + V2 (more disk)
 
 ### 6B. Progress feedback (never look frozen)
 
-Long operations report live progress on stderr, one line, overwritten in place:
+Long operations report live progress on stderr, one line, overwritten in place.
+
+The install plan prints one line per module, once, before anything runs:
 
 ```
-[4/11] toolset    | installing (37s)
-[6/11] v1         / waiting for the upstream V1 installer (1m 12s)
-  ↓ downloading memory.js (7 KB)
+  1/10 deps       [#-----------]  10% ready   curl tar sha256sum gzip unzip awk sed jq
+  6/10 v2         [#######-----]  60% INSTALL payload not installed yet
 ```
+
+A module that is running (the animated line, overwritten in place):
+
+```
+[6/10] v1        [#########-------]  60%| waiting for the upstream V1 installer (1m 12s)
+[6/10] v2        [#########-------]  60%| installing (37s) · [###-----]  38% 802 B/2.1 KB
+```
+
+The bar on the left is the module count; the bar in the trailing `extra` part
+appears only while a download runs and its total size is known.
 
 - `codemux_spin_start <prefix> [message]` / `codemux_spin_msg` /
-  `codemux_spin_size <file>` / `codemux_spin_stop` live in `lib/common.sh`.
+  `codemux_spin_size <file>` / `codemux_spin_total <bytes>` /
+  `codemux_spin_stop` live in `lib/common.sh`.
 - Downloads report the growing `.part` size; the message comes from
   `codemux_download`, so every module (plugins, adapters, self-update) gets it.
+  When the total size is known the line adds a bar and `done/total` bytes instead
+  of a bare byte count.
+- The total comes from `codemux_content_length <url>`: a best-effort `HEAD`, and
+  only the **last** response block (a redirect chain reports
+  `content-length: 0` on the 3xx hops) and **only for a 2xx** — an error page has
+  a length too, and would draw a bogus 100% bar. `Content-Range` is the fallback
+  for mirrors that answer `HEAD` without a length. Unknown size → no bar, just
+  bytes.
+- `codemux_bar <percent> [width]` draws the bar itself (plain ASCII, clamped to
+  0–100, non-numeric input treated as 0). It is a thin alias over
+  `progress_bar`, which lives in **`lib/progress-bar.sh`** (§7.1).
 - `log_*` pause the spinner first, so lines never collide.
 - Automatic silence when stderr is not a TTY; `CODEMUX_PROGRESS=1` forces it on
   (tests), `CODEMUX_PROGRESS=0` / `CODEMUX_NO_PROGRESS=1` turns it off.
@@ -200,6 +226,7 @@ codemux/
 ├── lib/
 │   ├── common.sh           # log, colors, die, detection, downloads, spinner,
 │   │                       #   component choice, token auth
+│   ├── progress-bar.sh     # the ASCII bar, shared with the sibling repos (§7.1)
 │   ├── state.sh            # state.tsv + run.tsv, lock, log, interruption detection
 │   ├── exec.sh             # crash-proof execution: detached spawn, wait,
 │   │                       #   atomic write, backup
@@ -217,8 +244,10 @@ codemux/
 │   ├── jsonc-instructions.py
 │   └── memory/             # MEMORY.md, AGENTS.md, opencode.jsonc templates
 ├── versions.env            # pinned versions, package lists, upstream repos
-├── tests/                  # smoke, launcher-memory, maintenance, resume,
-│                           #   release, adapter
+├── tools/
+│   └── sync-progress-bar.sh  # copy the bar into the siblings, or --check drift
+├── tests/                  # harness, smoke, launcher-memory, maintenance,
+│                           #   resume, release, adapter
 └── .github/workflows/ci.yml
 ```
 
@@ -226,6 +255,28 @@ codemux/
 release tarball → verify the sha256 → extract to `~/.cache/codemux/src/current`
 (atomic swap) → `exec bin/codemux install`. When no release exists it falls back
 to the `main` branch through `codeload` (no sha).
+
+### 7.1 Shared progress bar (one implementation, three repos)
+
+The same ASCII bar is printed by codemux, `opencode-termux` and
+`opencode-termux-v2`. Keeping three copies in sync by hand is how a fix ends up
+in one repo only, so the block lives in exactly one file:
+
+- **Source:** `lib/progress-bar.sh`, between the `progress-bar begin` /
+  `progress-bar end` markers. It is copied verbatim, so it may not depend on
+  anything outside itself (no colour variables, plain bash builtins only).
+- **API:** `progress_bar <percent> [width] [label]` prints `[####----]  50%`
+  with no trailing newline and no colour; `progress_step <cur> <total> <label>`
+  prints the numbered form. v2 adds `progress_step_line`, which appends the
+  newline its installer wants.
+- **Copies:** `opencode-termux/install.sh` and
+  `opencode-termux-v2/lib/common.sh`, wrapped in the markers
+  `# --- progress-bar begin (synced from codemux/lib/progress-bar.sh) ---`.
+- **Sync:** `bash tools/sync-progress-bar.sh` rewrites the copies;
+  `--check` prints a unified diff and exits 1 on drift. `tests/smoke.sh` runs
+  `--check` too, and the CI `sync` job checks out both siblings next to this repo
+  so the comparison is real.
+- **Rule:** edit the source block and run the sync script; never patch a copy.
 
 ---
 
@@ -584,8 +635,9 @@ Rules:
   to `codeload` for `main` (documented in the output as "no sha256").
 - No token is ever written by codemux; `gh` login is the user's own business.
   When a token *is* already available it is used only for GitHub API headers.
-- `set -Eeuo pipefail` in `bin/codemux`; CI runs `shellcheck -S warning`,
-  `bash -n`, `check --json` validation and `tests/smoke.sh` on every push.
+- `set -Eeuo pipefail` in `bin/codemux`; CI runs `shellcheck -S warning`
+  (including `tests/` and `tools/`), `bash -n`, `check --json` validation and all
+  six suites in two environments (mock Termux and plain runner) on every push.
 - No `rm -rf` on a path containing `$HOME`, except the internal
   `~/.cache/codemux/src` path.
 - Mode of new config files: `600` for state/log; downloads go through
@@ -674,7 +726,10 @@ Rules:
 | `MEMORY.md` > 24,000 bytes (hard plugin limit, has happened) | `memory_save` fails | `check`/`doctor` warn at 90% and the model trims; codemux never deletes memory |
 | `RECENT.md` grows | wasted context | the digest is limited to 8 sessions, each truncated to ~600 characters |
 | False update notice / local version newer | pointless download | compare semver; `update-check --json` shows the version source |
-| GitHub API limit (60/hour) | check fails | use the `releases/latest` redirect (no quota), API only as fallback |
+| GitHub API limit (60/hour) | check fails | use the `releases/latest` redirect (no quota), API only as fallback; the memory plugins load from `raw` (a 403 after ~12 installs an hour was observed) |
+| Download cut by a timeout (`curl` exit 28) | a partial payload looks complete | a `.part` is only accepted when the exit status is 0, otherwise it is discarded and the next fallback runs (§6B) |
+| One of the three copies of the progress bar drifts | a fix lands in one repo only | single block in `lib/progress-bar.sh`, `tools/sync-progress-bar.sh --check`, and a CI job that checks out both siblings (§7.1) |
+| A test assumption only holds on Termux | CI is red for weeks without anyone noticing | every suite runs twice in CI (`with-prefix` / `without-prefix`) plus `tests/harness.sh` (§20.7) |
 | An update is offered while an opencode session runs | disruptive | only offered from the menu/CLI, never while the TUI is active |
 
 ---
@@ -692,12 +747,16 @@ Rules:
 | M7 | component picker (↑/↓), upgrade limited to installed payloads, menu install confirmation | ✅ **0.7.3** (§6A, §12, S9/S10) |
 | M8 | update notice **inside** an opencode session (plugin reading the cache), `memory prune --dry-run`, optional `--lang id` | 🟡 notice ✅ **0.7.4** · prune & `--lang id` still planned |
 | M9 | `kuota` (daily quota estimate + menu warning) and open items in `RECENT.md` | ✅ **0.7.4** (§12C, §12A) |
+| M10 | percentage bar in the spinner and the install plan, shared bar block with the sibling repos (§6B, §7.1) | ✅ **0.7.5** |
+| M11 | two-layout CI matrix (mock Termux / plain runner) + `tests/harness.sh` + real drift check | ✅ **0.7.5** (§7.1, §20.7) |
 
 Release history: `0.6.4` update-cache fix · `0.6.5` `kuota` menu line · `0.6.6`
 early dependency install · `0.7.0` component choice · `0.7.1` progress spinner ·
 `0.7.2` token-authenticated GitHub downloads · `0.7.3` picker + installed-only
 upgrade + menu install flow · `0.7.4` in-session update notice, `kuota`, open
-items in `RECENT.md`, memory mechanism refresh on `upgrade`.
+items in `RECENT.md`, memory mechanism refresh on `upgrade` · `0.7.5` percentage
+bars (`codemux_content_length`, one shared `progress_bar`), memory plugins from
+`raw` instead of the rate-limited API, CI matrix + harness.
 
 ---
 
@@ -719,6 +778,9 @@ items in `RECENT.md`, memory mechanism refresh on `upgrade`.
 | D12 | Upgrade scope | **Only installed payloads** + apt + launcher; `--only` overrides |
 | D13 | Update notice placement | Both: one line in the startup menu **and** one line in the session context through the plugin (0.7.4) |
 | D14 | Quota source | Local databases (one assistant message = one request), 200/day default, `KUOTA_LIMIT` overrides — no server-side endpoint exists |
+| D15 | Where the progress bar lives | One block in `lib/progress-bar.sh`, copied into the two sibling repos by `tools/sync-progress-bar.sh` — not a submodule, not a package: the repos must stay installable standalone (0.7.5) |
+| D16 | How the total download size is found | `HEAD` with a `Range` fallback, last header block, 2xx only. A missing size means "no bar", never a guessed one (0.7.5) |
+| D17 | Memory plugin source | `raw.githubusercontent.com`, **not** `api.github.com/contents`: the API allows 60 anonymous requests/hour and five files per install drained it (0.7.5) |
 
 ---
 
@@ -822,7 +884,27 @@ the next `install` marks it `INTERRUPTED` and continues from that step.
 3. One-command emergency repair: `codemux repair` (dpkg configure, stale lock,
    missing shim, dead `RUNNING` rows).
 
-### 20.7 "Kill it midway" tests
+### 20.7 Test suites
+
+Every suite builds its own sandbox (`HOME`, `PREFIX`, `CODEMUX_HOME`) and fakes
+the network; none of them touches the system.
+
+| Suite | What it pins |
+|---|---|
+| `tests/harness.sh` | portability gate: no raw `$PREFIX` read under `set -u`, no hardcoded `/data/data/com.termux` path, portable shebangs; then runs `smoke.sh` in a mock Termux layout |
+| `tests/smoke.sh` | syntax, help, `check`, `check --json`, install plan for `--only v1/v2/both`, `codemux_bar`/`progress_bar`, `codemux_content_length` (200 vs 404), progress-bar drift |
+| `tests/resume.sh` | install killed midway, then resumed (below) |
+| `tests/adapter.sh` | V1/V2 adapters: download → run detached → verify → resume after `kill -9` |
+| `tests/launcher-memory.sh` | menu, memory merge, update notice, `kuota` line |
+| `tests/maintenance.sh` | `update-check`, `doctor`, `upgrade`, `uninstall` |
+| `tests/release.sh` | bootstrap tarball + `self-update` |
+
+Why the CI runs every suite **twice** (`with-prefix` / `without-prefix`, see
+`.github/workflows/ci.yml`): four test assumptions that only held on Termux
+reached `main` when CI knew a single layout — a raw `$PREFIX` read under
+`set -u`, a Termux-only shebang inside a file a test writes, and hardcoded
+`/data/data/com.termux` paths. `tests/harness.sh` is the cheap local gate for the
+same class of bug; CI is the one that also runs shellcheck.
 
 `tests/resume.sh` — sandbox with fake `apt`/`curl`, nothing touches the system:
 
