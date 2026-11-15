@@ -2,7 +2,7 @@
 # shellcheck disable=SC2034  # PROBE/NOTE/globals are shared across files
 # module: launcher — banner + menu in ~/.bashrc (codemux-marked block).
 # Bump when the template changes in a way users should receive on `install`.
-CODEMUX_LAUNCHER_BLOCK_VERSION="9"
+CODEMUX_LAUNCHER_BLOCK_VERSION="11"
 
 m_launcher_probe() {
   local rc="$HOME/.bashrc"

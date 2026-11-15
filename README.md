@@ -79,10 +79,23 @@ Every new Termux session opens a menu — nothing is hidden:
   6 Quit                   close Termux
 ```
 
-The tmux row runs the same free-pi inside a session named `pi`: choosing it again
-attaches to the running session, `Ctrl+b d` detaches (pi keeps running), and
-`tmux kill-session -t pi` ends it. Without tmux installed the row warns and starts
-plain `pi` instead. Inside tmux it never nests a second session.
+The tmux row turns the closest free-pi equivalent of OpenCode's session tabs
+into tmux: **one tab = one tmux window** inside a single session named `pi`.
+The move keys copy OpenCode V2 (`session.tab.next` / `session.tab.previous`):
+
+| key | action |
+| --- | --- |
+| `Alt+↓` · `Ctrl+Tab` | next tab |
+| `Alt+↑` · `Shift+Tab` | previous tab |
+| `Ctrl+b c` | new tab (a second free-pi, not a shell) |
+| `Ctrl+b d` | detach (every pi keeps running) |
+
+`Ctrl+Tab` needs a terminal that reports modified keys (extended keys); `Alt+↑/↓`
+works everywhere, which is why it is listed first. Those keys only act inside the
+`pi` session and are passed through everywhere else, so other tmux sessions keep
+their defaults. Choosing the row again attaches the running session;
+`tmux kill-session -t pi` ends all tabs. Without tmux the row warns and starts
+plain `pi` instead; inside tmux it never nests a second session.
 
 Choosing a component that is not installed asks `Install it now? [y/N]` first —
 one dialog shared by every row (V1, V2, Pi). Answer `n` and nothing changes.

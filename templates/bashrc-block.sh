@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 9
+# codemux:launcher version 11
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -327,6 +327,23 @@ _oc_confirm_install() {
   return 1
 }
 
+# free-pi has no session tabs of its own. OpenCode V2 shows open sessions as
+# tabs and switches them with ctrl+tab / alt+down (session.tab.next) and
+# ctrl+shift+tab / alt+up (session.tab.previous). The closest equivalent is one
+# tmux window per pi inside a single session named `pi`: the tmux status line
+# becomes the tab strip. The keys below only act inside that session and are
+# passed through everywhere else, so the rest of tmux keeps its defaults.
+# ctrl+shift+tab is not reachable here (tmux never decodes that chord from a
+# plain terminal), so shift+tab stands in for it; both are echoed as-is.
+_oc_pi_tmux_tabs() {
+  # A new window (C-b c) starts another pi instead of a bare shell.
+  tmux set-option -t pi default-command 'OPENCODE_NO_AUTO=1 bash -ic pi' 2>/dev/null || true
+  tmux bind-key -n C-Tab if-shell -F '#{==:#{session_name},pi}' next-window 'send-keys C-Tab' 2>/dev/null || true
+  tmux bind-key -n BTab if-shell -F '#{==:#{session_name},pi}' previous-window 'send-keys BTab' 2>/dev/null || true
+  tmux bind-key -n M-Down if-shell -F '#{==:#{session_name},pi}' next-window 'send-keys M-Down' 2>/dev/null || true
+  tmux bind-key -n M-Up if-shell -F '#{==:#{session_name},pi}' previous-window 'send-keys M-Up' 2>/dev/null || true
+}
+
 # Run a component. When its payload is missing, ask first, then install it.
 # Returns 0 when the component ran, 1 when it is still missing/cancelled.
 _oc_launch_component() {
@@ -378,10 +395,14 @@ _oc_launch_component() {
         printf '  %salready inside tmux — running pi in this session%s\n\n' "$DIM" "$R"
         pi
       elif command -v tmux >/dev/null 2>&1; then
-        # -A attaches to the existing `pi` session, otherwise creates it. The
-        # command string runs an interactive bash so the `pi` alias applies, and
-        # OPENCODE_NO_AUTO keeps that bash from drawing the codemux menu first.
-        tmux new-session -A -s pi "OPENCODE_NO_AUTO=1 bash -ic pi"
+        # One tab = one tmux window. The command string runs an interactive bash
+        # so the `pi` alias applies, and OPENCODE_NO_AUTO keeps that bash from
+        # drawing the codemux menu first. The session is created detached so the
+        # tab keys and default-command can be set before the first attach.
+        tmux has-session -t pi 2>/dev/null ||
+          tmux new-session -d -s pi "OPENCODE_NO_AUTO=1 bash -ic pi"
+        _oc_pi_tmux_tabs
+        tmux attach-session -t pi
       else
         printf '  %stmux is not installed — running pi without tmux%s\n' "$DIM" "$R"
         printf '  %sinstall it with: pkg install tmux%s\n\n' "$DIM" "$R"

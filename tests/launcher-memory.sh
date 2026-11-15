@@ -439,15 +439,45 @@ EOF
 cat >"$SB6/prefix/bin/tmux" <<EOF
 #!/bin/sh
 echo "\$*" >>"$SB6/tmux.calls"
+case "\$1" in
+  # Like a real server: the session is absent until the file exists.
+  has-session) [ -e "$SB6/tmux.session" ] ;;
+  *) exit 0 ;;
+esac
 EOF
 chmod +x "$SB6/prefix/bin/pi" "$SB6/prefix/bin/tmux"
 menu_launch "$SB6" pitmux
-if [ "$(cat "$SB6/tmux.calls" 2>/dev/null)" = 'new-session -A -s pi OPENCODE_NO_AUTO=1 bash -ic pi' ] &&
+if grep -qx 'new-session -d -s pi OPENCODE_NO_AUTO=1 bash -ic pi' "$SB6/tmux.calls" 2>/dev/null &&
+  [ "$(tail -n 1 "$SB6/tmux.calls")" = 'attach-session -t pi' ] &&
   [ ! -s "$SB6/pi.calls" ]; then
-  ok "menu: the tmux row opens (or attaches) a session named pi and runs pi inside it"
+  ok "menu: the tmux row creates the pi session detached, then attaches (pi runs in that window)"
 else
-  bad "menu: tmux row ran '$(cat "$SB6/tmux.calls" 2>/dev/null)' (pi calls: $(cat "$SB6/pi.calls" 2>/dev/null))"
+  bad "menu: tmux row ran '$(tr '\n' ';' <"$SB6/tmux.calls" 2>/dev/null)' (pi calls: $(cat "$SB6/pi.calls" 2>/dev/null))"
 fi
+# One tab = one tmux window, so the key moves must mirror OpenCode V2's
+# session tabs (alt+down/ctrl+tab next, alt+up/shift+tab previous) while
+# staying inert outside the `pi` session. tmux has no ctrl+shift+tab: it never
+# decodes that chord from a plain terminal, so shift+tab is the reverse key.
+if grep -qx 'set-option -t pi default-command OPENCODE_NO_AUTO=1 bash -ic pi' "$SB6/tmux.calls" &&
+  grep -qx 'bind-key -n C-Tab if-shell -F #{==:#{session_name},pi} next-window send-keys C-Tab' "$SB6/tmux.calls" &&
+  grep -qx 'bind-key -n BTab if-shell -F #{==:#{session_name},pi} previous-window send-keys BTab' "$SB6/tmux.calls" &&
+  grep -qx 'bind-key -n M-Down if-shell -F #{==:#{session_name},pi} next-window send-keys M-Down' "$SB6/tmux.calls" &&
+  grep -qx 'bind-key -n M-Up if-shell -F #{==:#{session_name},pi} previous-window send-keys M-Up' "$SB6/tmux.calls"; then
+  ok "menu: the tmux row maps alt+down/ctrl+tab and alt+up/shift+tab to next/previous tab (inside pi only)"
+else
+  bad "menu: tab keys are '$(grep 'bind-key' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';')' / default-command '$(grep 'set-option' "$SB6/tmux.calls" 2>/dev/null)'"
+fi
+: >"$SB6/tmux.calls"
+: >"$SB6/tmux.session"
+menu_launch "$SB6" pitmux
+if ! grep -q '^new-session' "$SB6/tmux.calls" &&
+  [ "$(tail -n 1 "$SB6/tmux.calls")" = 'attach-session -t pi' ] &&
+  [ "$(grep -c '^bind-key -n' "$SB6/tmux.calls")" -eq 4 ]; then
+  ok "menu: choosing the tmux row again only attaches the running session (tabs and keys re-applied)"
+else
+  bad "menu: second tmux run ran '$(tr '\n' ';' <"$SB6/tmux.calls" 2>/dev/null)'"
+fi
+rm -f "$SB6/tmux.session"
 : >"$SB6/tmux.calls"
 menu_launch "$SB6" pitmux "$SB6/tmux-1,1,1"
 if [ "$(cat "$SB6/pi.calls" 2>/dev/null)" = "pi" ] && [ ! -s "$SB6/tmux.calls" ]; then
