@@ -469,9 +469,15 @@ fi
 # back. It must give up and return instead.
 SB5D="$(new_sandbox eof)"
 mkdir -p "$SB5D/prefix/bin" "$SB5D/home"
+# The EOF path only happens when there is no terminal to re-open: _oc_read_key
+# does `exec 0</dev/tty`, so a run inside tmux or any real terminal blocks on a
+# key press forever. setsid drops the controlling terminal, which is what a
+# full-screen agent leaves behind.
+EOF_SETSID=()
+command -v setsid >/dev/null 2>&1 && EOF_SETSID=(setsid)
 out="$(env HOME="$SB5D/home" PREFIX="$SB5D/prefix" PATH="$SB5D/prefix/bin:$PATH" \
   CODEMUX_ROOT="$ROOT" CODEMUX_HOME="$SB5D/state" CODEMUX_ALLOW_NONANDROID=1 \
-  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
+  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" "${EOF_SETSID[@]}" bash -c '
     C1=""; C2=""; ACC=""; DIM=""; BOLD=""; HL=""; R=""
     _oc_cursor_show() { :; }
     _oc_cursor_hide() { :; }
