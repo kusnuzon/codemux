@@ -48,14 +48,14 @@ m_pi_probe() {
   if [ -z "$bin" ]; then
     PROBE=MISS
     if grep -qF "$alias_line" "$HOME/.bashrc" 2>/dev/null; then
-      NOTE="the pi alias exists but the pi command does not (npx cache was cleared)"
+      NOTE="the pi alias exists but the free-pi-cli command does not (npx cache was cleared)"
     else
       NOTE="pi (free-pi) is not installed yet"
     fi
     return
   fi
   if ! grep -qF "$alias_line" "$HOME/.bashrc" 2>/dev/null; then
-    PROBE=WARN; NOTE="pi is installed but the alias in ~/.bashrc is missing"
+    PROBE=WARN; NOTE="pi is installed but the alias in \$HOME/.bashrc is missing"
     return
   fi
   if [ -d "$CODEMUX_PI_DIR" ]; then
@@ -77,7 +77,7 @@ m_pi_apply() {
   # spread the damage and hide which change caused it. The launcher module
   # reports the broken file; this module stays out of the way.
   if ! bash -n "$rc" 2>/dev/null; then
-    APPLY_NOTE="~/.bashrc fails bash -n — the pi alias was not added"
+    APPLY_NOTE="\$HOME/.bashrc fails bash -n — the pi alias was not added"
     return 1
   fi
 
@@ -98,19 +98,19 @@ m_pi_apply() {
   have="$(grep -m 1 -F "alias pi=" "$rc" 2>/dev/null)"
   if [ -n "$have" ] && [ "$have" != "$want" ]; then
     if ! codemux_pi_repoint "$rc" "$want"; then
-      APPLY_NOTE="failed to rewrite the pi alias in ~/.bashrc"; return 1
+      APPLY_NOTE="failed to rewrite the pi alias in \$HOME/.bashrc"; return 1
     fi
     made+=("alias pi (repointed)")
   elif [ -z "$have" ]; then
     printf '\n# codemux:pi begin  (managed by codemux — free-pi launcher)\n%s\n# codemux:pi end\n' \
       "$want" >>"$rc" || {
-      APPLY_NOTE="failed to add the pi alias to ~/.bashrc"; return 1
+      APPLY_NOTE="failed to add the pi alias to \$HOME/.bashrc"; return 1
     }
     made+=("alias pi")
   fi
 
   if ! bash -n "$rc" 2>/dev/null; then
-    APPLY_NOTE="~/.bashrc fails bash -n after adding the pi alias"
+    APPLY_NOTE="\$HOME/.bashrc fails bash -n after adding the pi alias"
     return 1
   fi
 

@@ -29,8 +29,8 @@ suites=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    -j*) jobs="${1#-j}"; shift ;;
     -j) jobs="$2"; shift 2 ;;
+    -j*) jobs="${1#-j}"; shift ;;
     --serial) serial=1; shift ;;
     -k | --keep) keep=1; shift ;;
     -h | --help)

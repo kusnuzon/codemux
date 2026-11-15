@@ -241,9 +241,9 @@ else
   printf 'skip content-length (no network)\n'
 fi
 
-# 11. shellcheck when available
+# 11. shellcheck when available (the same file set as the lint job in ci.yml)
 if command -v shellcheck >/dev/null 2>&1; then
-  if shellcheck -S warning bin/codemux lib/*.sh lib/modules/*.sh; then
+  if shellcheck -S warning install.sh bin/codemux lib/*.sh lib/modules/*.sh tools/*.sh; then
     ok "shellcheck"
   else
     bad "shellcheck"
