@@ -44,6 +44,22 @@ else
   bad "check --json"
 fi
 
+# 5b. a registry entry without a probe must be reported, not silently OK
+#     (a typo or a deleted module used to show up as a healthy row).
+unk="$(bash -c '. "$1/lib/common.sh"; . "$1/lib/state.sh"; . "$1/lib/check.sh";
+CODEMUX_MODULES=(preflight bogus); codemux_cmd_check --json' _ "$ROOT" 2>/dev/null || true)"
+if printf '%s' "$unk" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+st = {m["module"]: m["status"] for m in d["modules"]}
+assert st["bogus"] == "FAIL", st
+assert d["summary"]["fail"] == 1, d["summary"]
+' 2>/dev/null; then
+  ok "check: unknown module reported as FAIL"
+else
+  bad "check: unknown module reported as OK"
+fi
+
 # 6. install --dry-run: default is V2 only, changes nothing
 # CODEMUX_HOME points at a scratch dir: the developer's ~/.config/codemux/components
 # (e.g. "pi") would otherwise decide the default and the row count.

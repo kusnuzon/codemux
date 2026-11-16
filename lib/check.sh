@@ -50,7 +50,15 @@ codemux_cmd_check() {
       PROBE=SKIP
       NOTE="not selected (components: $comps)"
     else
-      "m_${m}_probe" 2>/dev/null || true
+      if declare -F "m_${m}_probe" >/dev/null 2>&1; then
+        "m_${m}_probe" 2>/dev/null || true
+      elif declare -F "m_${m}_verify" >/dev/null 2>&1; then
+        "m_${m}_verify" 2>/dev/null || true
+      else
+        # A registry entry with no probe used to sit at the default OK, so a
+        # typo or a deleted module showed up as a healthy row.
+        PROBE=FAIL; NOTE="no probe function for '$m' (module or registry mismatch)"
+      fi
     fi
     label="$(codemux_label "$m")"
 
