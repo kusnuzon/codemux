@@ -65,16 +65,37 @@ else
   bad "block: no mouse/tab strip"
 fi
 # The strip is not a plain window list: every tab carries a ✕, the tab that is
-# waiting for an answer turns into "keep | close", and " + new tab " sits on
-# the right of the bar.
+# waiting for an answer turns into "keep | close", and a plain " + " button
+# follows the last tab.
 if grep -q ' ✕ ' <<<"$block" &&
   grep -q 'keep ' <<<"$block" &&
   grep -q 'close  ' <<<"$block" &&
   grep -q 'range=user|new' <<<"$block" &&
   grep -q '@closepending' <<<"$block"; then
-  ok "block: ✕ per tab, keep/close confirmation and + new tab"
+  ok "block: ✕ per tab, keep/close confirmation and a + button"
 else
   bad "block: tab strip incomplete"
+fi
+# The " + " button rides on the last tab (index = session_windows - 1) instead of
+# sitting at the right end of the bar, and the label is just "+ ": no words.
+fmt_line="$(grep '^set -g window-status-format ' <<<"$block")"
+cur_line="$(grep '^set -g window-status-current-format ' <<<"$block")"
+last_tab='#{e|-|:#{session_windows},1}'
+if grep -q "range=user|new" <<<"$fmt_line" &&
+  grep -q "range=user|new" <<<"$cur_line" &&
+  grep -qF "==:#{window_index},$last_tab" <<<"$fmt_line" &&
+  grep -qF "==:#{window_index},$last_tab" <<<"$cur_line" &&
+  ! grep -qi 'new tab' <<<"$block"; then
+  ok "block: + button follows the last tab (no label text)"
+else
+  bad "block: + button is not pinned to the last tab"
+fi
+# The right end of the bar stays empty: two "+" buttons on one bar would be
+# confusing and the right one never moves with the tabs.
+if grep -qx 'set -g status-right ""' <<<"$block"; then
+  ok "block: status-right is empty (+ lives on the last tab)"
+else
+  bad "block: status-right still carries a button"
 fi
 # Taps are resolved by status ranges, not by counting columns: tmux scrolls the
 # window list by itself, so x/20 points at the wrong tab once the tabs overflow.

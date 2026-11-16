@@ -682,7 +682,7 @@ set -g status-style "bg=#101010,fg=#c0c0c0"
 set -g status-left ""
 set -g automatic-rename off
 set -g window-status-format "…0:menu ✕ │…"      # 20 columns per tab
-set -g status-right "#[range=user|new] + new tab #[default]"
+set -g status-right ""                              # the + rides on the last tab
 bind-key -n MouseDown1Status "run-shell \"sh ~/.config/codemux/tabctl.sh tap '#{mouse_status_range}' …; exit 0\""
 # ... borders, message style
 # --- codemux:tmux end ---

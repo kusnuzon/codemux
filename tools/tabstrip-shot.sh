@@ -50,8 +50,9 @@ while [ "$i" -lt "$n" ]; do
 done
 # -p <tab> marks that tab as waiting for its close confirmation: the tab itself
 # turns into the keep/close buttons (the format from the managed block does it).
+# The right end of the bar is empty: the " + " button rides on the last tab, so
+# the format above already draws it and nothing is appended here.
 right="$(tmux -L codemuxshot show -gv status-right)"
-printf '%s' "$right" | grep -q ' + new tab ' || right=" + new tab "
 if [ -n "$pending" ]; then
   tmux -L codemuxshot set-option -t "$S" @closepending "$pending"
 else
