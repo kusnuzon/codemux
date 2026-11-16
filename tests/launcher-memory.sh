@@ -475,20 +475,17 @@ fi
 # run-shell can read #{mouse_x}.
 if grep -qx 'set-option -t pi status-right  + new tab ' "$SB6/tmux.calls" &&
   grep -qx 'set-option -t pi @tabstart 0' "$SB6/tmux.calls" &&
-  grep -qx 'set-option -t pi status 2' "$SB6/tmux.calls" &&
-  grep -q "^set-option -t pi status-format\[1\]" "$SB6/tmux.calls" &&
+  grep -qx 'set-option -t pi status on' "$SB6/tmux.calls" &&
+  grep -q '^set-option -t pi -u status-format' "$SB6/tmux.calls" &&
   grep -q '^bind-key -n MouseDown1Status run-shell -b .*x=#{mouse_x}' "$SB6/tmux.calls" &&
   grep -q 'codemux-tab-drag' "$SB6/tmux.calls" &&
   grep -q '@closepending' "$SB6/tmux.calls" &&
-  grep -q 'range=user|keep' "$SB6/tmux.calls" &&
-  grep -q 'range=user|close' "$SB6/tmux.calls" &&
-  grep -q 'mouse_status_range' "$SB6/tmux.calls" &&
   grep -q 'kill-window -t' "$SB6/tmux.calls" &&
   grep -q 'select-window -t' "$SB6/tmux.calls" &&
   grep -q '^bind-key -n MouseDrag1Status run-shell -b ' "$SB6/tmux.calls" &&
   grep -q 'new-window -t .*-n pi' "$SB6/tmux.calls" &&
   grep -q '^bind-key -n MouseDown1StatusRight run-shell -b .*new-window -t .*@tabstart' "$SB6/tmux.calls"; then
-  ok "menu: tap maps to its tab, 'x' asks on a second status line (user ranges), swipe scrolls, '+ new tab' opens and pages to the new tab"
+  ok "menu: tap maps to its tab, 'x' turns that tab into keep/close, swipe scrolls, '+ new tab' opens and pages to the new tab"
 else
   bad "menu: touch bindings are '$(grep -E 'status-right|MouseDown|MouseDrag|@tabstart' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';' | cut -c1-2000)"
 fi
@@ -502,15 +499,15 @@ if grep -q "MouseDown1Status \"run-shell -b '.*; exit 0'\"" "$TPL" &&
 else
   bad "menu: touch binding tails are '$(grep -E 'MouseDown1Status|MouseDown1StatusRight|MouseDrag1Status' "$TPL" | rev | cut -c1-40 | rev | tr '\n' ';')"
 fi
-# A session-level array set that leaves index 0 missing makes tmux draw an
-# EMPTY first status line: the whole tab strip disappears. Index 0 must be
-# filled from the current default before index 1 becomes the confirmation line.
-if grep -q "set-option -t pi 'status-format\[0\]'" "$TPL" &&
-  grep -q "set-option -t pi 'status-format\[1\]'" "$TPL" &&
-  grep -q "show -gv 'status-format\[0\]'" "$TPL"; then
-  ok "menu: the confirmation line cannot leave index 0 empty (a missing index 0 blanks the tab strip)"
+# A second status line cost the strip a row, and setting only its index left
+# index 0 empty, which made tmux draw an empty first line - every tab
+# disappeared. The block keeps one status line and no session status-format.
+if grep -q "set-option -t pi status on" "$TPL" &&
+  grep -q "set-option -t pi -u status-format" "$TPL" &&
+  ! grep -q "status-format\[1\]" "$TPL"; then
+  ok "menu: one status line only (no session status-format that could blank the strip)"
 else
-  bad "menu: status-format lines are '$(grep -c "status-format\[0\]" "$TPL") / $(grep -c "status-format\[1\]" "$TPL")'"
+  bad "menu: status-format handling is '$(grep -c 'status-format' "$TPL") line(s)'"
 fi
 # The swipe baseline is the press column, so a page turns once the finger has
 # travelled 20 columns in total - short motion events must add up instead of

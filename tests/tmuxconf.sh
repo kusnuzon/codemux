@@ -68,8 +68,8 @@ fi
 # title is short.
 # Fixed-width tabs: 20 columns each, so a tap can be mapped to a tab and its
 # own "x" ("+ new tab" sits on the right of the bar).
-if [ "$(grep -o 'p15:#{window_index}' <<<"$block" | wc -l)" -eq 4 ] &&
-  [ "$(grep -o '✕' <<<"$block" | wc -l)" -eq 4 ] &&
+if [ "$(grep -o 'p15:#{window_index}' <<<"$block" | wc -l)" -eq 2 ] &&
+  [ "$(grep -o '✕' <<<"$block" | wc -l)" -eq 2 ] &&
   grep -qx 'set -g status-left ""' <<<"$block"; then
   ok "block: fixed-width tabs with their own x and no status-left offset"
 else
@@ -77,9 +77,11 @@ else
 fi
 # No box glyphs: drawing ▏…▕ around every tab doubles the lines where two tabs
 # meet. A single separator in the last column of an inactive tab marks the edge
-# instead, and the active tab drops it (its background already marks it).
+# instead, and the active tab drops it (its background already marks it). The
+# pending tab draws the same keep/close buttons in both formats, so it has one
+# separator of its own on each line (2 + 1 = 3).
 if ! grep -q '▏\|▕' <<<"$block" &&
-  [ "$(grep -o '│' <<<"$block" | wc -l)" -eq 2 ]; then
+  [ "$(grep -o '│' <<<"$block" | wc -l)" -eq 3 ]; then
   ok "block: one separator per inactive tab, on its edge, none on the active tab"
 else
   bad "block: tab separators are wrong (doubled box or missing edge line)"
@@ -118,9 +120,11 @@ if grep -q 'set -g window-status-format "#{?#{&&:#{>=:#{window_index},#{@tabstar
   grep -q 'set -g window-status-current-format "#{?#{&&:' <<<"$block" &&
   grep -qx 'set -g @tabstart 0' <<<"$block" &&
   [ "$(grep -o 'e|+|:#{@tabstart},3' <<<"$block" | wc -l)" -eq 2 ] &&
-  [ "$(grep -o '=12:window_name' <<<"$block" | wc -l)" -eq 4 ] &&
-  [ "$(grep -o 'ff6b6b' <<<"$block" | wc -l)" -eq 3 ]; then
-  ok "block: one page of three tabs, names cut to their slot, red pending tab"
+  [ "$(grep -o '=12:window_name' <<<"$block" | wc -l)" -eq 2 ] &&
+  [ "$(grep -o 'keep    ' <<<"$block" | wc -l)" -eq 2 ] &&
+  [ "$(grep -o 'close   ' <<<"$block" | wc -l)" -eq 2 ] &&
+  [ "$(grep -o 'ff6b6b' <<<"$block" | wc -l)" -eq 2 ]; then
+  ok "block: one page of three tabs, names cut to their slot, a pending tab turns into keep/close"
 else
   bad "block: tab paging/conditional format missing"
 fi
