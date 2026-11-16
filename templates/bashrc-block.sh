@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 24
+# codemux:launcher version 25
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -354,6 +354,10 @@ _oc_pi_tmux_tabs() {
   # columns dragged (#{@tabstart}); the drag baseline is the press column, so
   # short motion events still add up. Only run-shell can read #{mouse_x}.
   tmux set-option -t pi status 2 2>/dev/null || true
+  # Setting index 1 alone leaves index 0 missing, and tmux then draws an EMPTY
+  # first status line - the whole tab strip vanishes. Fill index 0 with the
+  # current default, then make index 1 the (usually blank) confirmation line.
+  tmux set-option -t pi 'status-format[0]' "$(tmux show -gv 'status-format[0]')" 2>/dev/null || true
   tmux set-option -t pi 'status-format[1]' ' ' 2>/dev/null || true
   tmux set-option -t pi @tabstart 0 2>/dev/null || true
   tmux set-option -t pi status-right ' + new tab ' 2>/dev/null || true

@@ -502,6 +502,16 @@ if grep -q "MouseDown1Status \"run-shell -b '.*; exit 0'\"" "$TPL" &&
 else
   bad "menu: touch binding tails are '$(grep -E 'MouseDown1Status|MouseDown1StatusRight|MouseDrag1Status' "$TPL" | rev | cut -c1-40 | rev | tr '\n' ';')"
 fi
+# A session-level array set that leaves index 0 missing makes tmux draw an
+# EMPTY first status line: the whole tab strip disappears. Index 0 must be
+# filled from the current default before index 1 becomes the confirmation line.
+if grep -q "set-option -t pi 'status-format\[0\]'" "$TPL" &&
+  grep -q "set-option -t pi 'status-format\[1\]'" "$TPL" &&
+  grep -q "show -gv 'status-format\[0\]'" "$TPL"; then
+  ok "menu: the confirmation line cannot leave index 0 empty (a missing index 0 blanks the tab strip)"
+else
+  bad "menu: status-format lines are '$(grep -c "status-format\[0\]" "$TPL") / $(grep -c "status-format\[1\]" "$TPL")'"
+fi
 # The swipe baseline is the press column, so a page turns once the finger has
 # travelled 20 columns in total - short motion events must add up instead of
 # each one replacing the baseline (which is why the strip used to be stuck).
