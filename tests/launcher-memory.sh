@@ -643,6 +643,20 @@ case "$(cat "$SB5E/fail.out" 2>/dev/null)" in
     ok "menu log: the failure names the log on screen" ;;
   *) bad "menu log: the failure did not point at its log" ;;
 esac
+# The loop clears the screen on every answer, so the notice must live in the rows
+# (otherwise it is wiped before anybody reads it).
+notice="$(env HOME="$SB5E/home" PREFIX="$SB5E/prefix" TMPDIR="$BASE" bash -c '
+    C1=""; C2=""; ACC=""; DIM=""; BOLD=""; R=""
+    . "$1"
+    _CM_LASTLOG="/some/menu-1.log"
+    _cm_items
+    _cm_list
+  ' _ "$MENU" 2>/dev/null)"
+case "$notice" in
+  *"last launch failed"*"codemux logs --last"*)
+    ok "menu log: the rows carry the notice after a failure" ;;
+  *) bad "menu log: no notice in the rows → $(printf '%s' "$notice" | tr '\n' '|' | tail -c 90)" ;;
+esac
 cap_line="$(awk '/^_cm_launch\(\) \{/{f=1} f && /_cm_capture_start/{print NR; exit}' "$MENU")"
 fin_line="$(awk '/^_cm_launch\(\) \{/{f=1} f && /^  _cm_log_finish/{print NR; exit}' "$MENU")"
 fix_line="$(awk '/^_cm_launch\(\) \{/{f=1} f && /^  _cm_tty_fix$/{print NR; exit}' "$MENU")"

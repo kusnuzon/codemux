@@ -145,8 +145,12 @@ terminal mode is touched, and the text is still there after the pane is wiped.
 A clean launch deletes its detail file, the last 40 failures are kept, and a row
 whose binary is missing is logged too (`status: MISSING`).
 
-`CODEMUX_LOG_DIR` moves the directory (the tests use it). If a row fails, the
-menu prints the path on screen: `OpenCode V2 exited with 3 — log: …`.
+`CODEMUX_LOG_DIR` moves the directory (the tests use it). A failed row is
+reported twice: the rows keep one line until the next success
+(`! last launch failed — codemux logs --last`) and the component exits with
+`… exited with 3 — log: …`. The notice sits in the rows on purpose: the loop
+clears the screen on every answer, so a message printed outside them is wiped
+before it can be read.
 
 ## 🧠 Memory that survives sessions
 

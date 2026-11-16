@@ -11,7 +11,7 @@
 # Rows are answered by typing a number, never by a single key: a one-key reader
 # needs raw mode and spins on EOF when the terminal comes back raw.
 
-CM_MENU_VERSION="5"
+CM_MENU_VERSION="6"
 
 # Colours are empty when the output is not a terminal or NO_COLOR is set.
 _cm_colors() {
@@ -105,6 +105,10 @@ _cm_list() {
       "$BOLD" "$((i + 1))" "$R" "$BOLD" "$pad" "$R" "$DIM" "${_CM_DESCS[$i]}" "$R"
   done
   printf '  %s───────────────────────────────────────────%s\n' "$DIM" "$R"
+  if [ -n "${_CM_LASTLOG:-}" ]; then
+    printf '  %s!%s %slast launch failed — codemux logs --last%s\n' \
+      "$ACC" "$R" "$DIM" "$R"
+  fi
   printf '  %stype a number, then Enter%s   %sq quit%s   %sCtrl+b c new tab%s\n\n' \
     "$DIM" "$R" "$DIM" "$R" "$DIM" "$R"
 }
@@ -302,6 +306,9 @@ _cm_log_finish() { # <rc> <ok|failed|missing>
     if [ "$keep" -eq 0 ]; then
       rm -f "$_CM_LOG" 2>/dev/null || true
       _CM_LOG=""
+    else
+      # remembered by the menu rows, so the notice survives the redraw
+      _CM_LASTLOG="$_CM_LOG"
     fi
   fi
   [ -n "${_CM_RAW:-}" ] && rm -f "$_CM_RAW" 2>/dev/null

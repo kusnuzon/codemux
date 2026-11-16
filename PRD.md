@@ -690,6 +690,9 @@ a binary that vanished) left nothing on disk, so the cause had to be guessed.
   a tail read afterwards would be empty.
 - Rotation: `menu.log` at 64 KiB (`menu.log.1`), detail files capped at 40,
   `.raw.*` debris older than 2 h removed. `CODEMUX_LOG_DIR` overrides the dir.
+- The failure notice lives in the rows (`! last launch failed — codemux logs
+  --last`), not in a message after them: `_cm_menu_loop` clears the screen on
+  every answer, so anything printed outside the rows is wiped before it is read.
 - `codemux logs` prints the last launches and the newest failure; `--last`,
   `--all`, `--list`, `--dir` for the rest.
 
