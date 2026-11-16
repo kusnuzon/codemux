@@ -4,7 +4,7 @@
 # (~/.config/codemux/menu.sh). Bump when either file changes in a way users
 # should receive on `install`.
 CODEMUX_LAUNCHER_BLOCK_VERSION="36"
-CODEMUX_MENU_SCRIPT_VERSION="7"
+CODEMUX_MENU_SCRIPT_VERSION="9"
 
 codemux_menu_script() { printf '%s' "$HOME/.config/codemux/menu.sh"; }
 

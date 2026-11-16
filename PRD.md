@@ -686,9 +686,20 @@ a binary that vanished) left nothing on disk, so the cause had to be guessed.
   `logs/.raw.*`; no terminal mode is touched and the TUI is unaffected.
 - `_cm_log_finish` closes the pipe, waits (bounded, 8 × 0.1 s) for `cat` to flush
   on EOF — reading once right after `pipe-pane` lost the last lines — strips the
-  escape codes (`_cm_pane_tail`), and decides: exit code ≠ 0, status `missing`,
-  or an error pattern in the output keeps the detail file with the last 120
-  lines; anything else deletes it and leaves one line in `menu.log`.
+  escape codes (`_cm_pane_tail`), and decides:
+  - exit code ≠ 0, or status `missing` → **FAILED** / **MISSING**, detail file
+    kept, menu notice shown.
+  - exit code 0 whose pane matched the error pattern → **WARN**, detail file
+    kept for the audit but *no* notice: an agent pane is a conversation, so
+    words like "error" appear in healthy sessions (measured: a 32-minute
+    free-pi session with rc=0 was being reported as a failure).
+  - anything else → **OK**: detail file deleted, one line left in `menu.log`.
+- A launch whose tab is closed mid-run never reaches `_cm_log_finish`, so its
+  file still says `status:   running`. The pid is part of the file name, so
+  `_cm_log_reap` (called by `_cm_log_start`) rewrites such a record to
+  **INTERRUPTED** once that process is gone, instead of leaving it looking like
+  fresh evidence forever. `codemux logs` itself never counts `running`, `OK` or
+  `WARN` as a failure, and `--last` returns the same record the summary names.
 - Order matters: capture → log → `_cm_tty_fix`. The repair clears the screen, so
   a tail read afterwards would be empty.
 - Rotation: `menu.log` at 64 KiB (`menu.log.1`), detail files capped at 40,
@@ -696,8 +707,11 @@ a binary that vanished) left nothing on disk, so the cause had to be guessed.
 - The failure notice lives in the rows (`! last launch failed — codemux logs
   --last`), not in a message after them: `_cm_menu_loop` clears the screen on
   every answer, so anything printed outside the rows is wiped before it is read.
+  A rejected answer ("9") follows the same rule: it lands in `_CM_NOTICE` under
+  the rows, never in a bare `printf` that the next redraw erases.
 - `codemux logs` prints the last launches and the newest failure; `--last`,
-  `--all`, `--list`, `--dir` for the rest.
+  `--all`, `--list`, `--dir` for the rest. An unknown option fails with rc=2 and
+  a hint instead of printing a summary and exiting 0.
 
 ## 12E. Managed `~/.tmux.conf` block: dark theme and a tap-able tab strip
 

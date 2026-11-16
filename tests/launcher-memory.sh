@@ -758,6 +758,133 @@ else
   bad "logs command: XDG default '$xdg_out'"
 fi
 
+# 5e-2. An answer that is not a row number must stay readable. The loop clears
+# the screen before every answer, so a plain printf is wiped before it is seen:
+# the hint has to travel through _CM_NOTICE, which _cm_list prints below the
+# rows (verified on a real screen with tmux: a bare printf was invisible).
+SB5G="$(new_sandbox menu-hint)"
+mkdir -p "$SB5G/home" "$SB5G/logs"
+if awk '/^_cm_menu_loop\(\) \{/{f=1} f && /_CM_NOTICE="type a number/{print; exit}' \
+  "$MENU" | grep -q . &&
+  ! awk '/^_cm_menu_loop\(\) \{/{f=1} f && /printf .*type a number/{print; exit}' \
+    "$MENU" | grep -q .; then
+  ok "menu: a wrong answer is reported in the rows, not printed and wiped"
+else
+  bad "menu: the invalid-input hint is printed before the redraw (invisible on screen)"
+fi
+# ... and the row printer really shows it.
+hint_row="$(env HOME="$SB5G/home" PREFIX="$SB5G/prefix" TMPDIR="$BASE" bash -c '
+    C1=""; C2=""; ACC=""; DIM=""; BOLD=""; R=""
+    . "$1"
+    _CM_NOTICE="type a number from 1 to 5, or q"
+    _cm_items
+    _cm_list
+  ' _ "$MENU" 2>/dev/null)"
+case "$hint_row" in
+  *"type a number from 1 to 5, or q"*)
+    ok "menu: the hint is printed under the rows and survives the redraw" ;;
+  *) bad "menu: no hint under the rows → $(printf '%s' "$hint_row" | tr '\n' '|' | tail -c 90)" ;;
+esac
+
+# 5e-3. A clean exit whose pane happens to mention an error is a WARN, not a
+# failure: an agent pane is a conversation, so "error" appears in healthy runs
+# (measured: a 32-minute free-pi session, rc=0, was logged FAILED).
+SB5H="$(new_sandbox menu-warn)"
+mkdir -p "$SB5H/home" "$SB5H/logs"
+warn_out="$(env HOME="$SB5H/home" PREFIX="$SB5H/prefix" TMPDIR="$BASE" \
+  CODEMUX_LOG_DIR="$SB5H/logs" bash -c '
+    C1=""; C2=""; ACC=""; DIM=""; BOLD=""; R=""
+    . "$1"
+    _CM_ROW=pi; _CM_NAME="Free-pi (Pi)"
+    _cm_log_start pi "Free-pi (Pi)" /bin/true
+    printf "the model said: there was an error earlier, fixed now\n" >"$_CM_RAW"
+    _CM_PIPED=0; _CM_PIPE_OPEN=0
+    _cm_log_finish 0 failed
+    printf "lastlog=%s\n" "${_CM_LASTLOG:-none}"
+  ' _ "$MENU" 2>&1)"
+if grep -q 'pi .*rc=0 .* WARN ' "$SB5H/logs/menu.log" 2>/dev/null &&
+  ! grep -q 'FAILED' "$SB5H/logs/menu.log" 2>/dev/null; then
+  ok "menu log: a clean run is never FAILED just because its pane mentions an error"
+else
+  bad "menu log: warn path wrong → $(tr '\n' '|' <"$SB5H/logs/menu.log" 2>/dev/null | tail -c 90)"
+fi
+case "$warn_out" in
+  *lastlog=none*) ok "menu log: a WARN keeps its detail file but does not nag the menu" ;;
+  *) bad "menu log: a WARN nagged the menu → $warn_out" ;;
+esac
+# ... and that WARN record is not reported as the newest failure either.
+warn_sum="$(CODEMUX_LOG_DIR="$SB5H/logs" run_cm "$SB5H" logs 2>/dev/null)"
+case "$warn_sum" in
+  *"newest failed launch"*) bad "logs command: a WARN record was reported as a failure" ;;
+  *"no failed launch recorded"*) ok "logs command: a WARN record is not a failure" ;;
+  *) bad "logs command: warning summary is '$(printf '%s' "$warn_sum" | tr '\n' '|' | tail -c 90)'" ;;
+esac
+
+# 5e-4. A tab killed mid-launch never writes its finish record. That leftover
+# must be closed (INTERRUPTED) instead of looking like the newest failure
+# forever, and a record that still says "running" must never be reported.
+SB5I="$(new_sandbox menu-orphan)"
+mkdir -p "$SB5I/home" "$SB5I/logs"
+# 99999 is not a live pid here, so this record belongs to a killed tab.
+printf 'codemux menu launch\nstatus:   running\nstarted:  2020-01-01T00:00:00+0700\nrow:      pi\nname:     Free-pi (Pi)\n---\n' \
+  >"$SB5I/logs/menu-20200101-000000-99999-1.log"
+orphan_sum="$(CODEMUX_LOG_DIR="$SB5I/logs" run_cm "$SB5I" logs 2>/dev/null)"
+case "$orphan_sum" in
+  *"newest failed launch"*) bad "logs command: an unfinished (running) record was reported as a failure" ;;
+  *) ok "logs command: a record that is still running is not a failure" ;;
+esac
+env HOME="$SB5I/home" PREFIX="$SB5I/prefix" TMPDIR="$BASE" bash -c '
+    . "$1"
+    _cm_log_reap "$2"
+  ' _ "$MENU" "$SB5I/logs" >/dev/null 2>&1
+if grep -q 'status:   INTERRUPTED' "$SB5I/logs/menu-20200101-000000-99999-1.log" 2>/dev/null; then
+  ok "menu log: a log left behind by a killed tab is closed as INTERRUPTED"
+else
+  bad "menu log: the orphan record was not finalised → $(tr '\n' '|' <"$SB5I/logs/menu-20200101-000000-99999-1.log" 2>/dev/null | tail -c 90)"
+fi
+orphan_sum2="$(CODEMUX_LOG_DIR="$SB5I/logs" run_cm "$SB5I" logs 2>/dev/null)"
+case "$orphan_sum2" in
+  *"newest failed launch"*"menu-20200101-000000-99999-1.log"*)
+    ok "logs command: the interrupted launch is now visible in the audit" ;;
+  *) bad "logs command: the interrupted launch is missing → $(printf '%s' "$orphan_sum2" | tr '\n' '|' | tail -c 90)" ;;
+esac
+
+# 5e-6. A finished record keeps the header "running" from _cm_log_start and gets
+# its verdict appended later, so the verdict is the LAST status line. Reading the
+# first one hid every real failure behind "running" (found in this very run:
+# the summary said "no failed launch recorded" while 10 FAILED lines existed).
+SB5J="$(new_sandbox menu-verdict)"
+mkdir -p "$SB5J/home" "$SB5J/logs"
+printf 'codemux menu launch\nstatus:   running\nstarted:  2026-01-01T00:00:00+0700\nrow:      v1\nname:     OpenCode V1\n---\nrc:       3\nduration: 1s\nstatus:   FAILED\n' \
+  >"$SB5J/logs/menu-20260101-000000-4242-1.log"
+verdict_sum="$(CODEMUX_LOG_DIR="$SB5J/logs" run_cm "$SB5J" logs 2>/dev/null)"
+case "$verdict_sum" in
+  *"newest failed launch"*"menu-20260101-000000-4242-1.log"*)
+    ok "logs command: the final verdict wins over the \"running\" header" ;;
+  *) bad "logs command: a FAILED record was hidden behind its header → $(printf '%s' "$verdict_sum" | tr '\n' '|' | tail -c 90)" ;;
+esac
+# ... and the reap must never touch a record that already has a verdict.
+env HOME="$SB5J/home" PREFIX="$SB5J/prefix" TMPDIR="$BASE" bash -c '
+    . "$1"
+    _cm_log_reap "$2"
+  ' _ "$MENU" "$SB5J/logs" >/dev/null 2>&1
+if ! grep -q 'INTERRUPTED' "$SB5J/logs/menu-20260101-000000-4242-1.log" 2>/dev/null &&
+  grep -q 'status:   FAILED' "$SB5J/logs/menu-20260101-000000-4242-1.log" 2>/dev/null; then
+  ok "menu log: reap leaves a finished record alone"
+else
+  bad "menu log: reap rewrote a finished record → $(tr '\n' '|' <"$SB5J/logs/menu-20260101-000000-4242-1.log" | tail -c 90)"
+fi
+
+# 5e-5. An option the command does not know must fail loudly, not print a
+# summary and exit 0 (that hides a typo in a script or a wrapper).
+CODEMUX_LOG_DIR="$SB5E/logs" run_cm "$SB5E" logs --bogus >"$SB5E/bogus.out" 2>&1
+bogus_rc=$?
+if [ "$bogus_rc" -eq 2 ] && grep -q 'unknown option for logs' "$SB5E/bogus.out"; then
+  ok "logs command: an unknown option fails with rc=2 and a hint"
+else
+  bad "logs command: unknown option → rc=$bogus_rc, out='$(tr '\n' '|' <"$SB5E/bogus.out" | tail -c 90)'"
+fi
+
 # =============================================================================
 # 5c. the pi module never touches a broken .bashrc
 # =============================================================================

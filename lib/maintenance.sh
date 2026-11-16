@@ -42,6 +42,33 @@ codemux_logs_dir() { # → directory (CODEMUX_LOG_DIR wins, for the tests)
   printf '%s' "${CODEMUX_LOG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/codemux/logs}"
 }
 
+# Status word of one detail file (running, OK, WARN, FAILED, MISSING,
+# INTERRUPTED). The LAST status line wins: the header written before the agent
+# starts always says "running", the verdict is appended when the launch ends.
+codemux_log_status() { # <file> → word
+  sed -n 's/^status:[[:space:]]*//p' "$1" 2>/dev/null | tail -n 1
+}
+
+# Newest detail file that is a real problem. Two kinds of record must never be
+# reported as a failure: a launch whose tab was closed while the agent ran (no
+# finish record yet — the menu finalises it as INTERRUPTED), and a WARN, which
+# is a clean exit whose pane happened to mention an error (an agent pane is a
+# conversation, so that is normal).
+codemux_logs_newest_bad() { # <dir> → path, or empty when nothing failed
+  local f st
+  # shellcheck disable=SC2012  # our own names, one per line
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    st="$(codemux_log_status "$f")"
+    case "$st" in
+      running | OK | WARN) continue ;;
+    esac
+    printf '%s' "$f"
+    return 0
+  done < <(ls -1t "$1"/menu-*.log 2>/dev/null)
+  return 0
+}
+
 codemux_cmd_logs() {
   local dir mode f newest=""
   dir="$(codemux_logs_dir)"
@@ -62,10 +89,19 @@ codemux_cmd_logs() {
       return 0
       ;;
     --last | -L)
-      newest="$(ls -1t "$dir"/menu-*.log 2>/dev/null | head -n 1)"
+      # the same record the summary points at, so the hint never lies
+      newest="$(codemux_logs_newest_bad "$dir")"
+      [ -n "$newest" ] ||
+        newest="$(ls -1t "$dir"/menu-*.log 2>/dev/null | head -n 1)"
       [ -n "$newest" ] || { log_info "no failed launch recorded — nothing to audit"; return 0; }
       cat "$newest"
       return 0
+      ;;
+    '' | -h | --help) : ;;
+    *)
+      log_fail "unknown option for logs: $mode"
+      log_dim "use: codemux logs [--all | --last | --list | --dir]"
+      return 2
       ;;
   esac
   if [ ! -d "$dir" ]; then
@@ -79,7 +115,7 @@ codemux_cmd_logs() {
     log_dim "last launches (menu.log):"
     tail -n 10 "$dir/menu.log" | sed 's/^/  /'
   fi
-  newest="$(ls -1t "$dir"/menu-*.log 2>/dev/null | head -n 1)"
+  newest="$(codemux_logs_newest_bad "$dir")"
   printf '\n'
   if [ -n "$newest" ]; then
     log_warn "newest failed launch: $newest"

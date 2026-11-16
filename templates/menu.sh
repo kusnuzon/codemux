@@ -1,4 +1,4 @@
-# codemux menu (version 3) — the numbered menu every tmux tab shows.
+# codemux menu (CM_MENU_VERSION below) — the numbered menu every tmux tab shows.
 # shellcheck shell=bash
 # Installed to ~/.config/codemux/menu.sh by `codemux install`.
 #
@@ -11,7 +11,7 @@
 # Rows are answered by typing a number, never by a single key: a one-key reader
 # needs raw mode and spins on EOF when the terminal comes back raw.
 
-CM_MENU_VERSION="7"
+CM_MENU_VERSION="9"
 
 # Colours are empty when the output is not a terminal or NO_COLOR is set.
 _cm_colors() {
@@ -234,6 +234,8 @@ _cm_log_start() { # <row-key> <name> <command>
   CM_LOG_SEQ=$((CM_LOG_SEQ + 1))
   _CM_LOGID="$(date +%Y%m%d-%H%M%S 2>/dev/null || printf %s 0)-$$-$CM_LOG_SEQ"
   _CM_LOG="$d/menu-$_CM_LOGID.log"
+  # close records left behind by a tab that was killed mid-launch
+  _cm_log_reap "$d"
   _CM_RAW="$d/.raw.$$.$_CM_LOGID"
   : >"$_CM_RAW" 2>/dev/null || _CM_RAW=""
   if [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1; then
@@ -262,7 +264,7 @@ _cm_log_start() { # <row-key> <name> <command>
 # Close the launch: a failure keeps the detail file, a clean run deletes it and
 # leaves one line in menu.log. `missing` marks a row whose binary is not there.
 _cm_log_finish() { # <rc> <ok|failed|missing>
-  local rc="$1" status="$2" dur=0 tail_txt="" failed=0 keep=0 d
+  local rc="$1" status="$2" dur=0 tail_txt="" failed=0 warn=0 keep=0 d
   local piped="${_CM_PIPED:-0}" tries=0
   _cm_capture_stop
   [ -n "${_CM_T0:-}" ] && dur=$(( $(date +%s 2>/dev/null || printf 0) - _CM_T0 ))
@@ -277,14 +279,25 @@ _cm_log_finish() { # <rc> <ok|failed|missing>
   done
   [ "$rc" -ne 0 ] && failed=1
   [ "$status" = missing ] && failed=1
+  # An agent pane is a conversation, so the words in CM_LOG_ERRPAT show up in a
+  # healthy session all the time ("there was an error, we fixed it"). A clean
+  # exit is therefore never a failure: it is a WARN, kept for the audit because
+  # a degraded run (a broken ad card) also exits 0. Only a non-zero exit, or a
+  # row whose binary is absent, is a failure.
   if [ -n "$tail_txt" ]; then
-    printf '%s' "$tail_txt" | grep -qiE "$CM_LOG_ERRPAT" && failed=1
+    if printf '%s' "$tail_txt" | grep -qiE "$CM_LOG_ERRPAT"; then
+      [ "$failed" -eq 1 ] || warn=1
+    fi
   fi
   [ "$failed" -eq 1 ] && keep=1
-  # ok only when nothing went wrong; missing keeps its own label so a row whose
-  # binary is absent is not reported as a crash.
-  [ "$keep" -eq 0 ] && status=ok
-  [ "$status" = failed ] && [ "$rc" -eq 0 ] && [ "$keep" -eq 0 ] && status=ok
+  [ "$warn" -eq 1 ] && keep=1
+  if [ "$failed" -eq 1 ]; then
+    : # keep the label we were given: failed or missing
+  elif [ "$warn" -eq 1 ]; then
+    status=warn
+  else
+    status=ok
+  fi
   d="${_CM_LOGDIR:-}"
   if [ -n "$d" ] && [ -n "${_CM_LOG:-}" ]; then
     {
@@ -309,12 +322,43 @@ _cm_log_finish() { # <rc> <ok|failed|missing>
     if [ "$keep" -eq 0 ]; then
       rm -f "$_CM_LOG" 2>/dev/null || true
       _CM_LOG=""
-    else
-      # remembered by the menu rows, so the notice survives the redraw
+    elif [ "$failed" -eq 1 ]; then
+      # remembered by the menu rows, so the notice survives the redraw; a WARN
+      # stays on disk for `codemux logs` but never nags the menu.
       _CM_LASTLOG="$_CM_LOG"
     fi
   fi
   [ -n "${_CM_RAW:-}" ] && rm -f "$_CM_RAW" 2>/dev/null
+  return 0
+}
+
+# A tab closed while an agent runs (Ctrl+b x, a killed session, a terminal that
+# went away) never reaches _cm_log_finish, so its detail file would say
+# "running" forever and look like the newest failure. The pid is part of the
+# file name, so a record whose process is gone can be closed here.
+_cm_log_reap() { # <log-dir>
+  local d="$1" f pid st n
+  [ -d "$d" ] || return 0
+  for f in "$d"/menu-*.log; do
+    [ -f "$f" ] || continue
+    # Only a record that never got its verdict: the header says "running" and
+    # nothing was appended afterwards. A finished launch is left untouched.
+    n="$(grep -c '^status:' "$f" 2>/dev/null)" || n=0
+    [ "${n:-0}" -eq 1 ] || continue
+    st="$(sed -n 's/^status:[[:space:]]*//p' "$f" 2>/dev/null | tail -n 1)"
+    [ "$st" = running ] || continue
+    pid="$(basename "$f" .log)"
+    pid="${pid%-*}" # drop the sequence number
+    pid="${pid##*-}" # keep the pid
+    case "$pid" in
+      '' | *[!0-9]*) continue ;;
+    esac
+    # Our own launch, or another shell still working: leave it alone.
+    kill -0 "$pid" 2>/dev/null && continue
+    sed -i 's/^status:   running$/status:   INTERRUPTED/' "$f" 2>/dev/null || continue
+    printf 'rc:       ?\nduration: ?\nnote:     the tab closed before the agent exited\n' \
+      >>"$f" 2>/dev/null || true
+  done
   return 0
 }
 
@@ -465,7 +509,9 @@ _cm_menu_loop() {
       *[!0-9]*) choice=0 ;;
     esac
     if [ "$choice" -lt 1 ] || [ "$choice" -gt "$_CM_COUNT" ]; then
-      printf '  %stype a number from 1 to %d, or q%s\n' "$DIM" "$_CM_COUNT" "$R"
+      # Printed inside the rows, not before `continue`: the loop clears the
+      # screen on the next iteration, so a plain printf is wiped unseen.
+      _CM_NOTICE="type a number from 1 to $_CM_COUNT, or q"
       continue
     fi
     key="${_CM_KEYS[$((choice - 1))]}"
