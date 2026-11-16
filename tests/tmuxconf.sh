@@ -53,6 +53,16 @@ if grep -q 'extended-keys-format csi-u' <<<"$block" &&
 else
   bad "block: incomplete"
 fi
+# A finger tap is a left click, so the block must turn the mouse on and shape
+# the window list into a tab strip; otherwise tapping a tab does nothing.
+if grep -qx 'set -g mouse on' <<<"$block" &&
+  grep -q 'window-status-format' <<<"$block" &&
+  grep -q 'window-status-current-format' <<<"$block" &&
+  grep -q 'window-status-separator' <<<"$block"; then
+  ok "block: tap-to-switch tabs (mouse on + tab strip formats)"
+else
+  bad "block: no mouse/tab strip"
+fi
 [ "$(grep -c 'codemux:tmux begin' <<<"$block")" = "1" ] && ok "block: one begin marker" || bad "block: marker count"
 
 # =============================================================================

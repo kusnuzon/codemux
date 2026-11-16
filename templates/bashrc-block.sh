@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 11
+# codemux:launcher version 13
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -336,8 +336,19 @@ _oc_confirm_install() {
 # ctrl+shift+tab is not reachable here (tmux never decodes that chord from a
 # plain terminal), so shift+tab stands in for it; both are echoed as-is.
 _oc_pi_tmux_tabs() {
-  # A new window (C-b c) starts another pi instead of a bare shell.
+  # A new window (C-b c) starts another pi instead of a bare shell, and every
+  # tab keeps the name "pi" so the strip reads as one agent with several tabs.
   tmux set-option -t pi default-command 'OPENCODE_NO_AUTO=1 bash -ic pi' 2>/dev/null || true
+  tmux set-option -t pi automatic-rename off 2>/dev/null || true
+  tmux rename-window -t pi:0 pi 2>/dev/null || true
+  # "pi:" is the session, not the window that is also called pi: without the
+  # colon tmux would aim at that window and `new-window` would refuse the index.
+  tmux bind-key -T prefix c if-shell -F '#{==:#{session_name},pi}' 'new-window -t pi: -n pi' new-window 2>/dev/null || true
+  # Touch: a finger tap is a left click, so tmux's own MouseDown1Status already
+  # switches to the tapped tab. The "+ new tab" button on the right of the bar
+  # is the one mouse binding this adds, and only inside the pi session.
+  tmux set-option -t pi status-right ' + new tab ' 2>/dev/null || true
+  tmux bind-key -n MouseDown1StatusRight if-shell -F '#{==:#{session_name},pi}' 'new-window -t pi: -n pi' 'send-keys MouseDown1StatusRight' 2>/dev/null || true
   tmux bind-key -n C-Tab if-shell -F '#{==:#{session_name},pi}' next-window 'send-keys C-Tab' 2>/dev/null || true
   tmux bind-key -n BTab if-shell -F '#{==:#{session_name},pi}' previous-window 'send-keys BTab' 2>/dev/null || true
   tmux bind-key -n M-Down if-shell -F '#{==:#{session_name},pi}' next-window 'send-keys M-Down' 2>/dev/null || true

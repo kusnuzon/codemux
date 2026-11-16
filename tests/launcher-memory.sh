@@ -459,6 +459,8 @@ fi
 # staying inert outside the `pi` session. tmux has no ctrl+shift+tab: it never
 # decodes that chord from a plain terminal, so shift+tab is the reverse key.
 if grep -qx 'set-option -t pi default-command OPENCODE_NO_AUTO=1 bash -ic pi' "$SB6/tmux.calls" &&
+  grep -qx 'bind-key -T prefix c if-shell -F #{==:#{session_name},pi} new-window -t pi: -n pi new-window' "$SB6/tmux.calls" &&
+  grep -qx 'rename-window -t pi:0 pi' "$SB6/tmux.calls" &&
   grep -qx 'bind-key -n C-Tab if-shell -F #{==:#{session_name},pi} next-window send-keys C-Tab' "$SB6/tmux.calls" &&
   grep -qx 'bind-key -n BTab if-shell -F #{==:#{session_name},pi} previous-window send-keys BTab' "$SB6/tmux.calls" &&
   grep -qx 'bind-key -n M-Down if-shell -F #{==:#{session_name},pi} next-window send-keys M-Down' "$SB6/tmux.calls" &&
@@ -467,12 +469,20 @@ if grep -qx 'set-option -t pi default-command OPENCODE_NO_AUTO=1 bash -ic pi' "$
 else
   bad "menu: tab keys are '$(grep 'bind-key' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';')' / default-command '$(grep 'set-option' "$SB6/tmux.calls" 2>/dev/null)'"
 fi
+# Touch: tmux's own MouseDown1Status switches to the tapped tab, so all this
+# adds is the "+ new tab" button on the right and the wide target for it.
+if grep -qx "set-option -t pi status-right  + new tab " "$SB6/tmux.calls" &&
+  grep -qx 'bind-key -n MouseDown1StatusRight if-shell -F #{==:#{session_name},pi} new-window -t pi: -n pi send-keys MouseDown1StatusRight' "$SB6/tmux.calls"; then
+  ok "menu: the tmux row adds the tap-friendly '+ new tab' button (inside pi only)"
+else
+  bad "menu: touch bindings are '$(grep -E 'status-right|MouseDown' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';')'"
+fi
 : >"$SB6/tmux.calls"
 : >"$SB6/tmux.session"
 menu_launch "$SB6" pitmux
 if ! grep -q '^new-session' "$SB6/tmux.calls" &&
   [ "$(tail -n 1 "$SB6/tmux.calls")" = 'attach-session -t pi' ] &&
-  [ "$(grep -c '^bind-key -n' "$SB6/tmux.calls")" -eq 4 ]; then
+  [ "$(grep -c '^bind-key -n' "$SB6/tmux.calls")" -eq 5 ]; then
   ok "menu: choosing the tmux row again only attaches the running session (tabs and keys re-applied)"
 else
   bad "menu: second tmux run ran '$(tr '\n' ';' <"$SB6/tmux.calls" 2>/dev/null)'"
