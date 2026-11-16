@@ -76,6 +76,27 @@ if [ "$(grep -c 'p15:#{window_index}' <<<"$block")" = 2 ] &&
 else
   bad "block: tab box/border missing"
 fi
+# A comma inside a #{?...} branch ends that branch, so a style code there must
+# write its commas as #, — otherwise the tab renders the literal text
+# "bg=#2a2a2a" instead of a coloured tab.
+badstyle=""
+for line in $(grep -n 'set -g window-status.*-format "' <<<"$block" | cut -d: -f1); do
+  while IFS= read -r code; do
+    case "$code" in
+      *", "*) ;;
+    esac
+    # strip escaped commas, then look for any comma left inside the code
+    rest="${code//#,/}"
+    case "$rest" in
+      *","*) badstyle="$badstyle $code" ;;
+    esac
+  done <<<"$(sed -n "${line}p" <<<"$block" | grep -o '#\[[^]]*\]' | tr ' ' '\n' | grep -o '#\[[^]]*\]')"
+done
+if [ -z "$badstyle" ]; then
+  ok "block: style codes inside the tab conditionals escape their commas"
+else
+  bad "block: unescaped comma in style code:$badstyle"
+fi
 # One page of three 20-column tabs: @tabstart is what a swipe moves, and a tab
 # waiting for its close confirmation turns red.
 if grep -q 'set -g window-status-format "#{?#{&&:#{>=:#{window_index},#{@tabstart}}' <<<"$block" &&
