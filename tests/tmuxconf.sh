@@ -64,6 +64,13 @@ if grep -qx 'set -g mouse on' <<<"$block" &&
 else
   bad "block: no mouse/tab strip"
 fi
+# Fixed-width tabs keep the tap target big enough for a finger even when a
+# title is short.
+if [ "$(grep -c 'p18:#{window_index}' <<<"$block")" = 2 ]; then
+  ok "block: every tab is padded to one wide, finger-sized width"
+else
+  bad "block: tab width padding missing"
+fi
 [ "$(grep -c 'codemux:tmux begin' <<<"$block")" = "1" ] && ok "block: one begin marker" || bad "block: marker count"
 
 # =============================================================================

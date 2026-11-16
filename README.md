@@ -88,7 +88,18 @@ The move keys copy OpenCode V2 (`session.tab.next` / `session.tab.previous`):
 | `Alt+↓` · `Ctrl+Tab` | next tab |
 | `Alt+↑` · `Shift+Tab` | previous tab |
 | `Ctrl+b c` | new tab (a second free-pi, not a shell) |
+| `Ctrl+b ,` | rename the tab by hand (the automatic title then leaves it alone) |
 | `Ctrl+b d` | detach (every pi keeps running) |
+
+Tabs are also **tappable**: the strip sits on the top status bar, every tab is
+padded to one finger-sized width, and the right corner holds two buttons —
+` x ` closes the current tab (never the last one) and ` + new tab ` opens a new
+one. Tapping a tab name switches to it, so a phone needs no keyboard at all.
+
+A tab is a tmux window named after the prompt you sent (an extension renames it
+on the first message, without calling a model). The session is created with
+`pi --continue`, so opening the row resumes the last conversation instead of
+starting over; a fresh tab (`Ctrl+b c`, ` + new tab `) is a clean session.
 
 `Ctrl+Tab` needs a terminal that reports modified keys (extended keys); `Alt+↑/↓`
 works everywhere, which is why it is listed first. Those keys only act inside the
@@ -238,6 +249,7 @@ bash tests/adapter.sh     # V1/V2 adapters: download → run detached → verify
 bash tests/launcher-memory.sh  # menu, memory merge, update notice, quota line
 bash tests/maintenance.sh # update-check, doctor, upgrade, uninstall
 bash tests/release.sh     # bootstrap tarball + self-update
+bash tests/tmuxconf.sh    # managed ~/.tmux.conf block: fresh, stale, blocked
 ```
 
 Each suite waits for a state with `wait_state` (a 0.1 s poll) rather than a fixed

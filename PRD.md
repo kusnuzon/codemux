@@ -285,8 +285,9 @@ in one repo only, so the block lives in exactly one file:
 Execution order = the table below. Each module file is `lib/modules/<name>.sh`
 with `m_<name>_probe` / `m_<name>_apply` / `m_<name>_verify`. `probe` decides
 SKIP vs APPLY. `install` runs `deps → mirror → storage → toolset → glibc → v1 →
-v2 → launcher → dotfiles → memory → self` (10 rows for V1-only or V2-only, 11 for
-both); `preflight` runs before the rows and `update-cache` is checked by `check`
+v2 → pi → launcher → dotfiles → memory → self` (11–12 rows, depending on the
+chosen components); `check` reports **14** rows (`preflight` first, `updatecache`
+last). `preflight` runs before the rows and `update-cache` is checked by `check`
 only.
 
 | # | Module | Detection (probe) | Action when missing |
@@ -299,11 +300,12 @@ only.
 | 5 | `glibc` | `$PREFIX/glibc/lib/ld-linux-aarch64.so.1` + `libc.so.6` | `pkg install glibc-repo glibc termux-exec-glibc`, heal `libcurl` |
 | 6 | `v1` | payload at `$PREFIX/share/opencode/opencode.real` + launcher + `apt-mark hold` | run the `opencode-termux` installer (adapter) |
 | 7 | `v2` | payload at `$PREFIX/share/opencode-v2/opencode.real` + `lib/compat` shim + launcher | run the `opencode-termux-v2` installer (adapter) |
-| 8 | `launcher` | `~/.bashrc` has the `# codemux:launcher begin` block with `version 2` and passes `bash -n` | back up, insert the block from `templates/bashrc-block.sh` |
-| 9 | `dotfiles` | `~/.bash_profile`, `~/.hushlogin` | write/merge, never overwrite other content |
-| 10 | `memory` | plugins (`memory.js`, `session-title.js`, `update-notice.js`), tools (`bin/session-digest.py`, `bin/quota`), `MEMORY.md`/`RECENT.md`, `instructions` entries | install the mechanism + templates (merge `opencode.jsonc`, never overwrite), symlink `quota` into `$PREFIX/bin` |
-| 11 | `self` | `codemux` on `PATH` points at this checkout/install | symlink into `$PREFIX/bin` |
-| 12 | `update-cache` | `~/.config/codemux/update-cache.tsv` younger than 24 h | refresh the cache (`check` reports its age) |
+| 8 | `pi` | `alias pi` in the launcher block points at `free-pi-cli` (PATH, then the npx cache) | write/repoint the `# codemux:pi` block; never `npx -y …`, never the upstream `.bin/pi` |
+| 9 | `launcher` | `~/.bashrc` has the `# codemux:launcher begin` block with `version 16` and passes `bash -n` | back up, insert the block from `templates/bashrc-block.sh` (template and `CODEMUX_LAUNCHER_BLOCK_VERSION` must be bumped together) |
+| 10 | `dotfiles` | `~/.bash_profile`, `~/.hushlogin`, managed `~/.tmux.conf` block (§12E) | write/merge, never overwrite other content |
+| 11 | `memory` | plugins (`memory.js`, `session-title.js`, `update-notice.js`), tools (`bin/session-digest.py`, `bin/quota`), `MEMORY.md`/`RECENT.md`, `instructions` entries | install the mechanism + templates (merge `opencode.jsonc`, never overwrite), symlink `quota` into `$PREFIX/bin` |
+| 12 | `self` | `codemux` on `PATH` points at this checkout/install | symlink into `$PREFIX/bin` |
+| 13 | `update-cache` | `~/.config/codemux/update-cache.tsv` younger than 24 h | refresh the cache (`check` reports its age) |
 
 Per-module contract:
 
@@ -313,7 +315,7 @@ m_<name>_apply()   # performs the action, logs every command
 m_<name>_verify()  # defaults to probe; 0 = actually working
 ```
 
-Uniform output: `[3/10] storage      ready   Termux storage present`,
+Uniform output: `[3/12] storage      ready   Termux storage present`,
 `[6/10] v1           apply   (1.19.3 → 1.19.5)`, `… ok`, `… FAIL (reason)`.
 `check` uses `OK / WARN / MISS / FAIL / SKIP` with a summary line and exit codes
 (§6). `SKIP` means "not selected" (a component the user did not install), not a
@@ -626,6 +628,89 @@ Rules:
 
 ---
 
+## 12D. Two free-pi rows: plain `pi` and the tmux tab model
+
+`codemux` can install the **free-pi** agent next to OpenCode. `--only pi` adds the
+`pi` module (its own `check` row) and `alias pi` inside the launcher block; the
+OpenCode choice is not touched.
+
+```
+❯ 1 OpenCode V1            1.19.5 · stable · legacy DB
+  2 OpenCode V2            2.3.0 · new · separate DB
+  3 Free-pi (Pi)           0.6.22 · free-pi agent
+  4 Free-pi (Pi) · tmux    0.6.22 · inside tmux
+  5 Shell only             no agent
+  6 Quit                   close Termux
+```
+
+Rules:
+
+- The alias points at **`free-pi-cli`** — never `npx -y free-pi-cli@latest`
+  (slow, triggers an update on every start) and never the upstream `.bin/pi`
+  (that agent has no free provider and answers "No API key found").
+  `m_pi_apply` rewrites the `# codemux:pi begin/end` block when the alias drifts.
+- Row 3 launches plain `pi`. Row 4 wraps it in tmux: **one tab = one tmux window**
+  inside a single session named `pi`, which is the closest free-pi equivalent of
+  OpenCode V2's session tabs (pi itself has no tabs inside the TUI).
+- A missing session is created with
+  `tmux new-session -d -s pi "OPENCODE_NO_AUTO=1 bash -ic 'pi --continue || pi'"`,
+  so the row resumes the last conversation instead of starting over. An existing
+  session is attached (`-A`). Inside tmux the row runs `pi` in the current
+  window; without tmux it warns and starts plain `pi`.
+- `default-command` is set per session, so `Ctrl+b c` opens another `pi`, not a
+  shell. Four root bindings (`C-Tab`, `M-Down` = next; `BTab`, `M-Up` = previous)
+  are guarded by `session_name == pi` and send the key back everywhere else, so
+  other tmux sessions keep their defaults. `C-S-Tab` is deliberately unused:
+  tmux never decodes `\033[9;6u` into it, while `Shift+Tab` (`\033[Z`) works.
+- The tab strip lives on the top status bar (`status-position top`, `mouse on`,
+  `window-status-separator ""`, fixed-width tab formats). The right corner holds
+  ` x  + new tab `, dispatched by one `MouseDown1StatusRight` binding that runs
+  `run-shell -b`: `if-shell -F` sees no `#{mouse_x}` before the click arrives, so
+  the offset has to be computed at run time (`o = mouse_x - (client_width -
+  len(status-right))`; `o <= 3` closes the current window unless it is the last
+  one, anything else opens a new tab). Tapping a tab name uses tmux's own
+  `MouseDown1Status`.
+- Tab titles come from the user, not from tmux: the pi extension
+  `tmux-tab-title.ts` renames the window to the first prompt (whitespace
+  flattened, cut at a word boundary, `TAB_TITLE_MAX`, default 14 characters). It
+  never calls a model, does nothing outside tmux, and stops touching a tab that
+  was renamed by hand (`Ctrl+b ,`).
+- Launcher block version: **16**. The number is written twice — the second line of
+  `templates/bashrc-block.sh` and `CODEMUX_LAUNCHER_BLOCK_VERSION` in
+  `lib/modules/launcher.sh` — and an assertion in the test suite guards the pair;
+  a half-bump makes `codemux check` report a stale block.
+
+## 12E. Managed `~/.tmux.conf` block
+
+Two problems share one fix: tmux 3.8 ships a green status bar that fights a dark
+terminal, and the pi TUI needs extended keys. The `dotfiles` module writes a
+single marked region into `~/.tmux.conf`:
+
+```tmux
+# --- codemux:tmux begin (managed; edits inside this block are overwritten) ---
+set -g extended-keys on
+set -g extended-keys-format csi-u
+set -g status-style "bg=#101010,fg=#c0c0c0"
+...
+# --- codemux:tmux end ---
+```
+
+Rules:
+
+- Only that region is replaced; every line outside the markers stays as it is and
+  the previous file is copied to `~/.tmux.conf.bak-tmuxconf-<timestamp>` first.
+- Idempotent and pure bash (no `awk`/`sed`): `tmuxconf_state` reports
+  `ok|stale|missing`, `tmuxconf_install` writes only when it is not `ok`, so a
+  second `codemux install` changes nothing.
+- Applying needs no restart: `tmux source-file ~/.tmux.conf` updates every running
+  session (global options).
+- Source of truth is `lib/tmux-config.sh`; `tools/sync-tmux-config.sh` copies the
+  block into `opencode-termux/install.sh` and `opencode-termux-v2/lib/common.sh`,
+  and `--check` (also run by CI and the smoke suite) reports drift. The same
+  arrangement as the ASCII progress bar: edit the source block, never a copy.
+
+---
+
 ## 13. Security & reliability
 
 - Every download is `sha256`-verified (release tarball, self-update; payload
@@ -637,7 +722,7 @@ Rules:
   When a token *is* already available it is used only for GitHub API headers.
 - `set -Eeuo pipefail` in `bin/codemux`; CI runs `shellcheck -S warning`
   (including `tests/` and `tools/`), `bash -n`, `check --json` validation and all
-  six suites in two environments (mock Termux and plain runner) on every push.
+  seven suites in two environments (mock Termux and plain runner) on every push.
 - No `rm -rf` on a path containing `$HOME`, except the internal
   `~/.cache/codemux/src` path.
 - Mode of new config files: `600` for state/log; downloads go through
@@ -897,9 +982,10 @@ the network; none of them touches the system.
 | `tests/smoke.sh` | syntax, help, `check`, `check --json`, install plan for `--only v1/v2/both`, `codemux_bar`/`progress_bar`, `codemux_content_length` (200 vs 404), progress-bar drift |
 | `tests/resume.sh` | install killed midway, then resumed (below) |
 | `tests/adapter.sh` | V1/V2 adapters: download → run detached → verify → resume after `kill -9` |
-| `tests/launcher-memory.sh` | menu, memory merge, update notice, `quota` line |
+| `tests/launcher-memory.sh` | menu, memory merge, update notice, `quota` line, pi/tmux rows |
 | `tests/maintenance.sh` | `update-check`, `doctor`, `upgrade`, `uninstall` |
 | `tests/release.sh` | bootstrap tarball + `self-update` |
+| `tests/tmuxconf.sh` | managed `~/.tmux.conf` block: fresh write, stale block replaced, user settings outside the markers kept, shared copies in the two `opencode-termux*` repos |
 
 Why the CI runs every suite **twice** (`with-prefix` / `without-prefix`, see
 `.github/workflows/ci.yml`): four test assumptions that only held on Termux

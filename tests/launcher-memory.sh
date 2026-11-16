@@ -532,6 +532,11 @@ else
   bad "menu: version hides free-pi ($(tr '\n' '|' <<<"$version_out"))"
 fi
 rm -f "$SB5/prefix/bin/pi"
+if grep -q "_oc_cmd_row 'Ctrl+b ,'" "$TPL" && grep -q "'new tab in the pi session'" "$TPL"; then
+  ok "menu: the Shell only guide shows the tab keys (new tab, rename tab)"
+else
+  bad "menu: the guide hides the tab keys"
+fi
 if ! grep -q 'run free-pi directly' <<<"$(menu_guide "$SB5")"; then
   ok "menu: no pi on PATH → no pi line in the guide"
 else

@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 15
+# codemux:launcher version 16
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -582,6 +582,10 @@ _oc_guide() {
     _oc_cmd_row pi          'run free-pi directly'
   command -v pi >/dev/null 2>&1 && command -v tmux >/dev/null 2>&1 &&
     _oc_cmd_row 'tmux new -A -s pi' 'free-pi in tmux (Ctrl+b d detaches)'
+  command -v tmux >/dev/null 2>&1 &&
+    _oc_cmd_row 'Ctrl+b c' 'new tab in the pi session'
+  command -v tmux >/dev/null 2>&1 &&
+    _oc_cmd_row 'Ctrl+b ,' 'rename the tab (yours is never overwritten)'
   [ -f "$PREFIX/share/opencode-v2/doctor.sh" ] &&
     _oc_cmd_row doctor      'health check for the OpenCode V2 install'
   _oc_cmd_row version       'show the installed agent versions'
