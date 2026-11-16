@@ -475,28 +475,42 @@ fi
 # run-shell can read #{mouse_x}.
 if grep -qx 'set-option -t pi status-right  + new tab ' "$SB6/tmux.calls" &&
   grep -qx 'set-option -t pi @tabstart 0' "$SB6/tmux.calls" &&
+  grep -qx 'set-option -t pi status 2' "$SB6/tmux.calls" &&
+  grep -q "^set-option -t pi status-format\[1\]" "$SB6/tmux.calls" &&
   grep -q '^bind-key -n MouseDown1Status run-shell -b .*x=#{mouse_x}' "$SB6/tmux.calls" &&
   grep -q 'codemux-tab-drag' "$SB6/tmux.calls" &&
   grep -q '@closepending' "$SB6/tmux.calls" &&
-  grep -q 'keep    close' "$SB6/tmux.calls" &&
+  grep -q 'range=user|keep' "$SB6/tmux.calls" &&
+  grep -q 'range=user|close' "$SB6/tmux.calls" &&
+  grep -q 'mouse_status_range' "$SB6/tmux.calls" &&
   grep -q 'kill-window -t' "$SB6/tmux.calls" &&
   grep -q 'select-window -t' "$SB6/tmux.calls" &&
   grep -q '^bind-key -n MouseDrag1Status run-shell -b ' "$SB6/tmux.calls" &&
   grep -q 'new-window -t .*-n pi' "$SB6/tmux.calls" &&
   grep -q '^bind-key -n MouseDown1StatusRight run-shell -b .*new-window -t .*@tabstart' "$SB6/tmux.calls"; then
-  ok "menu: tap maps to its tab, the tab's own 'x' asks first, swipe scrolls, '+ new tab' opens and pages to the new tab"
+  ok "menu: tap maps to its tab, 'x' asks on a second status line (user ranges), swipe scrolls, '+ new tab' opens and pages to the new tab"
 else
   bad "menu: touch bindings are '$(grep -E 'status-right|MouseDown|MouseDrag|@tabstart' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';' | cut -c1-2000)"
 fi
 # A run-shell command that ends with a failing test makes tmux print the whole
 # command in the message line ("'%s' returned %d"), which looked like a broken
 # tab. Every touch binding must end with an explicit `exit 0`.
-if grep -q "MouseDown1Status \"run-shell -b '.*; fi; exit 0'\"" "$TPL" &&
-  grep -q "MouseDown1StatusRight \"run-shell -b '.*; fi; exit 0'\"" "$TPL" &&
+if grep -q "MouseDown1Status \"run-shell -b '.*; exit 0'\"" "$TPL" &&
+  grep -q "MouseDown1StatusRight \"run-shell -b '.*; exit 0'\"" "$TPL" &&
   grep -q "MouseDrag1Status \"run-shell -b '.*; exit 0'\"" "$TPL"; then
   ok "menu: touch bindings end with exit 0 (a failing tail would print the script in tmux's message line)"
 else
   bad "menu: touch binding tails are '$(grep -E 'MouseDown1Status|MouseDown1StatusRight|MouseDrag1Status' "$TPL" | rev | cut -c1-40 | rev | tr '\n' ';')"
+fi
+# The swipe baseline is the press column, so a page turns once the finger has
+# travelled 20 columns in total - short motion events must add up instead of
+# each one replacing the baseline (which is why the strip used to be stuck).
+if grep -qF 'h=\$(( (x - d) / 20 ))' "$TPL" &&
+  grep -q 'h \* 20' "$TPL" &&
+  ! grep -q 'd - x' "$TPL"; then
+  ok "menu: swipe pages by accumulated distance (per-event baseline kept, not overwritten)"
+else
+  bad "menu: swipe maths is '$(grep -o 'h=\$(( (x - d) / 20 ))' "$TPL" | head -1)'"
 fi
 rm -f "$SB6/tmux.session"
 : >"$SB6/tmux.calls"

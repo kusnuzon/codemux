@@ -49,12 +49,18 @@ while [ "$i" -lt "$n" ]; do
   i=$((i + 1))
 done
 tmux -L codemuxshot set-option -t "$S" @tabstart "$start"
+# The close confirmation lives on the SECOND status line, right under the tab
+# that was tapped: that line carries user ranges (keep/close) so a click on it
+# is delivered at all. -p <tab> puts it under tab <tab> of the current page.
+right=" + new tab "
+line2=""
 if [ -n "$pending" ]; then
   tmux -L codemuxshot set-option -t "$S" @closepending "$pending"
-  right="  keep    close  "
+  pad=$(((pending - start) * 20))
+  [ "$pad" -lt 0 ] && pad=0
+  line2="$(printf '%*s' "$pad" '')#[fg=#c0c0c0]  keep  #[fg=#5f6368]│#[fg=#ff6b6b#,bold]  close  "
 else
   tmux -L codemuxshot set-option -t "$S" -u @closepending 2>/dev/null
-  right=" + new tab "
 fi
 tmux -L codemuxshot select-window -t "$S:$active" >/dev/null 2>&1
 
@@ -73,9 +79,9 @@ while [ "$idx" -lt "$n" ]; do
   idx=$((idx + 1))
 done
 
-python3 - "$WORK" "$right" "$out" <<'PY' || exit 1
+python3 - "$WORK" "$right" "$out" "$line2" <<'PY' || exit 1
 import html, re, sys, pathlib
-work, right, out = sys.argv[1], sys.argv[2], sys.argv[3]
+work, right, out, line2 = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 tabs = pathlib.Path(work, "tabs.txt").read_text(encoding="utf-8").split("\n")
 tabs = [t for t in tabs if t != ""]
 style_re = re.compile(r"#\[([^]]*)\]")
@@ -114,6 +120,8 @@ def spans(text, base_fg="#8a8f98", base_bg="#101010"):
     return "".join(out)
 
 bar = "".join(spans(t) for t in tabs) + spans(right, base_fg="#c0c0c0")
+bar2 = spans(line2, base_fg="#8a8f98") if line2 else ""
+bar2_html = f'\n  <div class=bar>{bar2}</div>' if bar2 else ""
 pane = "\n".join(
     ["  ⚠ extended-keys is on · mouse is on", ""] +
     [f"  {line}" for line in [
@@ -134,7 +142,7 @@ doc = f"""<!doctype html><meta charset=utf-8>
   .hint {{ color:#5f6368; font-size:12px; padding:4px 6px; }}
 </style>
 <div class=term>
-  <div class=bar>{bar}</div>
+  <div class=bar>{bar}</div>{bar2_html}
   <div class=pane>{html.escape(pane)}</div>
   <div class=hint>tabstrip-shot · tmux {html.escape(str(len(tabs)))} tab, start={html.escape(sys.argv[1])}</div>
 </div>
