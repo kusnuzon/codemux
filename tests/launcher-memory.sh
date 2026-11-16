@@ -5,6 +5,9 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 1
+# The wrapper version lives in lib/modules/memory.sh: derive it, so bumping the
+# wrapper only has to happen in one place.
+MEM_VER="$(sed -n 's/^CODEMUX_MEMORY_WRAPPER_VERSION="\(.*\)"$/\1/p' "$ROOT/lib/modules/memory.sh")"
 cd "$ROOT" || exit 1
 
 BASE="${TMPDIR:-/tmp}"
@@ -114,11 +117,11 @@ if grep -q '_oc_refresh_digest()' "$rc_file"; then ok "fresh: digest wrapper pre
 # failed one: a clean /exit can leave raw termios, and the shell then looks
 # frozen — keys arrive, nothing echoes (V1 → "Shell only" froze Termux). Gating
 # the repair on a non-zero exit code is exactly what failed.
-if grep -q 'codemux:memory version 3' "$rc_file" &&
+if grep -q "codemux:memory version $MEM_VER" "$rc_file" &&
   [ "$(grep -c 'codemux:memory begin' "$rc_file")" -eq 1 ]; then
-  ok "fresh: wrapper is version 3 and written exactly once"
+  ok "fresh: wrapper is version $MEM_VER and written exactly once"
 else
-  bad "fresh: wrapper block is missing, duplicated or still version 1"
+  bad "fresh: wrapper block is missing, duplicated or not version $MEM_VER"
 fi
 if grep -q '\[ "\$rc" -ne 0 \] && _oc_tty_repair' "$rc_file"; then
   bad "fresh: terminal repair is still gated on a failed exit code"
@@ -230,7 +233,7 @@ if [ "$(grep -c '^# --- refresh the session summary' "$legacy_rc")" -eq 0 ]; the
 else
   bad "legacy: the old markerless wrapper survived (two definitions)"
 fi
-if [ "$(grep -c 'codemux:memory version 3' "$legacy_rc")" -eq 1 ] &&
+if [ "$(grep -c "codemux:memory version $MEM_VER" "$legacy_rc")" -eq 1 ] &&
   bash -n "$legacy_rc" 2>/dev/null; then
   ok "legacy: exactly one current wrapper remains and .bashrc is valid"
 else
@@ -371,14 +374,26 @@ fi
 # the terminal has to be told to redraw, in both the menu helper and the
 # ~/.bashrc wrapper.
 tty_modes_missing=""
-for mode in '\033[?1049l' '\033[?1000l' '\033[?1002l' '\033[?1003l' '\033[?1006l' \
-  '\033[?1004l' '\033[?2004l' '\033>' '\033[!p' '\033[2J'; do
+for mode in '\007' '\033\\' '\033[?2026l' '\033[?2031l' '\033[?1049l' '\033[?1000l' '\033[?1002l' '\033[?1003l' \
+  '\033[?1006l' '\033[?1015l' '\033[?1016l' '\033[?1004l' '\033[?2004l' '\033[?1l' '\033>' '\033[!p' \
+  '\033[r' '\033[?6l' '\033[?7h' '\033(B' '\033[2J'; do
   grep -qF "$mode" "$TPL" || tty_modes_missing="$tty_modes_missing $mode"
 done
 if [ -z "$tty_modes_missing" ]; then
   ok "menu: every TUI terminal mode is released and the screen is redrawn"
 else
   bad "menu: terminal reset is incomplete, missing:$tty_modes_missing"
+fi
+# The same reset has to live in the ~/.bashrc wrapper: it runs around every
+# opencode call, where the menu helper is never reached.
+wrapper_modes_missing=""
+for mode in '\007' '\033\\' '\033[?2026l' '\033[?1049l' '\033[r' '\033[?6l' '\033[?7h' '\033(B' '\033[!p'; do
+  grep -qF "$mode" "$ROOT/lib/modules/memory.sh" || wrapper_modes_missing="$wrapper_modes_missing $mode"
+done
+if [ -z "$wrapper_modes_missing" ]; then
+  ok "menu: the ~/.bashrc wrapper releases the same terminal modes"
+else
+  bad "menu: wrapper terminal reset is incomplete, missing:$wrapper_modes_missing"
 fi
 if grep -qF '\033[%dA' "$TPL" && ! grep -qF '\033[7A' "$TPL" && ! grep -qF '\033[8A' "$TPL"; then
   ok "menu: redraws only the option rows (dynamic offset)"

@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 28
+# codemux:launcher version 29
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -301,14 +301,21 @@ _oc_tty_fix() {
   if [ -r /dev/tty ]; then
     command -v stty >/dev/null 2>&1 && stty sane </dev/tty 2>/dev/null
   fi
-  # Leave every mode a full-screen TUI can switch on. When one is left behind the
-  # SHELL IS ALIVE but the screen looks frozen: Termux keeps showing the TUI's
-  # last frame (alternate screen) while keys go to the hidden main screen.
-  #   ?1049l  back to the main screen      ?1000/1002/1003/1006l  mouse off
-  #   ?1004l  focus events off             ?2004l  bracketed paste off
-  #   ESC >   numeric keypad                ESC[!p  soft reset (DECSTR)
+  # Leave every mode a full-screen TUI can switch on, and first break out of a
+  # half-written control string: a TUI that is killed in the middle of an OSC or
+  # DCS sequence leaves the emulator swallowing everything until a terminator,
+  # so the screen keeps the last frame while the shell below keeps working.
+  #   BEL + ST  end a dangling OSC / DCS / APC string
+  #   ?2026l    synchronized output off (an open frame is never painted)
+  #   ?2031l    colour-scheme notifications off
+  #   ?1049l    back to the main screen     ?1000/1002/1003/1006/1015/1016l  mouse off
+  #   ?1004l    focus events off           ?2004l  bracketed paste off
+  #   ?1l       normal cursor keys         ESC >   numeric keypad
+  #   ESC[r     full scroll region          ?6l     origin mode off
+  #   ?7h       autowrap on               ESC(B   ASCII charset
+  #   ESC[!p    soft reset (DECSTR)
   # then clear + home so the terminal has to draw the shell prompt again.
-  printf '\033[?1049l\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1004l\033[?2004l\033>\033[!p\033[0m\033[?25h\033[2J\033[H'
+  printf '\007\033\\\033\\\033[?2026l\033[?2031l\033[?1049l\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1015l\033[?1016l\033[?1004l\033[?2004l\033[?1l\033>\033[!p\033[r\033[?6l\033[?7h\033(B\033[0m\033[?25h\033[2J\033[H'
   return 0
 }
 

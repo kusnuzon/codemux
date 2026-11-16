@@ -160,13 +160,13 @@ codemux_memory_ensure_instructions() {
 # marker: the body has to be rewritten whenever it changes, because an older
 # block that is already in the file would keep winning (same function names,
 # first definition is overridden but two copies are dead weight).
-CODEMUX_MEMORY_WRAPPER_VERSION="3"
+CODEMUX_MEMORY_WRAPPER_VERSION="4"
 
 codemux_memory_wrapper_body() {
   cat <<'EOS'
 
 # codemux:memory begin  (managed by codemux — refresh the session summary before opencode)
-# codemux:memory version 3
+# codemux:memory version 4
 _oc_refresh_digest() {
   [ -x "$HOME/.config/opencode/bin/session-digest.py" ] || return 0
   python3 "$HOME/.config/opencode/bin/session-digest.py" >/dev/null 2>&1
@@ -184,9 +184,11 @@ _oc_tty_repair() {
   else
     stty sane 2>/dev/null
   fi
-  # Leave alternate screen, mouse, focus and bracketed-paste modes, then clear
-  # and home: a leftover mode keeps the screen frozen while the shell is fine.
-  printf '\033[?1049l\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1004l\033[?2004l\033>\033[!p\033[0m\033[?25h\033[2J\033[H'
+  # Leave alternate screen, mouse, focus, bracketed-paste, synchronized-output
+  # and scroll-region modes, and end a control string a killed TUI left open
+  # (BEL + ST): otherwise the emulator swallows all output and the screen keeps
+  # the agent's last frame while the shell below is fine. Then clear + home.
+  printf '\007\033\\\033\\\033[?2026l\033[?2031l\033[?1049l\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1015l\033[?1016l\033[?1004l\033[?2004l\033[?1l\033>\033[!p\033[r\033[?6l\033[?7h\033(B\033[0m\033[?25h\033[2J\033[H'
 }
 opencode() {
   _oc_refresh_digest
