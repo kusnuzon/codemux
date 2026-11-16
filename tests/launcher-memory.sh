@@ -447,7 +447,7 @@ esac
 EOF
 chmod +x "$SB6/prefix/bin/pi" "$SB6/prefix/bin/tmux"
 menu_launch "$SB6" pitmux
-if grep -qx 'new-session -d -s pi OPENCODE_NO_AUTO=1 bash -ic pi' "$SB6/tmux.calls" 2>/dev/null &&
+if grep -qx "new-session -d -s pi OPENCODE_NO_AUTO=1 bash -ic 'pi --continue || pi'" "$SB6/tmux.calls" 2>/dev/null &&
   [ "$(tail -n 1 "$SB6/tmux.calls")" = 'attach-session -t pi' ] &&
   [ ! -s "$SB6/pi.calls" ]; then
   ok "menu: the tmux row creates the pi session detached, then attaches (pi runs in that window)"

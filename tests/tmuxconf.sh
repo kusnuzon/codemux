@@ -56,10 +56,11 @@ fi
 # A finger tap is a left click, so the block must turn the mouse on and shape
 # the window list into a tab strip; otherwise tapping a tab does nothing.
 if grep -qx 'set -g mouse on' <<<"$block" &&
+  grep -qx 'set -g status-position top' <<<"$block" &&
   grep -q 'window-status-format' <<<"$block" &&
   grep -q 'window-status-current-format' <<<"$block" &&
   grep -q 'window-status-separator' <<<"$block"; then
-  ok "block: tap-to-switch tabs (mouse on + tab strip formats)"
+  ok "block: tap-to-switch tab strip at the top (mouse on)"
 else
   bad "block: no mouse/tab strip"
 fi

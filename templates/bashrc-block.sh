@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 13
+# codemux:launcher version 14
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -336,8 +336,8 @@ _oc_confirm_install() {
 # ctrl+shift+tab is not reachable here (tmux never decodes that chord from a
 # plain terminal), so shift+tab stands in for it; both are echoed as-is.
 _oc_pi_tmux_tabs() {
-  # A new window (C-b c) starts another pi instead of a bare shell, and every
-  # tab keeps the name "pi" so the strip reads as one agent with several tabs.
+  # A new window (C-b c) starts a NEW pi session instead of a bare shell, and
+  # every tab keeps the name "pi" so the strip reads as one agent with tabs.
   tmux set-option -t pi default-command 'OPENCODE_NO_AUTO=1 bash -ic pi' 2>/dev/null || true
   tmux set-option -t pi automatic-rename off 2>/dev/null || true
   tmux rename-window -t pi:0 pi 2>/dev/null || true
@@ -408,10 +408,12 @@ _oc_launch_component() {
       elif command -v tmux >/dev/null 2>&1; then
         # One tab = one tmux window. The command string runs an interactive bash
         # so the `pi` alias applies, and OPENCODE_NO_AUTO keeps that bash from
-        # drawing the codemux menu first. The session is created detached so the
-        # tab keys and default-command can be set before the first attach.
-        tmux has-session -t pi 2>/dev/null ||
-          tmux new-session -d -s pi "OPENCODE_NO_AUTO=1 bash -ic pi"
+        # drawing the codemux menu first. The first tab resumes the last session
+        # for this directory and falls back to a fresh one; tabs opened later
+        # start a new session. The session is created detached so the tab keys
+        # and default-command can be set before the first attach.
+        tmux has-session -t pi: 2>/dev/null ||
+          tmux new-session -d -s pi "OPENCODE_NO_AUTO=1 bash -ic 'pi --continue || pi'"
         _oc_pi_tmux_tabs
         tmux attach-session -t pi
       else
