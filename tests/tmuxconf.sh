@@ -111,7 +111,7 @@ else
 fi
 # Every binding runs the handler script and ends with `exit 0`; a run-shell that
 # fails makes tmux print the whole script over the status bar.
-for key in MouseDown1Status MouseDown1StatusRight; do
+for key in MouseDown1Status; do
   line="$(grep "^bind-key -n $key " <<<"$block" || true)"
   if grep -q 'codemux/tabctl.sh' <<<"$line" && grep -q 'exit 0' <<<"$line"; then
     ok "block: $key runs tabctl.sh and exits 0"
@@ -119,6 +119,14 @@ for key in MouseDown1Status MouseDown1StatusRight; do
     bad "block: $key binding is wrong"
   fi
 done
+# MouseDown1StatusRight used to bind the "+" button, but the button moved onto
+# the last tab (a user|new range inside the window list) and status-right is
+# empty — a binding for a zero-width region can never fire.
+if grep -q '^bind-key -n MouseDown1StatusRight ' <<<"$block"; then
+  bad "block: the dead MouseDown1StatusRight binding came back"
+else
+  ok "block: no dead MouseDown1StatusRight binding (status-right is empty)"
+fi
 # A comma inside a #{?...} branch ends that branch, so style commas must be
 # written as `#,` — an unescaped one truncates the format and prints it raw.
 unescaped="${block//#,/}"

@@ -11,7 +11,7 @@
 # Rows are answered by typing a number, never by a single key: a one-key reader
 # needs raw mode and spins on EOF when the terminal comes back raw.
 
-CM_MENU_VERSION="9"
+CM_MENU_VERSION="10"
 
 # Colours are empty when the output is not a terminal or NO_COLOR is set.
 _cm_colors() {
@@ -55,11 +55,9 @@ _cm_banner() {
     printf '   %s%s%s%s%s%s\n' "$C1" "${a:0:19}" "$R" "$C2" "${a:19}" "$R"
   done
   # only the agents that are actually installed
-  command -v opencode >/dev/null 2>&1 && bits="v1 $(_cm_ver v1)"
-  command -v opencode-v2 >/dev/null 2>&1 &&
-    bits="${bits:+$bits  ·  }v2 $(_cm_ver v2)"
-  command -v pi >/dev/null 2>&1 &&
-    bits="${bits:+$bits  ·  }free-pi $(_cm_ver pi)"
+  _cm_have v1 && bits="v1 $(_cm_ver v1)"
+  _cm_have v2 && bits="${bits:+$bits  ·  }v2 $(_cm_ver v2)"
+  _cm_have pi && bits="${bits:+$bits  ·  }free-pi $(_cm_ver pi)"
   if [ -n "$bits" ]; then
     printf '   %sTermux · Android arm64%s   %s%s%s\n\n' "$DIM" "$R" "$DIM" "$bits" "$R"
   else
@@ -73,26 +71,26 @@ _cm_items() {
   _CM_KEYS=()
   _CM_NAMES=()
   _CM_DESCS=()
-  if command -v opencode >/dev/null 2>&1; then
+  if _cm_have v1; then
     _CM_DESCS+=("$(_cm_ver v1) · stable")
   else
     _CM_DESCS+=("not installed")
   fi
   _CM_KEYS+=("v1"); _CM_NAMES+=("OpenCode V1")
-  if command -v opencode-v2 >/dev/null 2>&1; then
+  if _cm_have v2; then
     _CM_DESCS+=("$(_cm_ver v2) · separate DB")
   else
     _CM_DESCS+=("not installed")
   fi
   _CM_KEYS+=("v2"); _CM_NAMES+=("OpenCode V2")
-  if command -v pi >/dev/null 2>&1; then
+  if _cm_have pi; then
     _CM_DESCS+=("$(_cm_ver pi) · free-pi agent")
   else
     _CM_DESCS+=("not installed")
   fi
   _CM_KEYS+=("pi"); _CM_NAMES+=("Free-pi (Pi)")
   _CM_KEYS+=("shell"); _CM_NAMES+=("Shell only"); _CM_DESCS+=("no agent")
-  _CM_KEYS+=("quit"); _CM_NAMES+=("Quit"); _CM_DESCS+=("close this tab")
+  _CM_KEYS+=("quit"); _CM_NAMES+=("Quit"); _CM_DESCS+=("close every tab")
   _CM_COUNT="${#_CM_KEYS[@]}"
 }
 
@@ -225,6 +223,9 @@ _cm_capture_stop() {
 
 _cm_log_start() { # <row-key> <name> <command>
   _CM_LOG=""; _CM_RAW=""; _CM_PIPED=0; _CM_PIPE_OPEN=0
+  # a new launch is the newest truth: an older failure must stop nagging once
+  # something else was started (and, when it ends cleanly, the notice is gone)
+  _CM_LASTLOG=""
   _CM_T0="$(date +%s 2>/dev/null || printf 0)"
   local key="$1" name="$2" cmd="$3" d term="plain shell"
   d="$(_cm_logdir)" || return 0
@@ -391,6 +392,22 @@ _cm_pi_bin() {
   return 1
 }
 
+# Is the agent's real binary reachable? `command -v` must NOT be used here: the
+# digest wrapper in ~/.bashrc defines `opencode()`/`opencode-v2()` functions,
+# and `command -v` finds a function even when the payload is long gone — the
+# rows then claim the agent is installed and picking it dies with "command not
+# found" instead of offering the install. `type -P` searches PATH only, which
+# is exactly what the wrapper's own `command opencode` will do. pi has no `pi`
+# binary (it is a function wrapping free-pi-cli), so it goes through _cm_pi_bin.
+_cm_have() {
+  case "$1" in
+    v1) type -P opencode >/dev/null 2>&1 ;;
+    v2) type -P opencode-v2 >/dev/null 2>&1 ;;
+    pi) _cm_pi_bin >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
+
 # A row whose binary is missing offers to install it. The question is a plain
 # y/N: a stray keypress must never start a download or touch the system.
 _cm_install_prompt() { # <key> <name>
@@ -422,13 +439,28 @@ _cm_install_prompt() { # <key> <name>
     rc=127
   fi
   [ -n "$saved" ] && printf '%s\n' "$saved" >"$compfile" 2>/dev/null
-  _cm_tty_fix
-  _cm_tab_title "menu"
-  if [ "$rc" -eq 0 ]; then
+  # Close the launch record while the pane still shows the install output: the
+  # tail is read before the screen is wiped. Leaving the record at its earlier
+  # MISSING verdict made `codemux logs` report a failure forever after a
+  # successful install, and the menu kept nagging about it.
+  if [ "$rc" -eq 0 ] && _cm_have "$key"; then
     _CM_NOTICE="$name installed"
+    _cm_log_finish 0 failed
+  elif [ "$rc" -eq 0 ]; then
+    # the installer exited 0 but produced no agent (pi needs its first
+    # interactive start, which an installer must not do)
+    if [ "$key" = pi ]; then
+      _CM_NOTICE="Free-pi (Pi) needs a first start — npx -y free-pi-cli@latest"
+    else
+      _CM_NOTICE="$name is still not installed — codemux install --only $key"
+    fi
+    _cm_log_finish 0 missing
   else
     _CM_NOTICE="install of $name failed (rc=$rc) — codemux install --only $key"
+    _cm_log_finish "$rc" failed
   fi
+  _cm_tty_fix
+  _cm_tab_title "menu"
   return 0
 }
 
@@ -443,11 +475,14 @@ _cm_launch() {
   esac
   _CM_ROW="$key"; _CM_NAME="$name"
   _cm_log_start "$key" "$name" "$cmd"
-  if [ -z "$cmd" ] || ! command -v "$cmd" >/dev/null 2>&1; then
-    _cm_log_finish 127 missing
+  if ! _cm_have "$key"; then
+    # The install prompt keeps the record open: accepting it lets the prompt
+    # close the record with the real outcome, declining falls through to the
+    # MISSING verdict below.
     if _cm_install_prompt "$key" "$name"; then
       return 0
     fi
+    _cm_log_finish 127 missing
     _CM_NOTICE="$name is not installed — codemux install --only $key"
     return 1
   fi
@@ -463,9 +498,10 @@ _cm_launch() {
   # repair the pane whatever the exit code was, then mark the tab as a menu again
   _cm_tty_fix
   _cm_tab_title "menu"
-  if [ "$rc" -ne 0 ] && [ -n "$_CM_LOG" ]; then
-    printf '\n  %s%s exited with %s — log: %s%s\n\n' \
-      "$DIM" "$name" "$rc" "$_CM_LOG" "$R"
+  if [ "$rc" -ne 0 ]; then
+    # The loop wipes the screen before the next answer, so the log path travels
+    # in the rows (_CM_NOTICE) — a printf here is invisible a moment later.
+    _CM_NOTICE="$name exited with $rc${_CM_LOG:+ — log: $(basename "$_CM_LOG")}"
   fi
   return "$rc"
 }

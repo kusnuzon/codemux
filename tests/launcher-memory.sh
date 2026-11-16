@@ -482,7 +482,7 @@ esac
 
 # banner meta line: only installed agents are listed
 meta="$(env HOME="$SB5/home" PREFIX="$SB5/prefix" NO_COLOR=1 \
-  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c 'command() { return 1; }; . "$1"; _cm_colors; _cm_banner' \
+  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c 'command() { return 1; }; type() { return 1; }; . "$1"; _cm_colors; _cm_banner' \
   _ "$MENU" 2>/dev/null)"
 case "$meta" in
   *"no agent yet"*) ok "menu: nothing installed → banner says no agent yet" ;;
@@ -525,18 +525,30 @@ menu_with() { # <stdin text> → "rc=<status>"
     PATH="$SB5D/prefix/bin:$PATH" CODEMUX_ROOT="$ROOT" CODEMUX_HOME="$SB5D/state" \
     CODEMUX_ALLOW_NONANDROID=1 OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
     C1=""; C2=""; ACC=""; DIM=""; BOLD=""; R=""
+    bin="$2/prefix/bin"
     # The host really has opencode/pi installed: hide them, so the "missing
-    # agent" row is exercised instead of starting a real agent.
+    # agent" row is exercised instead of starting a real agent. `command -v`
+    # AND `type -P` both need the override: the menu resolves agents through
+    # `type -P` (a function in .bashrc must never count as an install), but a
+    # binary the TEST puts into the sandbox prefix must stay reachable.
     command() {
       if [ "$1" = "-v" ]; then
         case "$2" in opencode | opencode-v2 | pi | free-pi-cli) return 1 ;; esac
       fi
       builtin command "$@"
     }
+    type() {
+      if [ "${1:-}" = "-P" ]; then
+        case "${2:-}" in
+          opencode | opencode-v2 | pi | free-pi-cli) [ -x "$bin/$2" ] || return 1 ;;
+        esac
+      fi
+      builtin type "$@"
+    }
     . "$1"
     _cm_menu_loop
     printf "menu rc=%s\n" "$?"
-  ' _ "$MENU" 2>/dev/null
+  ' _ "$MENU" "$SB5D" 2>/dev/null
 }
 out="$(menu_with '')"
 case "$out" in
@@ -575,10 +587,17 @@ case "$out" in
   *) bad "menu: answering n left no notice → $(printf '%s' "$out" | tr '\n' ' ' | tail -c 200)" ;;
 esac
 # answering y installs only that component, then puts the saved component list
-# back so the other agent does not turn into SKIP in `codemux check`
+# back so the other agent does not turn into SKIP in `codemux check`. The stub
+# really creates the binary: the menu verifies the agent exists before it may
+# claim "installed" (an installer can exit 0 without producing anything).
 stub="$SB5D/prefix/bin/codemux"
 mkdir -p "$SB5D/prefix/bin" "$SB5D/state"
-printf '#!%s\nprintf "%%s\\n" "$*" >>%s\n' "$(command -v bash)" "$SB5D/install.args" >"$stub"
+{
+  printf '#!%s\n' "$(command -v bash)"
+  printf 'printf "%%s\\n" "$*" >>%s\n' "$SB5D/install.args"
+  printf '[ "$4" = v1 ] && printf "#!/bin/sh\\necho v1\\n" >"%s/prefix/bin/opencode" && chmod +x "%s/prefix/bin/opencode"\n' "$SB5D" "$SB5D"
+  printf 'exit 0\n'
+} >"$stub"
 chmod +x "$stub"
 printf 'v1 v2\n' >"$SB5D/state/components"
 out="$(menu_with '1\ny\n')"
@@ -599,6 +618,20 @@ case "$out" in
     ok "menu: a finished install is reported in the menu" ;;
   *) bad "menu: no install result → $(printf '%s' "$out" | tr '\n' ' ' | tail -c 200)" ;;
 esac
+# the launch record must end at the real outcome: a record stuck at MISSING
+# made `codemux logs` report a failure forever after a successful install
+mlogdir="$SB5D/home/.config/codemux/logs"
+last_v1="$(grep ' OpenCode V1 ' "$mlogdir/menu.log" 2>/dev/null | tail -n 1)"
+case "$last_v1" in
+  *"rc=0"*" OK "*) ok "menu log: a successful install closes its record as OK, not MISSING" ;;
+  *) bad "menu log: install record is wrong → $(tr '\n' '|' <"$mlogdir/menu.log" 2>/dev/null)" ;;
+esac
+if [ "$(ls -1 "$mlogdir"/menu-*.log 2>/dev/null | wc -l)" -eq 1 ] &&
+  grep -q 'status:   MISSING' "$mlogdir"/menu-*.log 2>/dev/null; then
+  ok "menu log: only the declined install keeps a detail file (MISSING)"
+else
+  bad "menu log: detail files after install = $(ls -1 "$mlogdir"/menu-*.log 2>/dev/null | tr '\n' ' ')"
+fi
 rm -f "$stub" "$SB5D/install.args" "$SB5D/state/components"
 # quitting inside tmux must close the session, not leave a dead pane behind
 if grep -q 'tmux kill-session' "$MENU" && grep -q 'kill-session -t "\$(tmux display-message' "$MENU"; then
@@ -642,9 +675,24 @@ menu_logged() { # <sandbox> <stdin text> → menu output
     HOME="$sb/home" PREFIX="$sb/prefix" PATH="$sb/prefix/bin:$PATH" \
     CODEMUX_LOG_DIR="$sb/logs" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" \
     bash -c 'C1=""; C2=""; ACC=""; DIM=""; BOLD=""; R=""
+    bin="$2/prefix/bin"
+    command() {
+      if [ "$1" = "-v" ]; then
+        case "$2" in opencode | opencode-v2 | pi | free-pi-cli) return 1 ;; esac
+      fi
+      builtin command "$@"
+    }
+    type() {
+      if [ "${1:-}" = "-P" ]; then
+        case "${2:-}" in
+          opencode | opencode-v2 | pi | free-pi-cli) [ -x "$bin/$2" ] || return 1 ;;
+        esac
+      fi
+      builtin type "$@"
+    }
     . "$1"
     _cm_menu_loop
-    printf "menu rc=%s\n" "$?"' _ "$MENU" 2>/dev/null
+    printf "menu rc=%s\n" "$?"' _ "$MENU" "$sb" 2>/dev/null
 }
 menu_logged "$SB5E" '1\nq\n' >"$SB5E/fail.out" 2>&1 || true
 menu_logged "$SB5E" '2\nq\n' >"$SB5E/ok.out" 2>&1 || true
@@ -883,6 +931,102 @@ if [ "$bogus_rc" -eq 2 ] && grep -q 'unknown option for logs' "$SB5E/bogus.out";
   ok "logs command: an unknown option fails with rc=2 and a hint"
 else
   bad "logs command: unknown option → rc=$bogus_rc, out='$(tr '\n' '|' <"$SB5E/bogus.out" | tail -c 90)'"
+fi
+
+# =============================================================================
+# 5e-7. audit fixes (2026-11-17): the nag, the detection, the exit notice
+# =============================================================================
+# (a) a new launch clears the "last launch failed" nag: the newest launch is
+#     the newest truth, so a later success must silence an older failure.
+SB5K="$(new_sandbox menu-nag)"
+mkdir -p "$SB5K/home" "$SB5K/logs"
+nag="$(env HOME="$SB5K/home" PREFIX="$SB5K/prefix" TMPDIR="$BASE" \
+  CODEMUX_LOG_DIR="$SB5K/logs" bash -c '
+    C1=""; C2=""; ACC=""; DIM=""; BOLD=""; R=""
+    . "$1"
+    _cm_log_start v1 "OpenCode V1" /bin/true
+    _cm_log_finish 3 failed
+    printf "after_fail=%s\n" "${_CM_LASTLOG:-none}"
+    _cm_log_start v2 "OpenCode V2" /bin/true
+    printf "after_new=%s\n" "${_CM_LASTLOG:-none}"
+  ' _ "$MENU" 2>&1)"
+case "$nag" in
+  *"after_fail=$SB5K/logs"*"after_new=none"*)
+    ok "menu log: a new launch clears the last-failure nag" ;;
+  *) bad "menu log: nag state wrong → $(printf '%s' "$nag" | tr '\n' '|')" ;;
+esac
+
+# (b) a wrapper FUNCTION in .bashrc is not an install: the digest wrapper
+#     defines opencode()/opencode-v2() and `command -v` finds a function even
+#     when the payload is gone — the rows then claimed an agent was installed
+#     and picking it died with "command not found" (rc=127) instead of
+#     offering the install.
+SB5L="$(new_sandbox menu-detect)"
+mkdir -p "$SB5L/home/.config/codemux" "$SB5L/prefix/bin"
+cp "$MENU" "$SB5L/home/.config/codemux/menu.sh"
+cat >"$SB5L/home/.bashrc" <<'EOB'
+_oc_refresh_digest() { :; }
+_oc_tty_repair() { :; }
+opencode() { command opencode "$@"; }
+opencode-v2() { command opencode-v2 "$@"; }
+EOB
+descs="$(env -u TMUX -u TMUX_PANE HOME="$SB5L/home" PREFIX="$SB5L/prefix" \
+  PATH="$SB5L/prefix/bin" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" "$(command -v bash)" -ic '
+    C1=""; C2=""; ACC=""; DIM=""; BOLD=""; R=""
+    . "$HOME/.config/codemux/menu.sh"
+    _cm_items
+    printf "%s" "${_CM_DESCS[*]}"
+  ' 2>/dev/null)"
+case "$descs" in
+  "not installed not installed not installed"*)
+    ok "menu: a wrapper function in .bashrc is not an install (payload gone)" ;;
+  *"? · stable"*|*"? · separate DB"*)
+    bad "menu: bashrc functions fooled the detection → $descs" ;;
+  *) bad "menu: unexpected rows with only functions present → $descs" ;;
+esac
+
+# (c) the exit message travels in the rows: the loop wipes the screen before
+#     the next answer, so a printf after the launch is never readable.
+if grep -qF '_CM_NOTICE="$name exited with $rc' "$MENU" &&
+  ! grep -q 'printf .*exited with' "$MENU"; then
+  ok "menu: the exit message rides in the rows, not in a wiped printf"
+else
+  bad "menu: the exit message is still printed outside the rows"
+fi
+
+# (d) the Quit row says what it does: it kills the tmux session, i.e. every
+#     tab, not just the one it was typed in.
+if grep -qF 'close every tab' "$MENU" && ! grep -qF 'close this tab' "$MENU"; then
+  ok "menu: the Quit row promises what happens (every tab closes)"
+else
+  bad "menu: the Quit row still says 'close this tab'"
+fi
+
+# (e) an installer that exits 0 without producing the agent must not be
+#     reported as "installed" — the pi module does exactly this while
+#     free-pi-cli is missing (it can only suggest the first interactive start).
+SB5M="$(new_sandbox menu-pi-honest)"
+mkdir -p "$SB5M/home/.config/codemux" "$SB5M/logs" "$SB5M/prefix/bin"
+cp "$MENU" "$SB5M/home/.config/codemux/menu.sh"
+printf '#!/bin/sh\nexit 0\n' >"$SB5M/prefix/bin/codemux"
+chmod +x "$SB5M/prefix/bin/codemux"
+pi_out="$(printf '%b' '3\ny\n' | timeout 25 env -u TMUX -u TMUX_PANE \
+  HOME="$SB5M/home" PREFIX="$SB5M/prefix" PATH="$SB5M/prefix/bin:$PATH" \
+  CODEMUX_LOG_DIR="$SB5M/logs" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
+  C1=""; C2=""; ACC=""; DIM=""; BOLD=""; R=""
+  . "$1"
+  _cm_menu_loop' _ "$SB5M/home/.config/codemux/menu.sh" 2>/dev/null)"
+case "$pi_out" in
+  *"Free-pi (Pi) needs a first start — npx -y free-pi-cli@latest"*)
+    ok "menu: a do-nothing install of pi is not reported as installed" ;;
+  *"Free-pi (Pi) installed"*)
+    bad "menu: pi reported installed although nothing was installed" ;;
+  *) bad "menu: pi install notice is '$(printf '%s' "$pi_out" | tr '\n' '|' | tail -c 120)'" ;;
+esac
+if grep -q 'status:   MISSING' "$SB5M/logs"/menu-*.log 2>/dev/null; then
+  ok "menu log: the do-nothing pi install is recorded as MISSING"
+else
+  bad "menu log: the do-nothing pi install was not recorded as MISSING"
 fi
 
 # =============================================================================

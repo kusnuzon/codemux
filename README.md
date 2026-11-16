@@ -82,7 +82,7 @@ menu, so an agent never locks the only terminal you have:
   2  OpenCode V2      2.3.0 · separate DB
   3  Free-pi (Pi)     0.6.22 · free-pi agent
   4  Shell only       no agent
-  5  Quit             close this tab
+  5  Quit             close every tab
   ───────────────────────────────────────────
   type a number, then Enter   q quit   Ctrl+b c new tab
 
@@ -147,11 +147,12 @@ A clean launch deletes its detail file, the last 40 failures are kept, and a row
 whose binary is missing is logged too (`status: MISSING`).
 
 `CODEMUX_LOG_DIR` moves the directory (the tests use it). A failed row is
-reported twice: the rows keep one line until the next success
-(`! last launch failed — codemux logs --last`) and the component exits with
-`… exited with 3 — log: …`. The notice sits in the rows on purpose: the loop
-clears the screen on every answer, so a message printed outside them is wiped
-before it can be read.
+reported in the rows — `! OpenCode V1 exited with 3 — log: menu-….log` — and
+the rows keep `! last launch failed — codemux logs --last` until the next
+launch starts. The notices sit in the rows on purpose: the loop clears the
+screen on every answer, so a message printed outside them is wiped before it
+can be read. A row that is installed from the menu closes its record with the
+real outcome, so a successful install is never reported as a failure later.
 
 ## 🧠 Memory that survives sessions
 
