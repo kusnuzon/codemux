@@ -66,10 +66,15 @@ else
 fi
 # Fixed-width tabs keep the tap target big enough for a finger even when a
 # title is short.
-if [ "$(grep -c 'p18:#{window_index}' <<<"$block")" = 2 ]; then
-  ok "block: every tab is padded to one wide, finger-sized width"
+# Boxed, fixed-width tabs: 20 columns each, so a tap can be mapped to a tab
+# and its own "x" (border on both sides, "+ new tab" on the right of the bar).
+if [ "$(grep -c 'p15:#{window_index}' <<<"$block")" = 2 ] &&
+  [ "$(grep -c '✕' <<<"$block")" = 2 ] &&
+  [ "$(grep -c '▏' <<<"$block")" = 2 ] &&
+  grep -qx 'set -g status-left ""' <<<"$block"; then
+  ok "block: boxed fixed-width tabs with their own x and no status-left offset"
 else
-  bad "block: tab width padding missing"
+  bad "block: tab box/border missing"
 fi
 [ "$(grep -c 'codemux:tmux begin' <<<"$block")" = "1" ] && ok "block: one begin marker" || bad "block: marker count"
 

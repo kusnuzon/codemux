@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 17
+# codemux:launcher version 18
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -344,13 +344,14 @@ _oc_pi_tmux_tabs() {
   # "pi:" is the session, not the window that is also called pi: without the
   # colon tmux would aim at that window and `new-window` would refuse the index.
   tmux bind-key -T prefix c if-shell -F '#{==:#{session_name},pi}' 'new-window -t pi: -n pi' new-window 2>/dev/null || true
-  # Touch: a finger tap is a left click, so tmux's own MouseDown1Status already
-  # switches to the tapped tab. The right end of the bar is two buttons: "x"
-  # closes the current tab, "+ new tab" opens one. Only run-shell sees
-  # #{mouse_x} (if-shell is evaluated before the click), so it does the
-  # dispatch, and the last remaining tab is never closed.
-  tmux set-option -t pi status-right ' x  + new tab ' 2>/dev/null || true
-  tmux bind-key -n MouseDown1StatusRight "run-shell -b 'x=#{mouse_x}; w=#{client_width}; l=#{n:status-right}; o=\$((x-(w-l))); [ \"#{session_name}\" = pi ] || exit 0; if [ \"\$o\" -le 3 ]; then if [ \"#{session_windows}\" -gt 1 ]; then tmux display-menu -c \"#{client_name}\" -T \"Close this tab?\" -x W -y W \"Close\" c \"kill-window -t #{window_id}\" \"Keep\" q \"\"; else tmux display-message -c \"#{client_name}\" \"Last tab - keeping it open\"; fi; else tmux new-window -t pi: -n pi; fi'" 2>/dev/null || true
+  # Touch: a finger tap is a left click on the status bar. Every tab is 20
+  # columns wide (see the managed tmux block) and the strip starts at column
+  # zero, so one run-shell binding can map a tap to a tab: tapping the name
+  # switches to it, tapping its "x" asks before closing it. Only run-shell can
+  # read #{mouse_x} - if-shell is evaluated before the click arrives.
+  tmux set-option -t pi status-right ' + new tab ' 2>/dev/null || true
+  tmux bind-key -n MouseDown1Status "run-shell -b 'x=#{mouse_x}; s=\"#{session_name}\"; i=\$((x/20)); o=\$((x%20)); list=\$(tmux list-windows -t \"\$s:\" 2>/dev/null | cut -d: -f1); n=\$(printf \"%s\n\" \"\$list\" | grep -c .); [ \"\$i\" -lt \"\$n\" ] || exit 0; id=\$(printf \"%s\n\" \"\$list\" | sed -n \"\$((i+1))p\"); if [ \"\$o\" -ge 17 ] && [ \"\$o\" -le 18 ] && [ \"\$s\" = pi ]; then [ \"\$n\" -gt 1 ] && tmux display-menu -c \"#{client_name}\" -T \"Close this tab?\" -x W -y W \"Close\" c \"kill-window -t \$s:\$id\" \"Keep\" q \"\"; else tmux select-window -t \"\$s:\$id\"; fi'" 2>/dev/null || true
+  tmux bind-key -n MouseDown1StatusRight "run-shell -b '[ \"#{session_name}\" = pi ] || exit 0; [ #{mouse_x} -ge \$((#{client_width} - #{n:status-right})) ] || exit 0; tmux new-window -t pi: -n pi'" 2>/dev/null || true
   tmux bind-key -n C-Tab if-shell -F '#{==:#{session_name},pi}' next-window 'send-keys C-Tab' 2>/dev/null || true
   tmux bind-key -n BTab if-shell -F '#{==:#{session_name},pi}' previous-window 'send-keys BTab' 2>/dev/null || true
   tmux bind-key -n M-Down if-shell -F '#{==:#{session_name},pi}' next-window 'send-keys M-Down' 2>/dev/null || true
