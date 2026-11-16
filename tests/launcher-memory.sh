@@ -482,8 +482,9 @@ if grep -qx 'set-option -t pi status-right  + new tab ' "$SB6/tmux.calls" &&
   grep -q 'kill-window -t' "$SB6/tmux.calls" &&
   grep -q 'select-window -t' "$SB6/tmux.calls" &&
   grep -q '^bind-key -n MouseDrag1Status run-shell -b ' "$SB6/tmux.calls" &&
-  grep -q '^bind-key -n MouseDown1StatusRight run-shell -b ' "$SB6/tmux.calls"; then
-  ok "menu: tap maps to its tab, the tab's own 'x' asks first, swipe scrolls, '+ new tab' on the right"
+  grep -q 'new-window -t .*-n pi' "$SB6/tmux.calls" &&
+  grep -q '^bind-key -n MouseDown1StatusRight run-shell -b .*new-window -t .*@tabstart' "$SB6/tmux.calls"; then
+  ok "menu: tap maps to its tab, the tab's own 'x' asks first, swipe scrolls, '+ new tab' opens and pages to the new tab"
 else
   bad "menu: touch bindings are '$(grep -E 'status-right|MouseDown|MouseDrag|@tabstart' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';' | cut -c1-2000)"
 fi
