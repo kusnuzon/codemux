@@ -43,6 +43,12 @@ block="$(awk -v b="$BEGIN" -v e="$END" '
 [ -n "$block" ] || { printf 'cannot read the block from %s\n' "$SRC" >&2; exit 1; }
 
 rendered="$(printf '%s\n%s\n%s\n' "$HDR_BEGIN" "$block" "$HDR_END")"
+# awk -v would eat the backslashes in the block (it processes escapes in an
+# assignment), which silently broke the tmux bindings once. The text is handed
+# over as a file instead, so every byte survives.
+blockfile="${TMPDIR:-/tmp}/codemux-tmuxconf.$$"
+printf '%s\n' "$rendered" >"$blockfile" || exit 1
+trap 'rm -f "$blockfile"' EXIT
 drift=0
 
 for t in "${TARGETS[@]}"; do
@@ -55,8 +61,13 @@ for t in "${TARGETS[@]}"; do
   if grep -qF "$HDR_BEGIN" "$file"; then
     # replace an existing synced block
     tmp="$file.sync.$$"
-    awk -v b="$HDR_BEGIN" -v e="$HDR_END" -v new="$rendered" '
-      $0 == b { print new; skip = 1; next }
+    awk -v b="$HDR_BEGIN" -v e="$HDR_END" -v new="$blockfile" '
+      $0 == b {
+        while ((getline line < new) > 0) print line
+        close(new)
+        skip = 1
+        next
+      }
       $0 == e { skip = 0; next }
       !skip { print }
     ' "$file" >"$tmp"

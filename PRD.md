@@ -629,35 +629,45 @@ Rules:
 
 ---
 
-## 12D. The launcher block: banner + numbered menu
+## 12D. Startup: one tmux session, the menu is a script
 
-`templates/bashrc-block.sh` (launcher block, version 31) is sourced by every
-interactive shell, so it is deliberately small (~190 lines, well under 50 ms):
+Opening Termux lands in a single tmux session (`main`). `~/.bashrc` keeps the
+launcher block (version 36) at about 40 lines — it starts or attaches the
+session and defines `menu`, `fixterm`, `version`, `_oc_tty_fix`:
 
-- `_oc_banner` — the `OPEN CODE` art, the platform line, and the versions of the
-  agents that are installed. Versions are read from files
-  (`$PREFIX/share/opencode/VERSION`, `dpkg-query -W opencode`,
-  `$PREFIX/share/opencode-v2/VERSION`, the free-pi `package.json` inside the npx
-  cache). Running `opencode --version` to ask an agent cost 1.2 s on every new
-  prompt, so it is never done.
-- `_oc_items` / `_oc_menu` — five fixed rows (`v1 v2 pi shell quit`); a missing
+```bash
+_oc_tmux_enter() {                  # new-session -d, then attach; falls back
+  ...                               # to the menu in a plain shell without tmux
+}
+```
+
+- The menu itself is **not** in `~/.bashrc`. It is `templates/menu.sh`, installed
+to `~/.config/codemux/menu.sh` (mode `700`, `CM_MENU_VERSION` marker). A startup
+  file is sourced in front of every prompt, and a full-screen agent that hands
+  the terminal back mid-escape used to break exactly that code.
+- Every tab runs `bash -ic '. ~/.config/codemux/menu.sh; _cm_menu_loop; exec bash
+  -i'`, which is also the session's `default-command`, so `Ctrl+b c` opens a new
+  menu tab (a detached tab can see EOF before the client attaches, hence the
+  `exec bash -i` fallback).
+- `_cm_banner` reads installed versions from files (`$PREFIX/share/opencode/VERSION`,
+  `dpkg-query -W opencode`, `$PREFIX/share/opencode-v2/VERSION`, the free-pi
+  `package.json` in the npx cache). Running `opencode --version` cost 1.2 s on
+  every new prompt, so it is never done.
+- `_cm_items` / `_cm_list` — five fixed rows (`v1 v2 pi shell quit`); a missing
   agent is marked `not installed` and choosing it prints the `codemux install`
   command. Nothing is installed from the menu.
-- `_oc_menu_loop` — one typed line per answer (`IFS= read -r`). No single-key
+- `_cm_menu_loop` — one typed line per answer (`IFS= read -r`). No single-key
   reader: a TUI can hand the terminal back in raw mode, where one-key reads spin
   on EOF, swallow keys or leave the cursor hidden — the "frozen menu" bug.
   `Ctrl+C` only cancels the answer (rc > 128), EOF and `q` leave the menu.
-- `_oc_tty_fix` — the terminal repair (see §12F). Runs after every component and
-  before returning to the shell.
-- Auto-launch gate: `OPENCODE_NO_AUTO=1` or `OPENCODE_AUTO_LAUNCHED` skips it.
+- `_cm_tty_fix` — the terminal repair (see §12F). Runs after every component,
+  after `shell`, and as `fixterm` (a blind escape hatch for a frozen pane).
+- `_cm_tab_title` names the tab after the running agent (`menu`, `v1`, `v2`,
+  `pi`, `shell`), since the strip is the only place a tab can be identified.
+- Gate: `OPENCODE_NO_AUTO=1` skips tmux and the menu; without tmux installed the
+  block sources the menu directly.
 
-Dropped on purpose in 0.8.0: the tmux tab-model row with its touch bindings
-(`MouseDown1Status*`, `@tabstart`, `@closepending`, keep/close menus), the
-quota/update notices, the install dialog and the shell-only guide. They were
-several hundred lines of format strings and load-time probes, and the window
-list goes back to tmux's own `index: name` strip, which is tappable by default.
-
-## 12E. Managed `~/.tmux.conf` block
+## 12E. Managed `~/.tmux.conf` block: dark theme and a tap-able tab strip
 
 tmux 3.8 ships a green status bar that fights a dark terminal, and free-pi needs
 `extended-keys` to see modified keys, so codemux keeps one marked region:
@@ -670,12 +680,40 @@ set -g mouse on
 set -g status-position top
 set -g status-style "bg=#101010,fg=#c0c0c0"
 set -g status-left ""
-set -g window-status-format " #I: #W "
-set -g window-status-current-style "fg=#ffffff,bg=#2a2a2a,bold"
-set -g window-status-current-format " #I: #W "
+set -g automatic-rename off
+set -g window-status-format "…0:menu ✕ │…"      # 20 columns per tab
+set -g status-right "#[range=user|new] + new tab #[default]"
+bind-key -n MouseDown1Status "run-shell \"sh ~/.config/codemux/tabctl.sh tap '#{mouse_status_range}' …; exit 0\""
 # ... borders, message style
 # --- codemux:tmux end ---
 ```
+
+Rules that keep the strip working (all learned the hard way):
+
+- **20 columns per tab**, built with `#{p15:#{window_index}:#{=12:window_name}}`:
+  a short or over-long name must not change the width, or every tap lands on the
+  neighbour. `#{=12:var}` is the only cut that works (it needs a plain name, not
+  `#{window_name}`).
+- **Taps come from `#{mouse_status_range}`, never from `#{mouse_x}`.** tmux
+  scrolls the window list by itself when the tabs overflow, so a column count is
+  wrong; each button is a `#[range=user|…]` region instead (`t<i>` switch,
+  `c<i>` ask, `k<i>` keep, `x<i>` close, `new` add a tab).
+- A conditional must have **three fields** (`#{?cond,then,else}`); a fourth field
+  before `}` expands to an empty string and the whole strip disappears. Commas
+  inside a style code are written `#,`, else they end the branch and the format
+  is printed literally.
+- Every `run-shell` script ends with **`exit 0`**: tmux prints a failing one
+  (`'<script>' returned 1`) over the whole status bar.
+- The `✕` asks first: `@closepending=<i>` makes that tab render as
+  `keep │ close` in place, so a mis-tap never kills an agent. The last tab is
+  never closed, and after a close `move-window -r` keeps the indexes dense.
+- The click handler is `tmuxconf_tabctl` inside `lib/tmux-config.sh`, installed on
+  its way to `~/.config/codemux/tabctl.sh` by `tmuxconf_install`. It lives in the
+  block (not in codemux only) so V1/V2 install the same script and a strip whose
+  buttons do nothing can never appear. `tests/tabctl.sh` covers the decisions
+  with a stub `tmux`.
+- `tools/tabstrip-shot.sh` renders the real formats from a throwaway server to a
+  PNG, so a layout change is looked at instead of assumed.
 
 - Only the marked region is replaced; before any change the previous file is
   copied to `~/.tmux.conf.bak-tmuxconf-<timestamp>`.
@@ -697,7 +735,7 @@ set -g window-status-current-format " #I: #W "
   When a token *is* already available it is used only for GitHub API headers.
 - `set -Eeuo pipefail` in `bin/codemux`; CI runs `shellcheck -S warning`
   (including `tests/` and `tools/`), `bash -n`, `check --json` validation and all
-  seven suites in two environments (mock Termux and plain runner) on every push.
+  eight suites in two environments (mock Termux and plain runner) on every push.
 - No `rm -rf` on a path containing `$HOME`, except the internal
   `~/.cache/codemux/src` path.
 - Mode of new config files: `600` for state/log; downloads go through
@@ -720,7 +758,8 @@ set -g window-status-current-format " #I: #W "
 | Session digest (8 sessions, V1+V2) | < 2 seconds, never blocks the prompt |
 | Update check (background) | < 6 seconds, never blocks the menu |
 | Update-check cache | 1× per 24 hours per component (menu retries at most 1×/6 h) |
-| Tests | smoke 44 · launcher-memory 38 · maintenance 19 · resume 16 · release 7 · adapter 12 |
+| Tests | 8 suites, 238 assertions (smoke 61 · launcher-memory 62 · maintenance 19 ·
+resume 16 · release 7 · adapter 12 · tmuxconf 42 · tabctl 19) |
 
 ---
 
@@ -754,10 +793,9 @@ set -g window-status-current-format " #I: #W "
    `--only v1` (or a non-TTY run), Then the choice is used without asking and the
    missing component stays untouched.
 10. **S10 (menu install)** Given only one component is installed, When the menu
-    opens, Then both rows are shown and the missing one says
-    `not installed · Enter to install`; choosing it asks `Install it now? [y/N]`,
-    `n` prints `not installed — nothing changed`, and `y` runs
-    `codemux install --only <component>` and then starts it.
+    opens, Then every row is still shown and the missing ones say `not installed`;
+    choosing one prints `codemux install --only <component>` and changes nothing
+    (the menu never installs by itself).
 11. **S11 (quota)** Given `quota` is installed and today's usage is below the
     threshold, When the menu opens, Then no quota line appears; Given usage is at
     or above 80 %, Then `⚠ quota N/200 (P%) · run: quota` is printed. Given

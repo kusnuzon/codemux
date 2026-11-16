@@ -1,12 +1,43 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034  # PROBE/NOTE/globals are shared across files
-# module: launcher — banner + menu in ~/.bashrc (codemux-marked block).
-# Bump when the template changes in a way users should receive on `install`.
-CODEMUX_LAUNCHER_BLOCK_VERSION="34"
+# module: launcher — tmux auto-start in ~/.bashrc + the menu script
+# (~/.config/codemux/menu.sh). Bump when either file changes in a way users
+# should receive on `install`.
+CODEMUX_LAUNCHER_BLOCK_VERSION="36"
+CODEMUX_MENU_SCRIPT_VERSION="3"
+
+codemux_menu_script() { printf '%s' "$HOME/.config/codemux/menu.sh"; }
+
+# The menu script is compared by its version marker, not by content, so the
+# probe stays a fast file read.
+m_launcher_menu_state() {
+  local dst
+  dst="$(codemux_menu_script)"
+  [ -f "$dst" ] || { printf 'missing'; return; }
+  if grep -q "^CM_MENU_VERSION=\"$CODEMUX_MENU_SCRIPT_VERSION\"" "$dst" 2>/dev/null; then
+    printf 'ok'
+  else
+    printf 'stale'
+  fi
+}
+
+m_launcher_menu_install() {
+  local src="$CODEMUX_ROOT/templates/menu.sh" dst
+  dst="$(codemux_menu_script)"
+  [ -f "$src" ] || { APPLY_NOTE="menu template missing: $src"; return 1; }
+  mkdir -p "${dst%/*}" 2>/dev/null || { APPLY_NOTE="cannot write ${dst%/*}"; return 1; }
+  codemux_atomic_write "$dst" <"$src" || { APPLY_NOTE="failed to write $dst"; return 1; }
+  chmod 700 "$dst" 2>/dev/null || true
+  return 0
+}
 
 m_launcher_probe() {
-  local rc="$HOME/.bashrc"
+  local rc="$HOME/.bashrc" mstate
 
+  mstate="$(m_launcher_menu_state)"
+  if [ "$mstate" != ok ]; then
+    PROBE=MISS; NOTE="menu script is $mstate (~/.config/codemux/menu.sh)"; return
+  fi
   if [ ! -f "$rc" ]; then
     PROBE=MISS; NOTE='no bashrc (~/.bashrc)'; return
   fi
@@ -50,6 +81,9 @@ m_launcher_apply() {
   if [ ! -f "$tpl" ]; then
     APPLY_NOTE="launcher template missing: $tpl"; return 1
   fi
+  # The menu script is a separate file; install it first, so the .bashrc block
+  # never points at something missing.
+  m_launcher_menu_install || return 1
   mkdir -p "$HOME" || return 1
   [ -f "$rc" ] || : >"$rc" || return 1
 
@@ -99,9 +133,9 @@ m_launcher_apply() {
   rm -f "$tmp" "$body" "$new"
 
   if [ "$adopted" -eq 1 ]; then
-    APPLY_NOTE="old block adopted (backup: ${bak:-none})"
+    APPLY_NOTE="old block adopted, menu script installed (backup: ${bak:-none})"
   else
-    APPLY_NOTE="banner+menu block installed"
+    APPLY_NOTE="tmux auto-start + menu script installed"
   fi
   return 0
 }

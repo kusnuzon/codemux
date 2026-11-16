@@ -9,7 +9,8 @@ run again and again.
 ## ✨ What you get
 
 - 🤖 **OpenCode V2 by default, V1 optional** — you choose, nothing extra is pulled in
-- 🎛️ **Startup menu** — type a number, opens the component you pick
+- 🎛️ **Startup menu in a tmux session** — Termux opens one session, every tab
+  is a menu; type a number and the agent runs in that tab
 - 🧠 **Cross-session memory** — `MEMORY.md` + `RECENT.md` (with the open items)
   loaded every session
 - 🧰 **Base toolset** — git, gh, python, sqlite, jq, htop, ...
@@ -71,17 +72,19 @@ known to work on Termux. That pulls `clang`/LLVM (~500 MB) as a build dependency
 
 ## ⌨️ Startup menu
 
-Every new Termux session opens a menu — nothing is hidden:
+Termux opens straight into **one tmux session** whose tabs all run the same
+menu, so an agent never locks the only terminal you have:
 
 ```
+ 0:menu ✕ │ 1:rapikan doku ✕ │ 2:uji tab baru ✕ │                 + new tab
   ───────────────────────────────────────────
   1  OpenCode V1      1.19.5 · stable
   2  OpenCode V2      2.3.0 · separate DB
   3  Free-pi (Pi)     0.6.22 · free-pi agent
   4  Shell only       no agent
-  5  Quit             close Termux
+  5  Quit             close this tab
   ───────────────────────────────────────────
-  type a number, then Enter   q quit
+  type a number, then Enter   q quit   Ctrl+b c new tab
 
   Choice:
 ```
@@ -97,14 +100,27 @@ versions of the agents that are actually installed. Versions come from files
 menu never starts an agent binary to ask it, which used to cost 1.2 s before
 every prompt.
 
-The whole block is ~190 lines and sources in well under 50 ms. A missing agent
-is marked `not installed`; choosing it prints the matching `codemux install`
-command instead of installing anything behind your back. Skip the menu with
-`OPENCODE_NO_AUTO=1 bash`. `b` is gone: edit `~/.bashrc` directly.
+**The menu is its own script**, `~/.config/codemux/menu.sh`; `~/.bashrc` keeps
+about 40 lines that start tmux and define `menu`, `fixterm` and `version`. A
+startup file is sourced in front of every prompt, and an agent that hands the
+terminal back in a bad state used to break exactly that code.
+
+| Key | What it does |
+|---|---|
+| a number + Enter | open that component in this tab |
+| `q` | close the tab (`Quit` closes the whole session) |
+| `Ctrl+b c` | new tab (same menu) |
+| `Ctrl+b d` | detach — everything keeps running |
+| `Ctrl+b [` | scroll back inside a tab |
+
+A missing agent is marked `not installed`; choosing it prints the matching
+`codemux install` command instead of installing anything behind your back. Skip
+tmux and the menu entirely with `OPENCODE_NO_AUTO=1 bash`.
 
 Whatever a full-screen agent leaves behind — the alternate screen, mouse
-reporting, bracketed paste, a half-written OSC string — is reset once it exits,
-so the shell below is usable immediately and `Ctrl+C`/`Ctrl+L` keep working.
+reporting, bracketed paste, a half-written OSC string, a paused XOFF — is reset
+once it exits, so the tab is usable immediately and `Ctrl+C`/`Ctrl+L` keep
+working. If a pane ever does freeze, type `fixterm` (blind) and press Enter.
 
 ## 🧠 Memory that survives sessions
 
@@ -134,25 +150,40 @@ warning line once you are close to it.
 > The command was called `kuota` before 0.7.6. `codemux install` / `codemux
 > upgrade` remove the old file and symlink, so `quota` is the only name left.
 
-## 🎨 tmux theme
+## 🎨 tmux theme and tab strip
 
 `codemux install` writes a managed block into `~/.tmux.conf`: a dark status bar
-(tmux 3.8 otherwise ships green on black) plus `extended-keys on` with the `csi-u`
-format, which is what the pi TUI needs for Shift+Enter and friends:
+(tmux 3.8 otherwise ships green on black), a tab strip you can tap, plus
+`extended-keys on` with the `csi-u` format, which is what the pi TUI needs for
+Shift+Enter and friends:
 
 ```tmux
 # --- codemux:tmux begin (managed; edits inside this block are overwritten) ---
 set -g extended-keys on
 set -g extended-keys-format csi-u
-set -g status-style "bg=#101010,fg=#c0c0c0"
-...
+set -g mouse on
+set -g status-position top
+set -g window-status-format "…0:menu ✕ │…"
 # --- codemux:tmux end ---
 ```
+
+Every tab is **20 columns**: tap the name to switch, tap the `✕` to close. A
+close asks first — that tab turns into `keep │ close` in place, so a mis-tap
+never loses a running agent, and the last tab is never closed. ` + new tab ` at
+the right end adds one.
+
+The buttons are `#[range=user|…]` regions, not column arithmetic: tmux scrolls
+the window list by itself once the tabs overflow, and a column count would point
+at the wrong tab. The click handler is the small `sh` script
+`~/.config/codemux/tabctl.sh` (a `.tmux.conf` cannot define a function); every
+binding ends with `exit 0`, because tmux prints a failing `run-shell` over the
+whole status bar.
 
 Only that region is touched: your own settings outside the markers stay as they
 are, and the previous file is kept as `~/.tmux.conf.bak-tmuxconf-<timestamp>`.
 Applying it needs no restart — `tmux source-file ~/.tmux.conf` updates every
-running session.
+running session. `bash tools/tabstrip-shot.sh` renders the strip to a PNG from a
+throwaway server, so a layout change can be looked at instead of assumed.
 
 ## 🔧 Everyday commands
 
@@ -241,6 +272,7 @@ bash tests/launcher-memory.sh  # menu block, memory merge, wrapper versions
 bash tests/maintenance.sh # update-check, doctor, upgrade, uninstall
 bash tests/release.sh     # bootstrap tarball + self-update
 bash tests/tmuxconf.sh    # managed ~/.tmux.conf block: fresh, stale, blocked
+bash tests/tabctl.sh      # tap handler: switch, ask, keep, close, last tab
 ```
 
 Each suite waits for a state with `wait_state` (a 0.1 s poll) rather than a fixed
@@ -273,8 +305,8 @@ lib/modules/       one file per module (deps, glibc, v1, v2, launcher, memory, .
 lib/progress-bar.sh  the ASCII progress bar, shared with the opencode-termux repos
 lib/tmux-config.sh   the managed ~/.tmux.conf block, shared the same way
 tools/             sync-progress-bar.sh, sync-tmux-config.sh (copy, or --check for drift)
-templates/         bashrc block, memory files
-tests/             harness, smoke, launcher-memory, maintenance, resume, release, adapter, tmuxconf
+templates/         bashrc block, the menu script, memory files
+tests/             harness, smoke, launcher-memory, maintenance, resume, release, adapter, tmuxconf, tabctl
 install.sh         bootstrap (tarball + sha256)
 ```
 

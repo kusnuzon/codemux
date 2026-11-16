@@ -64,27 +64,53 @@ if grep -qx 'set -g mouse on' <<<"$block" &&
 else
   bad "block: no mouse/tab strip"
 fi
-# The window list is tmux's plain "index: name" strip: no custom tab formats to
-# mis-render, and tapping it uses tmux's own MouseDown1Status binding.
-if [ "$(grep -c 'set -g window-status-format " #I: #W "' <<<"$block")" -eq 1 ] &&
-  [ "$(grep -c 'set -g window-status-current-format " #I: #W "' <<<"$block")" -eq 1 ] &&
-  grep -qx 'set -g status-left ""' <<<"$block"; then
-  ok "block: plain window list (no custom tab formats)"
+# The strip is not a plain window list: every tab carries a ✕, the tab that is
+# waiting for an answer turns into "keep | close", and " + new tab " sits on
+# the right of the bar.
+if grep -q ' ✕ ' <<<"$block" &&
+  grep -q 'keep ' <<<"$block" &&
+  grep -q 'close  ' <<<"$block" &&
+  grep -q 'range=user|new' <<<"$block" &&
+  grep -q '@closepending' <<<"$block"; then
+  ok "block: ✕ per tab, keep/close confirmation and + new tab"
 else
-  bad "block: window list format is not the plain one"
+  bad "block: tab strip incomplete"
 fi
-# Everything the old 20-column touch strip needed is gone; leftover conditionals
-# are what used to render nothing when one of their fields was empty.
-if ! grep -q '✕\|@tabstart\|@closepending\|#{?' <<<"$block"; then
-  ok "block: no tab-strip glyphs, paging state or conditionals left"
+# Taps are resolved by status ranges, not by counting columns: tmux scrolls the
+# window list by itself, so x/20 points at the wrong tab once the tabs overflow.
+if grep -q 'range=user|c#{window_index}' <<<"$block" &&
+  grep -q 'range=user|k#{window_index}' <<<"$block" &&
+  grep -q 'range=user|x#{window_index}' <<<"$block" &&
+  grep -q 'mouse_status_range' <<<"$block" &&
+  ! grep -q 'mouse_x' <<<"$block"; then
+  ok "block: taps resolve through mouse_status_range (no column maths)"
 else
-  bad "block: leftovers from the touch tab strip"
+  bad "block: taps do not use status ranges"
 fi
-# A comma inside a #{?...} branch would end that branch, so no branch may remain.
-if grep -q '#\[.*,.*\]' <<<"$block" && grep -q 'window-status.*#{?' <<<"$block"; then
-  bad "block: a style code still sits inside a conditional branch"
+# Every binding runs the handler script and ends with `exit 0`; a run-shell that
+# fails makes tmux print the whole script over the status bar.
+for key in MouseDown1Status MouseDown1StatusRight; do
+  line="$(grep "^bind-key -n $key " <<<"$block" || true)"
+  if grep -q 'codemux/tabctl.sh' <<<"$line" && grep -q 'exit 0' <<<"$line"; then
+    ok "block: $key runs tabctl.sh and exits 0"
+  else
+    bad "block: $key binding is wrong"
+  fi
+done
+# A comma inside a #{?...} branch ends that branch, so style commas must be
+# written as `#,` — an unescaped one truncates the format and prints it raw.
+unescaped="${block//#,/}"
+if grep -qE '#\[[^]]*,' <<<"$unescaped"; then
+  bad "block: unescaped comma inside a style code"
 else
-  ok "block: no style code inside a conditional branch"
+  ok "block: style commas escaped inside the conditionals"
+fi
+# #{?cond,then,else,} (four fields) expands to an empty string and the whole
+# strip disappears; a missing closing brace does the same.
+if grep -q ',}' <<<"$block"; then
+  bad "block: a conditional ends with an empty field"
+else
+  ok "block: no conditional ends with an empty field"
 fi
 [ "$(grep -c 'codemux:tmux begin' <<<"$block")" = "1" ] && ok "block: one begin marker" || bad "block: marker count"
 
@@ -162,7 +188,45 @@ fi
 rmdir "$SANDBOX/home/.tmux.conf"
 
 # =============================================================================
-# 6. Every target repo carries the same block and calls it
+# 6. With tmux available: the block parses, and every tab state is 20 columns
+# =============================================================================
+# The width is what makes a tap land on the tab under the finger; a name that
+# is one column too long shifts the whole strip. Skipped where tmux is missing.
+if command -v tmux >/dev/null 2>&1; then
+  sock="codemux-tabs-$$"
+  conf="$SANDBOX/block.conf"
+  tmuxconf 'tmuxconf_block' >"$conf"
+  if tmux -L "$sock" -f "$conf" new-session -d -s chk -x 100 -y 12 'sleep 20' 2>/dev/null; then
+    ok "tmux: the block parses"
+  else
+    bad "tmux: the block does not parse"
+  fi
+  tmux -L "$sock" new-window -t chk: -n 'judul yang panjang sekali' 'sleep 20' 2>/dev/null
+  tmux -L "$sock" new-window -t chk: -n opencode 'sleep 20' 2>/dev/null
+  width() { # <option>
+    tmux -L "$sock" display -p -t chk:1 "$(tmux -L "$sock" show -gv "$1")" 2>/dev/null |
+      sed -e 's/#\[[^]]*\]//g' | awk '{ print length($0) }'
+  }
+  [ "$(width window-status-format)" -eq 20 ] &&
+    ok "tmux: an inactive tab is 20 columns" || bad "tmux: inactive tab width $(width window-status-format)"
+  [ "$(width window-status-current-format)" -eq 20 ] &&
+    ok "tmux: the active tab is 20 columns" || bad "tmux: active tab width $(width window-status-current-format)"
+  [ "$(width window-status-format)" = 20 ] &&
+    grep -q 'judul yang p' <<<"$(tmux -L "$sock" display -p -t chk:1 \
+      "$(tmux -L "$sock" show -gv window-status-format)")" &&
+    ok "tmux: a long name is cut instead of overflowing" ||
+    bad "tmux: a long name is not cut"
+  tmux -L "$sock" set-option -t chk @closepending 1 2>/dev/null
+  [ "$(width window-status-format)" -eq 20 ] &&
+    ok "tmux: the keep/close tab is 20 columns" || bad "tmux: keep/close width $(width window-status-format)"
+  tmux -L "$sock" set-option -u -t chk @closepending 2>/dev/null
+  tmux -L "$sock" kill-server 2>/dev/null
+else
+  ok "tmux: not installed (width checks skipped)"
+fi
+
+# =============================================================================
+# 7. Every target repo carries the same block and calls it
 # =============================================================================
 # <repo>:<file holding the synced block>:<file with the call site>
 for t in "opencode-termux:install.sh:install.sh" \

@@ -106,10 +106,12 @@ if [ "$(grep -c 'codemux:launcher begin' "$rc_file")" -eq 1 ] &&
 else
   bad "fresh: launcher markers are not exactly one pair"
 fi
-if grep -q '_oc_banner()' "$rc_file" && grep -q '_oc_menu_loop()' "$rc_file"; then
-  ok "fresh: banner + menu functions present"
+if grep -q '_oc_tmux_enter()' "$rc_file" && ! grep -q '_oc_banner()' "$rc_file" &&
+  [ -f "$SB/home/.config/codemux/menu.sh" ] &&
+  grep -q 'CM_MENU_VERSION' "$SB/home/.config/codemux/menu.sh"; then
+  ok "fresh: .bashrc auto-starts tmux, the menu is a separate script"
 else
-  bad "fresh: banner/menu functions incomplete"
+  bad "fresh: tmux auto-start missing or the menu is still in .bashrc"
 fi
 if grep -q '_oc_refresh_digest()' "$rc_file"; then ok "fresh: digest wrapper present"; else bad "fresh: digest wrapper missing"; fi
 
@@ -139,11 +141,12 @@ fi
 mkdir -p "$SB/home/.npm/_npx/deadbeef/node_modules/free-pi-cli"
 printf '{\n  "name": "free-pi-cli",\n  "version": "9.9.9"\n}\n' \
   >"$SB/home/.npm/_npx/deadbeef/node_modules/free-pi-cli/package.json"
-pi_ver="$(HOME="$SB/home" bash -c 'eval "$(sed -n "/^_oc_ver()/,/^}/p" "$1")"; _oc_ver pi' _ "$rc_file" 2>/dev/null)"
+pi_ver="$(HOME="$SB/home" bash -c 'eval "$(sed -n "/^_cm_ver()/,/^}/p" "$1")"; _cm_ver pi' \
+  _ "$SB/home/.config/codemux/menu.sh" 2>/dev/null)"
 if [ "$pi_ver" = "9.9.9" ]; then
-  ok "fresh: _oc_ver pi reads the npx manifest (9.9.9)"
+  ok "fresh: _cm_ver pi reads the npx manifest (9.9.9)"
 else
-  bad "fresh: _oc_ver pi = '$pi_ver' (expected 9.9.9)"
+  bad "fresh: _cm_ver pi = '$pi_ver' (expected 9.9.9)"
 fi
 
 [ -f "$SB/home/.bash_profile" ] && ok "fresh: .bash_profile created" || bad "fresh: .bash_profile missing"
@@ -306,7 +309,7 @@ if ! grep -q '^# --- banner + menu launcher' "$rc3"; then
 else
   bad "legacy: old block still present"
 fi
-if [ "$(grep -c '_oc_menu_loop()' "$rc3")" -eq 1 ] &&
+if [ "$(grep -c '_oc_tmux_enter()' "$rc3")" -eq 1 ] &&
   [ "$(grep -c 'codemux:launcher begin' "$rc3")" -eq 1 ] &&
   bash -n "$rc3" 2>/dev/null; then
   ok "legacy: single new block + valid"
@@ -337,90 +340,72 @@ else
 fi
 
 # =============================================================================
-# 5. the launcher block is small, fast and key-free
+# 5. the shell startup block is tiny; the whole menu lives in its own script
 # =============================================================================
-# The block is sourced by every interactive shell, so it must not start an agent
-# to read a version and must not read single keys. Both were real bugs: the
-# version probe ran `opencode --version` (1.2 s before every prompt) and the
-# key reader could spin on a terminal a TUI handed back in raw mode.
+# ~/.bashrc is sourced in front of every prompt, so it must not carry the menu
+# and must not start an agent to read a version. Everything moved to
+# ~/.config/codemux/menu.sh, which tmux runs in every tab.
 TPL="$ROOT/templates/bashrc-block.sh"
+MENU="$ROOT/templates/menu.sh"
 SB5="$(new_sandbox menu-items)"
-if ! grep -q 'timeout 8 opencode' "$TPL" && ! grep -q '\$(opencode --version' "$TPL" &&
-  grep -q 'share/opencode/VERSION' "$TPL" && grep -q 'dpkg-query' "$TPL"; then
-  ok "menu: versions come from files, the agent binary is never started"
+
+if ! grep -q '_oc_banner()' "$TPL" && ! grep -q '_oc_menu_loop()' "$TPL" &&
+  grep -q '_oc_tmux_enter()' "$TPL" && grep -q 'tmux new-session -d -s main' "$TPL" &&
+  grep -q 'exec tmux attach-session -t main' "$TPL"; then
+  ok "block: .bashrc only auto-starts tmux, the menu is gone from it"
 else
-  bad "menu: the version probe still runs the agent binary"
+  bad "block: the menu is still in .bashrc or the tmux auto-start is missing"
 fi
-if ! grep -q 'read -rsn1' "$TPL" && ! grep -q '_oc_read_key' "$TPL" &&
-  grep -q 'IFS= read -r choice' "$TPL"; then
+block_lines="$(wc -l <"$TPL")"
+if [ "$block_lines" -le 60 ]; then
+  ok "block: the startup block is $block_lines lines"
+else
+  bad "block: the startup block is $block_lines lines (target <= 60)"
+fi
+if grep -q 'default-command' "$TPL" && grep -q 'OPENCODE_NO_AUTO' "$TPL" &&
+  grep -q 'TMUX' "$TPL"; then
+  ok "block: new tabs reuse the menu (default-command) and startup can be skipped"
+else
+  bad "block: default-command / skip gate / tmux guard missing"
+fi
+# The block never starts an agent, so a version is never read on startup.
+if ! grep -q 'opencode --version' "$TPL" && ! grep -q 'free-pi-cli --version' "$TPL"; then
+  ok "block: no agent binary is started from .bashrc"
+else
+  bad "block: .bashrc still starts an agent"
+fi
+# The commands the rest of the system relies on: pi/memory wrappers call
+# _oc_tty_fix, and `menu` / `version` / `fixterm` stay available.
+for fn in _oc_tty_fix fixterm menu version; do
+  grep -q "^$fn() {" "$TPL" || fn_gap="$fn_gap $fn"
+done
+if [ -z "${fn_gap:-}" ] && grep -q -- '--repair' "$TPL" && grep -q -- '--versions' "$TPL"; then
+  ok "block: _oc_tty_fix, fixterm, menu and version delegate to the script"
+else
+  bad "block: helper commands missing:${fn_gap:- --repair/--versions}"
+fi
+
+# --- the menu script itself --------------------------------------------------
+if grep -q 'IFS= read -r choice' "$MENU" && ! grep -q 'read -rsn1' "$MENU"; then
   ok "menu: one typed line per answer (no single-key reader)"
 else
-  bad "menu: a single-key reader is still present"
+  bad "menu: a single-key reader is present"
 fi
-# The banner stays: ASCII art plus one meta line with the installed agents.
-if grep -q '█▀▀█' "$TPL" && grep -q 'Termux · Android arm64' "$TPL"; then
+if grep -q '█▀▀█' "$MENU" && grep -q 'Termux · Android arm64' "$MENU"; then
   ok "menu: banner kept (art + version line)"
 else
   bad "menu: banner missing"
 fi
-# Dropped on purpose: the tmux tab-strip bindings, the quota/update notices and
-# the install dialog. Their absence is what keeps the block small.
-if ! grep -q 'MouseDown1Status' "$TPL" && ! grep -q '_oc_pi_tmux_tabs' "$TPL" &&
-  ! grep -q '_oc_quota_notice' "$TPL" && ! grep -q '_oc_update_notice' "$TPL" &&
-  ! grep -q 'Install it now?' "$TPL"; then
-  ok "menu: no tab-strip bindings, notices or install dialog left"
+if ! grep -q '\$(opencode --version' "$MENU" && ! grep -q 'timeout 8 opencode' "$MENU" &&
+  grep -q 'share/opencode/VERSION' "$MENU" && grep -q 'dpkg-query' "$MENU"; then
+  ok "menu: versions come from files, the agent binary is never started"
 else
-  bad "menu: a dropped feature is still in the block"
+  bad "menu: the version probe still runs the agent binary"
 fi
-# Small enough to read on one screen.
-lines="$(wc -l <"$TPL")"
-if [ "$lines" -le 280 ]; then
-  ok "menu: the block is $lines lines"
+if grep -q 'MouseDown1Status' "$MENU" && grep -q 'kill-window' "$MENU"; then
+  bad "menu: tab-strip mouse bindings came back"
 else
-  bad "menu: the block is still $lines lines (target ≤ 280)"
-fi
-# The pi row that runs inside tmux: one session called `pi`, no nested server,
-# and the terminal is repaired after it returns.
-if grep -q '^_oc_pi_tmux() {' "$TPL" &&
-  grep -q 'tmux new-session -A -s pi ' "$TPL" &&
-  grep -q 'if \[ -n "${TMUX:-}" \]' "$TPL" &&
-  sed -n '/^_oc_pi_tmux() {/,/^}/p' "$TPL" | grep -q '_oc_tty_fix'; then
-  ok "menu: the pi-tmux row uses one session and repairs the terminal"
-else
-  bad "menu: the pi-tmux row is missing or unsafe"
-fi
-# Frozen-screen fixes: XON unpauses a stray XOFF, RIS resets the emulator and
-# stty is retried on three file descriptors before either is given up on.
-if grep -q '^fixterm() {' "$TPL" && grep -q 'fixterm repairs a stuck screen' "$TPL"; then
-  ok "menu: fixterm repairs the terminal by hand"
-else
-  bad "menu: the manual repair command is missing"
-fi
-for piece in '\017' '\033c' 'stty sane </dev/tty' 'stty sane <&2'; do
-  grep -qF "$piece" "$TPL" || tty_gap="$piece"
-done
-if [ -z "${tty_gap:-}" ] && grep -qF '\017' "$ROOT/lib/modules/memory.sh"; then
-  ok "menu: terminal reset sends XON, resets the emulator and retries stty"
-else
-  bad "menu: terminal reset is missing ${tty_gap:-the XON/RIS fix in memory.sh}"
-fi
-
-# The terminal repair stays: it is what unfreezes Termux after an agent exits.
-tty_modes_missing=""
-for mode in '\007' '\033\\' '\033[?2026l' '\033[?1049l' '\033[?1002l' \
-  '\033[?2004l' '\033['r '\033[?6l' '\033[?7h' '\033(B' '\033[!p'; do
-  grep -qF "$mode" "$TPL" || tty_modes_missing="$tty_modes_missing $mode"
-done
-if [ -z "$tty_modes_missing" ]; then
-  ok "menu: the terminal reset keeps every mode it releases"
-else
-  bad "menu: terminal reset is incomplete, missing:$tty_modes_missing"
-fi
-fix_sites="$(grep -c '_oc_tty_fix' "$TPL")"
-if grep -q '^_oc_tty_fix() {' "$TPL" && [ "$fix_sites" -ge 3 ] && grep -q '^  _oc_tty_fix$' "$TPL"; then
-  ok "menu: terminal repaired after a component and before the shell"
-else
-  bad "menu: terminal repair missing on an exit path ($fix_sites sites)"
+  ok "menu: no tab-strip mouse bindings (tmux owns the strip)"
 fi
 
 # rows: always the same five, a missing agent marked
@@ -429,21 +414,21 @@ menu_keys() { # <sandbox> → keys of the menu rows
   env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
       PATH="$2"
       . "$1"
-      _oc_items
-      printf "%s" "${_OC_KEYS[*]}"
-    ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
+      _cm_items
+      printf "%s" "${_CM_KEYS[*]}"
+    ' _ "$MENU" "$sb/prefix/bin" 2>/dev/null
 }
 menu_descs() { # <sandbox> → descriptions of the menu rows
   local sb="$1"
   env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
       PATH="$2"
       . "$1"
-      _oc_items
-      printf "%s" "${_OC_DESCS[*]}"
-    ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
+      _cm_items
+      printf "%s" "${_CM_DESCS[*]}"
+    ' _ "$MENU" "$sb/prefix/bin" 2>/dev/null
 }
-if [ "$(menu_keys "$SB5")" = "v1 v2 pi pitmux shell quit" ]; then
-  ok "menu: six rows (v1 v2 pi pitmux shell quit)"
+if [ "$(menu_keys "$SB5")" = "v1 v2 pi shell quit" ]; then
+  ok "menu: five rows (v1 v2 pi shell quit)"
 else
   bad "menu: rows are '$(menu_keys "$SB5")'"
 fi
@@ -454,8 +439,8 @@ esac
 
 # banner meta line: only installed agents are listed
 meta="$(env HOME="$SB5/home" PREFIX="$SB5/prefix" NO_COLOR=1 \
-  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c 'command() { return 1; }; . "$1"; _oc_colors; _oc_banner' \
-  _ "$TPL" 2>/dev/null)"
+  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c 'command() { return 1; }; . "$1"; _cm_colors; _cm_banner' \
+  _ "$MENU" 2>/dev/null)"
 case "$meta" in
   *"no agent yet"*) ok "menu: nothing installed → banner says no agent yet" ;;
   *) bad "menu: banner meta line is wrong → $(printf '%s' "$meta" | tr '\n' ' ')" ;;
@@ -466,60 +451,49 @@ chmod +x "$SB5/prefix/bin/opencode-v2"
 mkdir -p "$SB5/prefix/share/opencode-v2"
 printf '2.3.0' >"$SB5/prefix/share/opencode-v2/VERSION"
 meta="$(env HOME="$SB5/home" PREFIX="$SB5/prefix" NO_COLOR=1 \
-  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c 'PATH="$2:$PATH"; . "$1"; _oc_colors; _oc_banner' \
-  _ "$TPL" "$SB5/prefix/bin" 2>/dev/null)"
+  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c 'PATH="$2:$PATH"; . "$1"; _cm_colors; _cm_banner' \
+  _ "$MENU" "$SB5/prefix/bin" 2>/dev/null)"
 case "$meta" in
   *"v2 2.3.0"*) ok "menu: an installed agent is listed with its version" ;;
   *) bad "menu: installed agent missing from the banner → $(printf '%s' "$meta" | tr '\n' ' ')" ;;
 esac
 
-# version(): three lines, read from files
+# --versions: three lines, read from files
 out="$(env HOME="$SB5/home" PREFIX="$SB5/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" \
-  bash -c 'PATH="$2:$PATH"; . "$1"; version' _ "$TPL" "$SB5/prefix/bin" 2>/dev/null)"
+  bash "$MENU" --versions 2>/dev/null)"
 case "$out" in
   *"OpenCode V1:"*"OpenCode V2:"*"Free-pi (Pi):"*)
-    ok "menu: version prints the three agents" ;;
-  *) bad "menu: version output is '$(printf '%s' "$out" | tr '\n' '|')'" ;;
+    ok "menu: --versions prints the three agents" ;;
+  *) bad "menu: --versions output is '$(printf '%s' "$out" | tr '\n' '|')'" ;;
 esac
 
-# a missing agent is reported, never installed from the menu
-out="$(printf '1\n' | timeout 20 env HOME="$SB5/home" PREFIX="$SB5/prefix" \
-  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c 'PATH="$2"; . "$1"; _oc_menu_loop; printf "rc=%s\n" "$?"' \
-  _ "$TPL" "$SB5/prefix/bin" 2>/dev/null)"
-case "$out" in
-  *"is not installed"*"run: codemux install"*"rc=1"*)
-    ok "menu: choosing a missing agent explains the install command" ;;
-  *) bad "menu: missing agent → $(printf '%s' "$out" | tr '\n' ' ' | tail -c 200)" ;;
-esac
-if grep -q 'OPENCODE_NO_AUTO' "$TPL" && grep -q 'OPENCODE_AUTO_LAUNCHED' "$TPL"; then
-  ok "menu: auto-launch can be skipped (OPENCODE_NO_AUTO=1)"
-else
-  bad "menu: no gate around the auto-launch"
-fi
 # =============================================================================
-# 5d. a dead stdin never traps the menu (the /quit bug)
+# 5d. the menu never traps the caller (dead stdin, bad answer, missing agent)
 # =============================================================================
-# A full-screen agent can hand back a terminal that answers nothing, so `read`
-# fails instantly and forever. The menu used to spin on that EOF and never came
-# back. It must give up and return instead.
 SB5D="$(new_sandbox eof)"
 mkdir -p "$SB5D/prefix/bin" "$SB5D/home"
 # The menu answers with a typed number, so a dead stdin (what a full-screen agent
-# leaves behind) must end it instead of looping. `timeout` is the assertion: a
+# can leave behind) must end it instead of looping. `timeout` is the assertion: a
 # reader that spins on EOF burns the CPU and the suite would never finish.
-menu_with() { # <stdin text> → "rc=<status>" (stdin is fed with printf)
+menu_with() { # <stdin text> → "rc=<status>"
   local input="$1"
-  printf '%b' "$input" | timeout 20 env HOME="$SB5D/home" PREFIX="$SB5D/prefix" \
+  printf '%b' "$input" | timeout 20 env -u TMUX -u TMUX_PANE \
+    HOME="$SB5D/home" PREFIX="$SB5D/prefix" \
     PATH="$SB5D/prefix/bin:$PATH" CODEMUX_ROOT="$ROOT" CODEMUX_HOME="$SB5D/state" \
     CODEMUX_ALLOW_NONANDROID=1 OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
-    C1=""; C2=""; ACC=""; DIM=""; BOLD=""; HL=""; R=""
-    _oc_cursor_show() { :; }
-    _oc_cursor_hide() { :; }
-    _oc_tty_fix() { :; }
+    C1=""; C2=""; ACC=""; DIM=""; BOLD=""; R=""
+    # The host really has opencode/pi installed: hide them, so the "missing
+    # agent" row is exercised instead of starting a real agent.
+    command() {
+      if [ "$1" = "-v" ]; then
+        case "$2" in opencode | opencode-v2 | pi | free-pi-cli) return 1 ;; esac
+      fi
+      builtin command "$@"
+    }
     . "$1"
-    _oc_menu_loop
+    _cm_menu_loop
     printf "menu rc=%s\n" "$?"
-  ' _ "$TPL" 2>/dev/null
+  ' _ "$MENU" 2>/dev/null
 }
 out="$(menu_with '')"
 case "$out" in
@@ -527,10 +501,10 @@ case "$out" in
     ok "menu: a dead stdin ends the menu instead of spinning" ;;
   *) bad "menu: a dead stdin hangs the menu → $(printf '%s' "$out" | tr '\n' ' ')" ;;
 esac
-out="$(menu_with '5\n')"
+out="$(menu_with '4\n')"
 case "$out" in
   *"menu rc=0"*)
-    ok "menu: typing 5 (Shell only) returns to the shell" ;;
+    ok "menu: typing 4 (Shell only) hands the pane back without exec-ing a shell" ;;
   *) bad "menu: typing a number did not run the row → $(printf '%s' "$out" | tr '\n' ' ')" ;;
 esac
 out="$(menu_with 'q\n')"
@@ -545,6 +519,37 @@ case "$out" in
     ok "menu: a bad answer is rejected without starting anything" ;;
   *) bad "menu: a bad answer was not rejected" ;;
 esac
+# a missing agent is reported, never installed from the menu
+out="$(menu_with '1\n')"
+case "$out" in
+  *"is not installed"*"run: codemux install"*)
+    ok "menu: choosing a missing agent explains the install command" ;;
+  *) bad "menu: missing agent → $(printf '%s' "$out" | tr '\n' ' ' | tail -c 200)" ;;
+esac
+# quitting inside tmux must close the session, not leave a dead pane behind
+if grep -q 'tmux kill-session' "$MENU" && grep -q 'kill-session -t "\$(tmux display-message' "$MENU"; then
+  ok "menu: Quit closes the tmux session it runs in"
+else
+  bad "menu: Quit does not close its session"
+fi
+
+# The terminal reset stays: it is what unfreezes a pane after an agent exits.
+tty_modes_missing=""
+for mode in '\007' '\033\\' '\033[?2026l' '\033[?1049l' '\033[?1002l' \
+  '\033[?2004l' '\033[r' '\033[?6l' '\033[?7h' '\033(B' '\033[!p' '\017'; do
+  grep -qF "$mode" "$MENU" || tty_modes_missing="$tty_modes_missing $mode"
+done
+if [ -z "$tty_modes_missing" ]; then
+  ok "menu: the pane reset keeps every mode it releases"
+else
+  bad "menu: pane reset is incomplete, missing:$tty_modes_missing"
+fi
+if grep -q '^_cm_tty_fix() {' "$MENU" &&
+  grep -q '^  _cm_tty_fix$' "$MENU" && ! grep -q 'print.*\\033c' "$MENU"; then
+  ok "menu: the pane is repaired after a component, without a full RIS"
+else
+  bad "menu: pane repair missing after a component (or RIS is back)"
+fi
 
 # =============================================================================
 # 5c. the pi module never touches a broken .bashrc
