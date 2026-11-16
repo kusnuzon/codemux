@@ -47,7 +47,7 @@ else
   ok "block: plain bash only (no awk/sed)"
 fi
 if grep -q 'extended-keys-format csi-u' <<<"$block" &&
-  grep -q 'bg=#101010' <<<"$block" &&
+  grep -q 'bg=#000000' <<<"$block" &&
   grep -q 'pane-active-border-style' <<<"$block"; then
   ok "block: carries extended-keys + dark theme"
 else
@@ -81,12 +81,13 @@ fi
 fmt_line="$(grep '^set -g window-status-format ' <<<"$block")"
 cur_line="$(grep '^set -g window-status-current-format ' <<<"$block")"
 last_tab='#{e|-|:#{session_windows},1}'
-if grep -q "range=user|new" <<<"$fmt_line" &&
+if grep -qF '╋' <<<"$fmt_line" &&
+  grep -q "range=user|new" <<<"$fmt_line" &&
   grep -q "range=user|new" <<<"$cur_line" &&
   grep -qF "==:#{window_index},$last_tab" <<<"$fmt_line" &&
   grep -qF "==:#{window_index},$last_tab" <<<"$cur_line" &&
   ! grep -qi 'new tab' <<<"$block"; then
-  ok "block: + button follows the last tab (no label text)"
+  ok "block: heavy + button follows the last tab (no label text)"
 else
   bad "block: + button is not pinned to the last tab"
 fi
@@ -181,7 +182,7 @@ python3 - "$CONF" "$SANDBOX/bad" <<'PY' 2>/dev/null
 import sys
 conf, bad = sys.argv[1], sys.argv[2]
 lines = open(conf).read().splitlines()
-lines = [l for l in lines if l != 'set -g status-style "bg=#101010,fg=#c0c0c0"']
+lines = [l for l in lines if l != 'set -g status-style "bg=#000000,fg=#c0c0c0"']
 lines.insert(lines.index([l for l in lines if l.startswith('# --- codemux:tmux begin')][0]) + 1,
              open(bad).read().strip())
 open(conf, 'w').write('\n'.join(lines) + '\n')

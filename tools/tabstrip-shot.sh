@@ -82,7 +82,7 @@ tabs = pathlib.Path(work, "tabs.txt").read_text(encoding="utf-8").split("\n")
 tabs = [t for t in tabs if t != ""]
 style_re = re.compile(r"#\[([^]]*)\]")
 
-def spans(text, base_fg="#8a8f98", base_bg="#101010"):
+def spans(text, base_fg="#8a8f98", base_bg="#000000"):
     """Turn tmux style codes into HTML spans; user ranges are invisible."""
     out, i, cur = [], 0, (base_fg, base_bg, "normal")
     for m in style_re.finditer(text):
@@ -118,7 +118,7 @@ bar = "".join(spans(t, base_fg="#8a8f98") for t in tabs) + spans(right, base_fg=
 doc = f"""<!doctype html><meta charset=utf-8>
 <style>
   body {{ margin:0; background:#000; }}
-  .term {{ font: 700 15px/1.45 'DejaVu Sans Mono',monospace; background:#101010; color:#c0c0c0;
+  .term {{ font: 700 15px/1.45 'DejaVu Sans Mono',monospace; background:#000000; color:#c0c0c0;
            width: 900px; padding: 0; }}
   .bar {{ white-space: pre; height: 22px; }}
   .pane {{ white-space: pre; padding: 6px 0 0 0; color:#c0c0c0; }}

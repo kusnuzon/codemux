@@ -678,7 +678,7 @@ set -g extended-keys on
 set -g extended-keys-format csi-u
 set -g mouse on
 set -g status-position top
-set -g status-style "bg=#101010,fg=#c0c0c0"
+set -g status-style "bg=#000000,fg=#c0c0c0"
 set -g status-left ""
 set -g automatic-rename off
 set -g window-status-format "…0:menu ✕ │…"      # 20 columns per tab
