@@ -114,9 +114,9 @@ if grep -q '_oc_refresh_digest()' "$rc_file"; then ok "fresh: digest wrapper pre
 # failed one: a clean /exit can leave raw termios, and the shell then looks
 # frozen — keys arrive, nothing echoes (V1 → "Shell only" froze Termux). Gating
 # the repair on a non-zero exit code is exactly what failed.
-if grep -q 'codemux:memory version 2' "$rc_file" &&
+if grep -q 'codemux:memory version 3' "$rc_file" &&
   [ "$(grep -c 'codemux:memory begin' "$rc_file")" -eq 1 ]; then
-  ok "fresh: wrapper is version 2 and written exactly once"
+  ok "fresh: wrapper is version 3 and written exactly once"
 else
   bad "fresh: wrapper block is missing, duplicated or still version 1"
 fi
@@ -230,7 +230,7 @@ if [ "$(grep -c '^# --- refresh the session summary' "$legacy_rc")" -eq 0 ]; the
 else
   bad "legacy: the old markerless wrapper survived (two definitions)"
 fi
-if [ "$(grep -c 'codemux:memory version 2' "$legacy_rc")" -eq 1 ] &&
+if [ "$(grep -c 'codemux:memory version 3' "$legacy_rc")" -eq 1 ] &&
   bash -n "$legacy_rc" 2>/dev/null; then
   ok "legacy: exactly one current wrapper remains and .bashrc is valid"
 else
@@ -365,6 +365,20 @@ if grep -q 'reopens' "$TPL"; then
   ok "menu: the key reader limits terminal re-opens (cannot spin)"
 else
   bad "menu: the key reader can still spin on a dead terminal"
+fi
+# A frozen screen with a live shell means the TUI left a terminal mode behind
+# (alternate screen / mouse / paste). Every one of them has to be turned off and
+# the terminal has to be told to redraw, in both the menu helper and the
+# ~/.bashrc wrapper.
+tty_modes_missing=""
+for mode in '\033[?1049l' '\033[?1000l' '\033[?1002l' '\033[?1003l' '\033[?1006l' \
+  '\033[?1004l' '\033[?2004l' '\033>' '\033[!p' '\033[2J'; do
+  grep -qF "$mode" "$TPL" || tty_modes_missing="$tty_modes_missing $mode"
+done
+if [ -z "$tty_modes_missing" ]; then
+  ok "menu: every TUI terminal mode is released and the screen is redrawn"
+else
+  bad "menu: terminal reset is incomplete, missing:$tty_modes_missing"
 fi
 if grep -qF '\033[%dA' "$TPL" && ! grep -qF '\033[7A' "$TPL" && ! grep -qF '\033[8A' "$TPL"; then
   ok "menu: redraws only the option rows (dynamic offset)"
