@@ -81,7 +81,7 @@ fi
 fmt_line="$(grep '^set -g window-status-format ' <<<"$block")"
 cur_line="$(grep '^set -g window-status-current-format ' <<<"$block")"
 last_tab='#{e|-|:#{session_windows},1}'
-if grep -qF '╋' <<<"$fmt_line" &&
+if grep -qF '✚' <<<"$fmt_line" &&
   grep -q "range=user|new" <<<"$fmt_line" &&
   grep -q "range=user|new" <<<"$cur_line" &&
   grep -qF "==:#{window_index},$last_tab" <<<"$fmt_line" &&

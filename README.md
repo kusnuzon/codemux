@@ -76,7 +76,7 @@ Termux opens straight into **one tmux session** whose tabs all run the same
 menu, so an agent never locks the only terminal you have:
 
 ```
- 0:menu ✕ │ 1:rapikan doku ✕ │ 2:uji tab baru ✕ │ ╋ 
+ 0:menu ✕ │ 1:rapikan doku ✕ │ 2:uji tab baru ✕ │ ✚ 
   ───────────────────────────────────────────
   1  OpenCode V1      1.19.5 · stable
   2  OpenCode V2      2.3.0 · separate DB
@@ -170,7 +170,7 @@ set -g window-status-format "…0:menu ✕ │…"
 
 Every tab is **20 columns**: tap the name to switch, tap the `✕` to close. A
 close asks first — that tab turns into `keep │ close` in place, so a mis-tap
-never loses a running agent, and the last tab is never closed. A single heavy `╋`
+never loses a running agent, and the last tab is never closed. A single `✚` (heavy cross)
 follows the last tab and walks along with it: tapping it adds a tab there, so
 the button is always right next to the newest tab instead of at the far end of
 the bar.
