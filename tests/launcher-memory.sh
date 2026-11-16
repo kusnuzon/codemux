@@ -475,10 +475,12 @@ fi
 # read #{mouse_x}, and it never closes the last tab.
 if grep -qx 'set-option -t pi status-right  x  + new tab ' "$SB6/tmux.calls" &&
   grep -q '^bind-key -n MouseDown1StatusRight run-shell -b .*x=#{mouse_x}' "$SB6/tmux.calls" &&
+  grep -q 'display-menu -c "#{client_name}" -T "Close this tab?"' "$SB6/tmux.calls" &&
   grep -q 'kill-window -t #{window_id}' "$SB6/tmux.calls" &&
+  grep -q 'Last tab - keeping it open' "$SB6/tmux.calls" &&
   grep -q 'new-window -t pi: -n pi' "$SB6/tmux.calls" &&
   grep -q '#{session_windows}" -gt 1' "$SB6/tmux.calls"; then
-  ok "menu: the tmux row adds tap-friendly 'x' (close, never the last tab) and '+ new tab'"
+  ok "menu: the tmux row adds tap-friendly 'x' (asks first, never the last tab) and '+ new tab'"
 else
   bad "menu: touch bindings are '$(grep -E 'status-right|MouseDown' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';')'"
 fi

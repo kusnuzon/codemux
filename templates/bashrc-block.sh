@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 16
+# codemux:launcher version 17
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -350,7 +350,7 @@ _oc_pi_tmux_tabs() {
   # #{mouse_x} (if-shell is evaluated before the click), so it does the
   # dispatch, and the last remaining tab is never closed.
   tmux set-option -t pi status-right ' x  + new tab ' 2>/dev/null || true
-  tmux bind-key -n MouseDown1StatusRight "run-shell -b 'x=#{mouse_x}; w=#{client_width}; l=#{n:status-right}; o=\$((x-(w-l))); [ \"#{session_name}\" = pi ] || exit 0; if [ \"\$o\" -le 3 ]; then [ \"#{session_windows}\" -gt 1 ] && tmux kill-window -t #{window_id}; else tmux new-window -t pi: -n pi; fi'" 2>/dev/null || true
+  tmux bind-key -n MouseDown1StatusRight "run-shell -b 'x=#{mouse_x}; w=#{client_width}; l=#{n:status-right}; o=\$((x-(w-l))); [ \"#{session_name}\" = pi ] || exit 0; if [ \"\$o\" -le 3 ]; then if [ \"#{session_windows}\" -gt 1 ]; then tmux display-menu -c \"#{client_name}\" -T \"Close this tab?\" -x W -y W \"Close\" c \"kill-window -t #{window_id}\" \"Keep\" q \"\"; else tmux display-message -c \"#{client_name}\" \"Last tab - keeping it open\"; fi; else tmux new-window -t pi: -n pi; fi'" 2>/dev/null || true
   tmux bind-key -n C-Tab if-shell -F '#{==:#{session_name},pi}' next-window 'send-keys C-Tab' 2>/dev/null || true
   tmux bind-key -n BTab if-shell -F '#{==:#{session_name},pi}' previous-window 'send-keys BTab' 2>/dev/null || true
   tmux bind-key -n M-Down if-shell -F '#{==:#{session_name},pi}' next-window 'send-keys M-Down' 2>/dev/null || true
