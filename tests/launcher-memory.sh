@@ -357,17 +357,19 @@ fi
 # binary), so it repairs the terminal itself: once after a component returns and
 # once before handing the shell back. A missing call leaves Termux frozen.
 fix_sites="$(grep -c '_oc_tty_fix' "$TPL")"
-if grep -q '^_oc_tty_fix() {' "$TPL" && [ "$fix_sites" -ge 4 ]; then
+if grep -q '^_oc_tty_fix() {' "$TPL" && [ "$fix_sites" -ge 3 ] && \
+  grep -q '^  _oc_tty_fix$' "$TPL"; then
   ok "menu: terminal repaired after a component and before the shell"
 else
   bad "menu: terminal repair helper missing or not on every exit path ($fix_sites sites)"
 fi
-# A terminal that re-opens but answers EOF instantly must not be retried
-# forever: that loop burns the CPU and freezes the phone.
-if grep -q 'reopens' "$TPL"; then
-  ok "menu: the key reader limits terminal re-opens (cannot spin)"
+# No single-key reader means no retry loop: the menu reads one line, so a dead
+# terminal (EOF, what a full-screen agent leaves behind) ends it immediately.
+if ! grep -q 'reopens' "$TPL" && ! grep -q 'read -rsn1' "$TPL" && \
+  grep -q 'IFS= read -r choice' "$TPL"; then
+  ok "menu: no single-key reader, so nothing can spin on a dead terminal"
 else
-  bad "menu: the key reader can still spin on a dead terminal"
+  bad "menu: a key reader is still there (it can spin on a dead terminal)"
 fi
 # A frozen screen with a live shell means the TUI left a terminal mode behind
 # (alternate screen / mouse / paste). Every one of them has to be turned off and
@@ -395,15 +397,14 @@ if [ -z "$wrapper_modes_missing" ]; then
 else
   bad "menu: wrapper terminal reset is incomplete, missing:$wrapper_modes_missing"
 fi
-if grep -qF '\033[%dA' "$TPL" && ! grep -qF '\033[7A' "$TPL" && ! grep -qF '\033[8A' "$TPL"; then
-  ok "menu: redraws only the option rows (dynamic offset)"
+# The menu must not read keys one at a time: a terminal handed back in raw mode
+# by a full-screen agent makes a one-shot key reader spin on EOF, swallow keys
+# or leave the cursor hidden. It is a numbered list answered with `read`.
+if ! grep -q '_oc_read_key()' "$TPL" && ! grep -q 'read -rsn1' "$TPL" && \
+  ! grep -qF '\033[%dA' "$TPL" && grep -q 'IFS= read -r choice' "$TPL"; then
+  ok "menu: answers come from a typed number, with no raw single-key reader"
 else
-  bad "menu: still rewrites the whole block with a fixed offset"
-fi
-if grep -q '_oc_redraw()' "$TPL" && grep -q '_OC_COUNT + 3' "$TPL"; then
-  ok "menu: redraw offset follows the row count (_OC_COUNT + 3)"
-else
-  bad "menu: redraw offset is not derived from _OC_COUNT"
+  bad "menu: still reads single keys / rewrites the screen with a fixed offset"
 fi
 # every component row is always offered; a missing one is marked "not installed"
 menu_keys() { # <sandbox> → keys of the menu rows
@@ -665,15 +666,23 @@ if grep -q '_oc_launch_component()' "$TPL" && grep -q 'Install it now?' "$TPL"; 
 else
   bad "menu: missing component has no install confirmation"
 fi
-if grep -q '_oc_rows()' "$TPL" && grep -q '033\[K' "$TPL"; then
+if grep -q '_oc_row()' "$TPL" && grep -q '033\[K' "$TPL"; then
   ok "menu: option rows cleared to the end (\\033[K)"
 else
   bad "menu: option rows do not clear leftover characters"
 fi
-if grep -q '_oc_int' "$TPL" && grep -q 'cancel' "$TPL"; then
-  ok "menu: Ctrl+C only cancels the key press"
+# Ctrl+C interrupts the read (rc > 128) and only cancels the answer; it must not
+# leave the menu or kill the shell.
+if grep -q 'rc" -gt 128' "$TPL" && grep -q 'Ctrl+C interrupts the read' "$TPL"; then
+  ok "menu: Ctrl+C only cancels the answer"
 else
-  bad "menu: Ctrl+C not handled (cursor may be left hidden)"
+  bad "menu: Ctrl+C not handled"
+fi
+# An answer that is not a valid number must not start anything.
+if grep -q 'type a number from 1 to' "$TPL"; then
+  ok "menu: an out-of-range answer is rejected with a hint"
+else
+  bad "menu: no hint for a bad answer"
 fi
 
 # quota warning line: shown only when `quota` reports one, empty otherwise
@@ -776,7 +785,7 @@ if grep -q 'bashrc) ' "$TPL" || grep -q '_oc_bashrc()' "$TPL"; then
 else
   bad "menu: no ~/.bashrc entry in the menu"
 fi
-if grep -qE "^      \[bB\]\)" "$TPL"; then
+if grep -qE "^      b \| B\) _oc_bashrc" "$TPL"; then
   ok "menu: b opens the ~/.bashrc options"
 else
   bad "menu: no key hint for ~/.bashrc"
@@ -790,32 +799,46 @@ fi
 # back. It must give up and return instead.
 SB5D="$(new_sandbox eof)"
 mkdir -p "$SB5D/prefix/bin" "$SB5D/home"
-# The EOF path only happens when there is no terminal to re-open: _oc_read_key
-# does `exec 0</dev/tty`, so a run inside tmux or any real terminal blocks on a
-# key press forever. setsid drops the controlling terminal, which is what a
-# full-screen agent leaves behind.
-EOF_SETSID=()
-command -v setsid >/dev/null 2>&1 && EOF_SETSID=(setsid)
-# `timeout` is the real assertion here: a spinning reader burns the CPU forever
-# and the suite would never finish. 20 s is far beyond the ~1 s the EOF path
-# needs (five failed reads plus the re-open attempts).
-out="$(timeout 20 env HOME="$SB5D/home" PREFIX="$SB5D/prefix" PATH="$SB5D/prefix/bin:$PATH" \
-  CODEMUX_ROOT="$ROOT" CODEMUX_HOME="$SB5D/state" CODEMUX_ALLOW_NONANDROID=1 \
-  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" "${EOF_SETSID[@]}" bash -c '
+# The menu answers with a typed number, so a dead stdin (what a full-screen agent
+# leaves behind) must end it instead of looping. `timeout` is the assertion: a
+# reader that spins on EOF burns the CPU and the suite would never finish.
+menu_with() { # <stdin text> → "rc=<status>" (stdin is fed with printf)
+  local input="$1"
+  printf '%b' "$input" | timeout 20 env HOME="$SB5D/home" PREFIX="$SB5D/prefix" \
+    PATH="$SB5D/prefix/bin:$PATH" CODEMUX_ROOT="$ROOT" CODEMUX_HOME="$SB5D/state" \
+    CODEMUX_ALLOW_NONANDROID=1 OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
     C1=""; C2=""; ACC=""; DIM=""; BOLD=""; HL=""; R=""
     _oc_cursor_show() { :; }
     _oc_cursor_hide() { :; }
+    _oc_tty_fix() { :; }
     . "$1"
-    _oc_items
-    _oc_read_key
-    printf "first=%s\n" "$KEY"
     _oc_menu_loop
     printf "menu rc=%s\n" "$?"
-  ' _ "$TPL" 2>/dev/null </dev/null)"
+  ' _ "$TPL" 2>/dev/null
+}
+out="$(menu_with '')"
 case "$out" in
-  *"first=eof"*"menu rc="*)
+  *"menu rc=1"*)
     ok "menu: a dead stdin ends the menu instead of spinning" ;;
   *) bad "menu: a dead stdin hangs the menu → $(printf '%s' "$out" | tr '\n' ' ')" ;;
+esac
+out="$(menu_with '5\n')"
+case "$out" in
+  *"Shell only"*"menu rc=0"*)
+    ok "menu: typing 5 (Shell only) returns to the shell" ;;
+  *) bad "menu: typing a number did not run the row → $(printf '%s' "$out" | tr '\n' ' ')" ;;
+esac
+out="$(menu_with 'q\n')"
+case "$out" in
+  *"menu rc=1"*)
+    ok "menu: typing q quits" ;;
+  *) bad "menu: q does not quit → $(printf '%s' "$out" | tr '\n' ' ')" ;;
+esac
+out="$(menu_with '99\nx\n')"
+case "$out" in
+  *"type a number from 1 to"*)
+    ok "menu: a bad answer is rejected without starting anything" ;;
+  *) bad "menu: a bad answer was not rejected" ;;
 esac
 
 # =============================================================================

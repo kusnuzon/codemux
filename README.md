@@ -9,7 +9,7 @@ run again and again.
 ## ✨ What you get
 
 - 🤖 **OpenCode V2 by default, V1 optional** — you choose, nothing extra is pulled in
-- 🎛️ **Startup menu** — arrow keys, opens the component you pick
+- 🎛️ **Startup menu** — type a number, opens the component you pick
 - 🧠 **Cross-session memory** — `MEMORY.md` + `RECENT.md` (with the open items)
   loaded every session
 - 🧰 **Base toolset** — git, gh, python, sqlite, jq, htop, ...
@@ -41,16 +41,19 @@ extracts it to `~/.cache/codemux/src/current`, then runs `codemux install`.
 
 ## 🎛️ Pick the components
 
-First install shows an arrow-key picker:
+First install asks for a number — no arrow keys:
 
 ```
 Which OpenCode should be installed?
-  ❯ 1) OpenCode V2 only — new, separate DB (default)
+
+    1) OpenCode V2 only — new, separate DB (default)
     2) OpenCode V1 only — stable, legacy DB
     3) Both — V1 + V2 (more disk)
+
+  Number [1-3, Enter = 1, q = cancel]:
 ```
 
-- ↑/↓ (or `j`/`k`) move · `Enter` run · `1`-`3` pick directly · `q` cancel
+- Type `1`-`3` and press Enter (Enter alone takes the default) · `q` cancels
 - The answer is saved in `~/.config/codemux/components` and reused later
 - Skipping the picker (CI, `curl | bash`): saved choice, default `v2`
 
@@ -71,13 +74,22 @@ known to work on Termux. That pulls `clang`/LLVM (~500 MB) as a build dependency
 Every new Termux session opens a menu — nothing is hidden:
 
 ```
-❯ 1 OpenCode V1            1.19.5 · stable · legacy DB
-  2 OpenCode V2            not installed · Enter to install
-  3 Free-pi (Pi)           0.6.22 · free-pi agent
-  4 Free-pi (Pi) · tmux    0.6.22 · inside tmux
-  5 Shell only             no agent
-  6 Quit                   close Termux
+  1  OpenCode V1       1.19.5 · stable · legacy DB
+  2  OpenCode V2       not installed · Enter to install
+  3  Free-pi (Pi)      0.6.22 · free-pi agent
+  4  Free-pi (Pi) · tmux  0.6.22 · inside tmux
+  5  Shell only        no agent
+  6  Quit              close Termux
+
+  type a number, then Enter   q quit   b .bashrc
+
+  Choice: 3
 ```
+
+The answer is always a **typed number**: no arrow keys, no single-key reader.
+A full-screen agent can hand the terminal back in raw mode; a one-shot key
+reader then spins on EOF, swallows keys or leaves the cursor hidden, which made
+the menu look frozen.
 
 The tmux row turns the closest free-pi equivalent of OpenCode's session tabs
 into tmux: **one tab = one tmux window** inside a single session named `pi`.

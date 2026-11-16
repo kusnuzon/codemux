@@ -154,8 +154,9 @@ codemux install --only both   # V1 + V2 (more disk)
 ```
 
 - `--components X` is an alias; `CODEMUX_COMPONENTS=v1` does the same.
-- Without a flag/env (interactive): an arrow-key picker appears once
-  (↑/↓ + Enter, or 1/2/3; q cancels). Without a TTY (CI, `curl | bash`) the
+- Without a flag/env (interactive): a numbered picker appears once
+  (type 1/2/3 then Enter; Enter alone = 1; q cancels). Without a TTY
+  (CI, `curl | bash`) the
   saved/default choice is used — default `v2`.
 - The choice is saved in `~/.config/codemux/components` (`v1`, `v2`, `v1 v2`)
   and reused by `install`, `check`, `update-check`; `--only` overrides it.
@@ -240,7 +241,7 @@ codemux/
 │   ├── adapter.sh          # download + run the upstream V1/V2 installers
 │   └── modules/*.sh        # 1 file per module (see §8)
 ├── templates/
-│   ├── bashrc-block.sh     # banner + arrow menu + update notice (marked block)
+│   ├── bashrc-block.sh     # banner + numbered menu + update notice (block)
 │   ├── jsonc-instructions.py
 │   └── memory/             # MEMORY.md, AGENTS.md, opencode.jsonc templates
 ├── versions.env            # pinned versions, package lists, upstream repos
@@ -359,7 +360,7 @@ Also in `~/.config/codemux/`: `lock` (pid + boot id, prevents parallel runs),
              → extract to ~/.cache/codemux/src/current → exec bin/codemux install
      │
 [choice]     --only / CODEMUX_COMPONENTS / saved ~/.config/codemux/components,
-             otherwise the arrow-key picker (TTY only); the answer is saved
+             otherwise the numbered picker (TTY only); the answer is saved
      │
 [preflight]  Android/aarch64/uid/disk → failure = stop (exit 2)
      │
@@ -774,7 +775,7 @@ Rules:
    are updated + sha256 of every download matches + the version goes up. Given
    offline, Then the update check fails silently (startup is unaffected).
 9. **S9 (component choice)** Given no saved choice and a TTY, When `install`,
-   Then the arrow-key picker appears; ↑/↓ + Enter, `1`/`2`/`3` and `q` all behave
+   Then the numbered picker appears; `1`/`2`/`3`, Enter (default 1) and `q` behave
    as documented; `q` changes nothing and writes no `components` file. Given
    `--only v1` (or a non-TTY run), Then the choice is used without asking and the
    missing component stays untouched.

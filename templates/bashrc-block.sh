@@ -1,8 +1,8 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 29
+# codemux:launcher version 30
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
-# The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
+# The menu is a numbered list: type a number, then Enter (q quits, b ~/.bashrc).
 # Every row is always offered: a component that is not installed is marked
 # "not installed", and choosing it asks for confirmation before installing.
 # Skip everything: OPENCODE_NO_AUTO=1 bash
@@ -128,106 +128,29 @@ _oc_items() {
   _OC_NAMEW=$((w + 1))
 }
 
-# One menu row: <index> <selected index>
+# One menu row. No selection marker: the menu is a numbered list and the user
+# answers with a number, so there is no highlighted row to redraw.
 _oc_row() {
-  local idx="$1" sel="$2" arrow pad namepad
-  if [ "$idx" = "$sel" ]; then
-    arrow="$ACC❯$R"; pad="$HL"
-  else
-    arrow=" "; pad=""
-  fi
+  local idx="$1" namepad
   printf -v namepad '%-*s' "${_OC_NAMEW:-14}" "${_OC_NAMES[$idx]}"
-  printf '  %s %s%s%s%s %s%s%s%s  %s%s%s\033[K\n' \
-    "$arrow" "$pad" "$BOLD" "$((idx + 1))" "$R" \
-    "$pad" "$BOLD" "$namepad" "$R" \
-    "$pad" "$DIM" "${_OC_DESCS[$idx]}$R"
+  printf '  %s%d%s  %s%s%s  %s%s%s\033[K\n' \
+    "$BOLD" "$((idx + 1))" "$R" "$BOLD" "$namepad" "$R" \
+    "$DIM" "${_OC_DESCS[$idx]}$R"
 }
 
-# Only the option rows (no rules or hints) — used to redraw the selection
-# while arrow keys are pressed, so the screen does not flicker.
-_oc_rows() {
-  local sel="$1" i
-  for ((i = 0; i < _OC_COUNT; i++)); do
-    _oc_row "$i" "$sel"
-  done
-}
-
+# The menu is a plain numbered list and the user types a number, then Enter.
+# No arrow keys and no single-key reader: a full-screen agent can hand the
+# terminal back in raw mode, where a one-shot key reader spins (EOF forever),
+# swallows keys or leaves the cursor hidden.
 _oc_menu() {
+  local i
   printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
-  _oc_rows "$1"
-  printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
-  printf '  %s↑/↓ select%s   %sEnter run/install%s   %s1-%d/q%s   %sb .bashrc%s   %sCtrl+C cancel%s\n\n' \
-    "$DIM" "$R" "$DIM" "$R" "$DIM" "$_OC_COUNT" "$R" "$DIM" "$R" "$DIM" "$R"
-}
-
-# Redraw only the option rows: from the blank line below the menu move up
-# (rows + rule + hint) lines, write the rows, then move down 3 lines.
-_oc_redraw() {
-  printf '\033[%dA' "$((_OC_COUNT + 3))"
-  _oc_rows "$1"
-  printf '\033[3B'
-}
-
-_oc_read_key() {
-  KEY=""
-  _oc_int=0
-  # Wait at most 0.2 s per round for a key: that way a Ctrl+C signal is handled
-  # before the next key, so no key gets swallowed (and the cursor is never left
-  # hidden).
-  #
-  # A component that exits can leave stdin at EOF (a terminal that a full-screen
-  # UI handed back, or a closed fd): `read` then fails instantly and forever, so
-  # a plain retry loop spins at 100% CPU and the menu never comes back. Count the
-  # failures, reopen the terminal (at most twice: if the new fd also answers
-  # EOF immediately, retrying forever would spin at 100% CPU and freeze
-  # Termux), and give up with `eof` if it is gone.
-  local empty=0 rc reopens=0
-  _oc_eof=0
-  while :; do
-    IFS= read -rsn1 -t 0.2 KEY && break
-    rc=$?
-    if [ "${_oc_int:-0}" = "1" ]; then KEY="cancel"; return 0; fi
-    # rc > 128 means the timeout expired (128+SIGALRM): the fd is still fine,
-    # so the empty-failure counter has to start over.
-    if [ "$rc" -gt 128 ]; then
-      empty=0
-      continue
-    fi
-    empty=$((empty + 1))
-    if [ "$empty" -ge 5 ]; then
-      if [ "$reopens" -lt 2 ] && [ -r /dev/tty ] && exec 0</dev/tty 2>/dev/null; then
-        reopens=$((reopens + 1))
-        empty=0
-        continue
-      fi
-      # No terminal left to read from: report EOF so the caller can leave the
-      # menu instead of redrawing it in a loop that no key can ever end.
-      KEY="eof"
-      _oc_eof=1
-      return 0
-    fi
+  for ((i = 0; i < _OC_COUNT; i++)); do
+    _oc_row "$i"
   done
-  case "$KEY" in
-    $'\033')
-      local rest="" ch=""
-      # Read the rest of the escape sequence byte by byte: if the bytes arrive
-      # separately (e.g. right after Ctrl+C), the arrow key must not be lost.
-      while [ "${#rest}" -lt 2 ]; do
-        IFS= read -rsn1 -t 0.25 ch || break
-        rest+="$ch"
-      done
-      case "$rest" in
-        '[A') KEY="up" ;;
-        '[B') KEY="down" ;;
-        '[C') KEY="right" ;;
-        '[D') KEY="left" ;;
-        *) KEY="esc" ;;
-      esac
-      ;;
-    ''|$'\r'|$'\n') KEY="enter" ;;
-    k|K) KEY="up" ;;
-    j|J) KEY="down" ;;
-  esac
+  printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
+  printf '  %stype a number, then Enter%s   %sq quit%s   %sb .bashrc%s\n\n' \
+    "$DIM" "$R" "$DIM" "$R" "$DIM" "$R"
 }
 
 # Version that is actually installed right now (empty when undetectable).
@@ -519,99 +442,55 @@ _oc_bashrc() {
 
 # Returns 0 = continue to the shell, 1 = exit Termux.
 _oc_menu_loop() {
-  local sel=0 full=1 i saved key choice_file="$HOME/.local/state/opencode-choice"
-  _oc_items
-  # Restore the last choice (accepts the old numeric format too).
-  saved="$(cat "$choice_file" 2>/dev/null)"
-  case "$saved" in
-    1) saved="v1" ;;
-    2) saved="v2" ;;
-    3) saved="shell" ;;
-    4) saved="quit" ;;
-  esac
-  for ((i = 0; i < _OC_COUNT; i++)); do
-    [ "${_OC_KEYS[$i]}" = "$saved" ] && sel="$i"
-  done
-
-  # The cursor is hidden while the menu is open: otherwise it blinks on the
-  # bottom row and looks like a glitch when moving up/down. Ctrl+C only
-  # cancels the current key (it does not kill the menu), so the cursor is
-  # never left hidden.
-  trap '_oc_int=1' INT
-  _oc_cursor_hide
+  local key choice rc choice_file="$HOME/.local/state/opencode-choice"
   while :; do
-    if [ "$full" = "1" ]; then
-      printf '\033[2J\033[H'
-      _oc_banner
-      _oc_update_notice
-      _oc_quota_notice
-      _oc_menu "$sel"
-      full=0
-    else
-      _oc_redraw "$sel"
+    _oc_items
+    printf '\033[2J\033[H'
+    _oc_banner
+    _oc_update_notice
+    _oc_quota_notice
+    _oc_menu
+    printf '  %sChoice%s: ' "$BOLD" "$R"
+    choice=""
+    IFS= read -r choice
+    rc=$?
+    # Ctrl+C interrupts the read (rc > 128): cancel this answer, keep the menu.
+    if [ "$rc" -gt 128 ]; then
+      printf '\n'
+      continue
     fi
-    _oc_read_key
-
-    case "$KEY" in
-      up|left)   sel=$(( (sel + _OC_COUNT - 1) % _OC_COUNT )) ;;
-      down|right) sel=$(( (sel + 1) % _OC_COUNT )) ;;
-      enter)
-        key="${_OC_KEYS[$sel]}"
-        case "$key" in
-          v1|v2|pi|pitmux)
-            if _oc_launch_component "$key"; then
-              mkdir -p "$HOME/.local/state" 2>/dev/null
-              printf '%s\n' "$key" >"$choice_file" 2>/dev/null
-            fi
-            # the install may have changed the rows: rebuild before redrawing
-            _oc_items
-            [ "$sel" -ge "$_OC_COUNT" ] && sel=$((_OC_COUNT - 1))
-            full=1
-            ;;
-          shell)
-            printf '\n'
-            _oc_tty_fix
-            return 0
-            ;;
-          quit) printf '\n'; return 1 ;;
-        esac
-        # a redraw is needed whatever happened (an install changes the rows)
-        _oc_items
-        [ "$sel" -ge "$_OC_COUNT" ] && sel=$((_OC_COUNT - 1))
-        full=1
+    # No terminal left to read from: leave the menu instead of looping for ever.
+    if [ "$rc" -ne 0 ]; then
+      printf '\n'
+      return 1
+    fi
+    choice="${choice//[[:space:]]/}"
+    case "$choice" in
+      '') continue ;;
+      q | Q | quit | exit) printf '\n'; return 1 ;;
+      b | B) _oc_bashrc; continue ;;
+    esac
+    case "$choice" in
+      *[!0-9]*)
+        printf '  %stype a number from 1 to %d, or q%s\n' "$DIM" "$_OC_COUNT" "$R"
+        continue
         ;;
-      [bB]) key="bashrc" ; sel=0; ;;
-      [1-9])
-        # number keys select a row directly (1..N); Enter starts the selection
-        if [ "$KEY" -le "$_OC_COUNT" ]; then
-          sel=$((KEY - 1))
-          # draw the new selection first, so the answer is visible
-          if [ "$full" = "1" ]; then :; else _oc_redraw "$sel"; full=1; fi
-          KEY=enter
-          case "${_OC_KEYS[$sel]}" in
-            v1|v2|pi|pitmux)
-              if _oc_launch_component "${_OC_KEYS[$sel]}"; then
-                mkdir -p "$HOME/.local/state" 2>/dev/null
-                printf '%s\n' "${_OC_KEYS[$sel]}" >"$choice_file" 2>/dev/null
-              fi
-              ;;
-            shell)
-              printf '\n'
-              _oc_tty_fix
-              return 0
-              ;;
-            quit) printf '\n'; return 1 ;;
-          esac
-          _oc_items
-          [ "$sel" -ge "$_OC_COUNT" ] && sel=$((_OC_COUNT - 1))
-          full=1
+    esac
+    if [ "$choice" -lt 1 ] || [ "$choice" -gt "$_OC_COUNT" ]; then
+      printf '  %stype a number from 1 to %d, or q%s\n' "$DIM" "$_OC_COUNT" "$R"
+      continue
+    fi
+    key="${_OC_KEYS[$((choice - 1))]}"
+    printf '\n'
+    case "$key" in
+      v1 | v2 | pi | pitmux)
+        if _oc_launch_component "$key"; then
+          mkdir -p "$HOME/.local/state" 2>/dev/null
+          printf '%s\n' "$key" >"$choice_file" 2>/dev/null
         fi
         ;;
-      q|Q) sel=$((_OC_COUNT - 1)); return 1 ;;
-      esc|cancel|ctrl-c) ;;
-      # stdin is gone (the terminal that a full-screen agent handed back is at
-      # EOF): leave the menu so the shell prompt comes back.
-      eof) return 1 ;;
+      shell) _oc_tty_fix; return 0 ;;
+      quit) return 1 ;;
     esac
   done
 }
