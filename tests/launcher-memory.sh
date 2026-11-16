@@ -657,6 +657,18 @@ if grep -q 'pipe-pane' "$MENU" && grep -q '_cm_pane_tail' "$MENU"; then
 else
   bad "menu log: the pane stream is never captured"
 fi
+# The tail is read by a human later: escape sequences must be gone, the text kept.
+printf '\033[!p\033[2J\033[H\033]0;title\007\033[?25lNo command opencode found\r\n' \
+  >"$SB5E/raw.txt"
+stripped="$(env HOME="$SB5E/home" PREFIX="$SB5E/prefix" TMPDIR="$BASE" bash -c '
+    . "$1"
+    _cm_pane_tail "$2" 120
+  ' _ "$MENU" "$SB5E/raw.txt" 2>/dev/null)"
+case "$stripped" in
+  "No command opencode found")
+    ok "menu log: the pane tail drops escape sequences and keeps the message" ;;
+  *) bad "menu log: pane tail is '$(printf '%s' "$stripped" | tr '\n' '|' | tail -c 80)'" ;;
+esac
 # a row whose binary is missing is logged too: that is the other way a row fails
 SB5F="$(new_sandbox menu-log-missing)"
 mkdir -p "$SB5F/home" "$SB5F/logs"

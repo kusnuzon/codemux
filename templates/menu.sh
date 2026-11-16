@@ -11,7 +11,7 @@
 # Rows are answered by typing a number, never by a single key: a one-key reader
 # needs raw mode and spins on EOF when the terminal comes back raw.
 
-CM_MENU_VERSION="4"
+CM_MENU_VERSION="5"
 
 # Colours are empty when the output is not a terminal or NO_COLOR is set.
 _cm_colors() {
@@ -184,8 +184,10 @@ _cm_pane_tail() { # <raw-file> <lines>
   [ -f "$raw" ] && [ -s "$raw" ] || return 0
   tail -c 400000 "$raw" 2>/dev/null |
     sed -e 's/\x1b\][^\x07\x1b]*\(\x07\|\x1b\\\)//g' \
-      -e 's/\x1b\[[0-9;?]*[a-zA-Z]//g' \
-      -e 's/\x1b[()][A-Z0-9]//g' -e 's/\x1b[=>]//g' 2>/dev/null |
+      -e 's/\x1b\[[0-9;?!<=>]*[a-zA-Z@`~]//g' \
+      -e 's/\x1bP[^\x1b]*\x1b\\//g' \
+      -e 's/\x1b[()][A-Z0-9]//g' -e 's/\x1b[=>]//g' \
+      -e 's/\\\[[0-9;?!<=>]*[a-zA-Z@`~]//g' 2>/dev/null |
     tr -d '\r' 2>/dev/null |
     sed -e 's/[^[:print:][:space:]]//g' 2>/dev/null |
     grep -v '^[[:space:]]*$' 2>/dev/null |
@@ -220,8 +222,10 @@ _cm_log_start() { # <row-key> <name> <command>
   local key="$1" name="$2" cmd="$3" d term="plain shell"
   d="$(_cm_logdir)" || return 0
   _CM_LOGDIR="$d"
+  # pid + counter: two shells (or two launches in one second) must never share a
+  # name, otherwise a clean run deletes the evidence of the previous failure.
   CM_LOG_SEQ=$((CM_LOG_SEQ + 1))
-  _CM_LOGID="$(date +%Y%m%d-%H%M%S 2>/dev/null || printf %s 0)-$CM_LOG_SEQ"
+  _CM_LOGID="$(date +%Y%m%d-%H%M%S 2>/dev/null || printf %s 0)-$$-$CM_LOG_SEQ"
   _CM_LOG="$d/menu-$_CM_LOGID.log"
   _CM_RAW="$d/.raw.$$.$_CM_LOGID"
   : >"$_CM_RAW" 2>/dev/null || _CM_RAW=""
