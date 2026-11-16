@@ -515,6 +515,7 @@ commands:
   upgrade            update apt + V1/V2 payload + launcher
   doctor             full diagnosis + repair suggestions
   memory             cross-session memory status (read-only)
+  logs               menu launch log: every row picked, errors in full
   uninstall          remove V1/V2 payload + launcher block (memory stays)
   self-update        update the codemux code from the upstream release
 
@@ -588,6 +589,6 @@ codemux_versions() {
 
 codemux_not_ready() {
   log_warn "command '$1' is not available yet in version $CODEMUX_VERSION (next milestone)."
-  log_dim "Available commands: check, install, status, repair, memory, update-check, doctor, upgrade, uninstall, self-update, version, help."
+  log_dim "Available commands: check, install, status, repair, memory, logs, update-check, doctor, upgrade, uninstall, self-update, version, help."
   exit 1
 }

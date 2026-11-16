@@ -11,7 +11,7 @@
 # Rows are answered by typing a number, never by a single key: a one-key reader
 # needs raw mode and spins on EOF when the terminal comes back raw.
 
-CM_MENU_VERSION="3"
+CM_MENU_VERSION="4"
 
 # Colours are empty when the output is not a terminal or NO_COLOR is set.
 _cm_colors() {
@@ -149,6 +149,180 @@ _cm_tty_fix() {
 # repairs it. Reached through ~/.bashrc, which calls this script with --fixterm.
 fixterm() { _cm_tty_fix; printf '  terminal repaired\n'; }
 
+# ---------------------------------------------------------------------------
+# launch log
+# ---------------------------------------------------------------------------
+# Every row you pick is recorded, so an error (a broken ad card, an agent that
+# exits at once, a missing binary) can be audited afterwards instead of guessed:
+#
+#   ~/.config/codemux/logs/menu.log             one line per launch, rotated
+#   ~/.config/codemux/logs/menu-<stamp>.log     the whole story of a failed run
+#
+# While the agent runs its pane output is copied with `tmux pipe-pane`, which
+# touches no terminal mode and still records what was printed. A successful run
+# deletes its detail file (the summary line stays); a failed one keeps the last
+# CM_LOG_TAIL lines, because by then the pane is usually already wiped.
+# CODEMUX_LOG_DIR overrides the directory (the tests use it).
+CM_LOG_MAX=64     # KiB of menu.log kept before it is rotated
+CM_LOG_KEEP=40    # detail files kept (the oldest are pruned)
+CM_LOG_TAIL=120   # lines of pane output copied into a failed-run log
+# A counter keeps two launches in the same second apart: without it the second
+# launch would reuse the first file name and a success would delete its evidence.
+CM_LOG_SEQ=0
+CM_LOG_ERRPAT='error|fatal|panic|traceback|exception|failed|denied|refused|timeout|no such file|not found|\bads?\b|advert'
+
+_cm_logdir() { # → directory, created
+  local d="${CODEMUX_LOG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/codemux/logs}"
+  mkdir -p "$d" 2>/dev/null || return 1
+  printf '%s' "$d"
+}
+
+# Printable tail of the raw pane stream: escape sequences and control bytes are
+# dropped so the log reads like a screen, not like a terminal dump.
+_cm_pane_tail() { # <raw-file> <lines>
+  local raw="$1" n="${2:-$CM_LOG_TAIL}"
+  [ -f "$raw" ] && [ -s "$raw" ] || return 0
+  tail -c 400000 "$raw" 2>/dev/null |
+    sed -e 's/\x1b\][^\x07\x1b]*\(\x07\|\x1b\\\)//g' \
+      -e 's/\x1b\[[0-9;?]*[a-zA-Z]//g' \
+      -e 's/\x1b[()][A-Z0-9]//g' -e 's/\x1b[=>]//g' 2>/dev/null |
+    tr -d '\r' 2>/dev/null |
+    sed -e 's/[^[:print:][:space:]]//g' 2>/dev/null |
+    grep -v '^[[:space:]]*$' 2>/dev/null |
+    tail -n "$n" 2>/dev/null || true
+  return 0
+}
+
+_cm_capture_start() { # copy the pane stream into $_CM_RAW
+  _CM_PIPED=0; _CM_PIPE_OPEN=0
+  [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || return 0
+  [ -n "${_CM_RAW:-}" ] || return 0
+  command -v tmux >/dev/null 2>&1 || return 0
+  # -o: do not replace a pipe somebody else already opened.
+  tmux pipe-pane -o -t "$TMUX_PANE" "cat >> '$_CM_RAW'" 2>/dev/null && {
+    _CM_PIPED=1
+    _CM_PIPE_OPEN=1
+  }
+  return 0
+}
+
+_cm_capture_stop() {
+  # _CM_PIPED stays set: it tells _cm_log_finish that tmux may still be flushing.
+  [ "${_CM_PIPE_OPEN:-0}" = 1 ] || return 0
+  tmux pipe-pane -t "${TMUX_PANE:-}" 2>/dev/null || true
+  _CM_PIPE_OPEN=0
+  return 0
+}
+
+_cm_log_start() { # <row-key> <name> <command>
+  _CM_LOG=""; _CM_RAW=""; _CM_PIPED=0; _CM_PIPE_OPEN=0
+  _CM_T0="$(date +%s 2>/dev/null || printf 0)"
+  local key="$1" name="$2" cmd="$3" d term="plain shell"
+  d="$(_cm_logdir)" || return 0
+  _CM_LOGDIR="$d"
+  CM_LOG_SEQ=$((CM_LOG_SEQ + 1))
+  _CM_LOGID="$(date +%Y%m%d-%H%M%S 2>/dev/null || printf %s 0)-$CM_LOG_SEQ"
+  _CM_LOG="$d/menu-$_CM_LOGID.log"
+  _CM_RAW="$d/.raw.$$.$_CM_LOGID"
+  : >"$_CM_RAW" 2>/dev/null || _CM_RAW=""
+  if [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1; then
+    term="tmux $(tmux display-message -p '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null) · $(tmux -V 2>/dev/null)"
+  elif [ -n "${TMUX:-}" ]; then
+    term="tmux (tmux missing)"
+  fi
+  {
+    printf 'codemux menu launch\n'
+    printf 'status:   running\n'
+    printf 'started:  %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null)"
+    printf 'row:      %s\n' "$key"
+    printf 'name:     %s\n' "$name"
+    printf 'command:  %s\n' "${cmd:-(not installed)}"
+    printf 'cwd:      %s\n' "$PWD"
+    printf 'term:     %s\n' "$term"
+    printf 'columns:  %sx%s\n' "${COLUMNS:-?}" "${LINES:-?}"
+    printf 'shell:    bash %s\n' "${BASH_VERSION%%(*}"
+    printf 'versions: v1 %s · v2 %s · free-pi %s\n' \
+      "$(_cm_ver v1)" "$(_cm_ver v2)" "$(_cm_ver pi)"
+    printf -- '---\n'
+  } >"$_CM_LOG" 2>/dev/null || _CM_LOG=""
+  return 0
+}
+
+# Close the launch: a failure keeps the detail file, a clean run deletes it and
+# leaves one line in menu.log. `missing` marks a row whose binary is not there.
+_cm_log_finish() { # <rc> <ok|failed|missing>
+  local rc="$1" status="$2" dur=0 tail_txt="" failed=0 keep=0 d
+  local piped="${_CM_PIPED:-0}" tries=0
+  _cm_capture_stop
+  [ -n "${_CM_T0:-}" ] && dur=$(( $(date +%s 2>/dev/null || printf 0) - _CM_T0 ))
+  # tmux closes the pipe asynchronously and `cat` only flushes when it sees EOF,
+  # so the last lines are polled for a moment instead of read once and lost.
+  while : ; do
+    tail_txt="$(_cm_pane_tail "${_CM_RAW:-}" "$CM_LOG_TAIL")"
+    [ -n "$tail_txt" ] && break
+    [ "$piped" = 1 ] && [ "$tries" -lt 8 ] || break
+    tries=$((tries + 1))
+    sleep 0.1
+  done
+  [ "$rc" -ne 0 ] && failed=1
+  [ "$status" = missing ] && failed=1
+  if [ -n "$tail_txt" ]; then
+    printf '%s' "$tail_txt" | grep -qiE "$CM_LOG_ERRPAT" && failed=1
+  fi
+  [ "$failed" -eq 1 ] && keep=1
+  # ok only when nothing went wrong; missing keeps its own label so a row whose
+  # binary is absent is not reported as a crash.
+  [ "$keep" -eq 0 ] && status=ok
+  [ "$status" = failed ] && [ "$rc" -eq 0 ] && [ "$keep" -eq 0 ] && status=ok
+  d="${_CM_LOGDIR:-}"
+  if [ -n "$d" ] && [ -n "${_CM_LOG:-}" ]; then
+    {
+      printf 'rc:       %s\n' "$rc"
+      printf 'duration: %ss\n' "$dur"
+      if [ "$keep" -eq 1 ]; then
+        printf 'status:   %s\n' "${status^^}"
+      else
+        printf 'status:   OK\n'
+      fi
+      if [ -n "$tail_txt" ]; then
+        printf -- '--- pane tail (last %s lines) ---\n' "$CM_LOG_TAIL"
+        printf '%s\n' "$tail_txt"
+      fi
+    } >>"$_CM_LOG" 2>/dev/null || true
+    printf '%s  %-5s %-14s rc=%s %ss %s %s\n' \
+      "$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null)" "${_CM_ROW:-?}" \
+      "${_CM_NAME:-?}" "$rc" "$dur" \
+      "$([ "$keep" -eq 1 ] && printf '%s' "${status^^}" || printf OK)" \
+      "$(basename "$_CM_LOG" 2>/dev/null)" >>"$d/menu.log" 2>/dev/null || true
+    _cm_log_prune
+    if [ "$keep" -eq 0 ]; then
+      rm -f "$_CM_LOG" 2>/dev/null || true
+      _CM_LOG=""
+    fi
+  fi
+  [ -n "${_CM_RAW:-}" ] && rm -f "$_CM_RAW" 2>/dev/null
+  return 0
+}
+
+_cm_log_prune() {
+  local d="${_CM_LOGDIR:-}" f size
+  [ -n "$d" ] || return 0
+  # menu.log is one line per launch; keep two generations of it.
+  size="$(wc -c <"$d/menu.log" 2>/dev/null | tr -d ' ')"
+  if [ "${size:-0}" -gt $((CM_LOG_MAX * 1024)) ] 2>/dev/null; then
+    mv -f "$d/menu.log" "$d/menu.log.1" 2>/dev/null || true
+  fi
+  # Detail files: newest CM_LOG_KEEP win (names sort by time).
+  # shellcheck disable=SC2044,SC2012  # our own names, no spaces
+  for f in $(ls -1d "$d"/menu-*.log 2>/dev/null | sort | head -n "-$CM_LOG_KEEP"); do
+    rm -f "$f" 2>/dev/null || true
+  done
+  # Raw streams from a launch that was killed must not pile up.
+  command -v find >/dev/null 2>&1 &&
+    find "$d" -maxdepth 1 -name '.raw.*' -mmin +120 -exec rm -f {} + 2>/dev/null
+  return 0
+}
+
 # free-pi is a function in ~/.bashrc only in an interactive shell; the menu may
 # be sourced from one, but keep the fallback so a plain script still works.
 _cm_pi_bin() {
@@ -168,18 +342,30 @@ _cm_launch() {
     pi) cmd="$(_cm_pi_bin || true)"; name="Free-pi (Pi)" ;;
     *) return 1 ;;
   esac
+  _CM_ROW="$key"; _CM_NAME="$name"
+  _cm_log_start "$key" "$name" "$cmd"
   if [ -z "$cmd" ] || ! command -v "$cmd" >/dev/null 2>&1; then
-    printf '\n  %s%s is not installed%s — run: %scodemux install%s\n\n' \
+    _cm_log_finish 127 missing
+    printf '\n  %s%s is not installed%s — run: %scodemux install%s\n' \
       "$BOLD" "$name" "$R" "$ACC" "$R"
+    printf '  %slogged: %s%s\n\n' "$DIM" "$_CM_LOG" "$R"
     return 1
   fi
   _cm_tab_title "$key"
   printf '  %s→ %s%s\n\n' "$DIM" "$name" "$R"
+  _cm_capture_start
   "$cmd"
   rc=$?
+  _cm_capture_stop
+  # Close the log before the pane is wiped: the tail is the only trace left.
+  _cm_log_finish "$rc" failed
   # repair the pane whatever the exit code was, then mark the tab as a menu again
   _cm_tty_fix
   _cm_tab_title "menu"
+  if [ "$rc" -ne 0 ] && [ -n "$_CM_LOG" ]; then
+    printf '\n  %s%s exited with %s — log: %s%s\n\n' \
+      "$DIM" "$name" "$rc" "$_CM_LOG" "$R"
+  fi
   return "$rc"
 }
 

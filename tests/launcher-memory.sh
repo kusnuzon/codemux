@@ -595,6 +595,104 @@ else
 fi
 
 # =============================================================================
+# 5e. every menu launch is logged; a failure keeps the whole story
+# =============================================================================
+# Master's rule: when a row misbehaves (a broken ad card, an agent that dies at
+# once) the reason must be on disk, not guessed later. menu.log gets one line
+# per launch; a failed launch also keeps a detail file.
+SB5E="$(new_sandbox menu-log)"
+mkdir -p "$SB5E/home" "$SB5E/logs"
+printf '#!/bin/sh\necho "error: ad card failed to render"\nexit 3\n' >"$SB5E/prefix/bin/opencode"
+printf '#!/bin/sh\nexit 0\n' >"$SB5E/prefix/bin/opencode-v2"
+chmod +x "$SB5E/prefix/bin/opencode" "$SB5E/prefix/bin/opencode-v2"
+menu_logged() { # <sandbox> <stdin text> → menu output
+  local sb="$1" input="$2"
+  printf '%b' "$input" | timeout 25 env -u TMUX -u TMUX_PANE \
+    HOME="$sb/home" PREFIX="$sb/prefix" PATH="$sb/prefix/bin:$PATH" \
+    CODEMUX_LOG_DIR="$sb/logs" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" \
+    bash -c 'C1=""; C2=""; ACC=""; DIM=""; BOLD=""; R=""
+    . "$1"
+    _cm_menu_loop
+    printf "menu rc=%s\n" "$?"' _ "$MENU" 2>/dev/null
+}
+menu_logged "$SB5E" '1\nq\n' >"$SB5E/fail.out" 2>&1 || true
+menu_logged "$SB5E" '2\nq\n' >"$SB5E/ok.out" 2>&1 || true
+if [ -f "$SB5E/logs/menu.log" ] && [ "$(wc -l <"$SB5E/logs/menu.log")" -eq 2 ]; then
+  ok "menu log: one line per launch (both rows recorded)"
+else
+  bad "menu log: expected 2 lines in menu.log, got $(wc -l <"$SB5E/logs/menu.log" 2>/dev/null || echo 0)"
+fi
+if grep -q 'FAILED' "$SB5E/logs/menu.log" && grep -q ' OK ' "$SB5E/logs/menu.log"; then
+  ok "menu log: a broken row is marked FAILED, a clean row OK"
+else
+  bad "menu log: status column is wrong → $(tr '\n' '|' <"$SB5E/logs/menu.log" 2>/dev/null)"
+fi
+detail="$(ls -1 "$SB5E/logs"/menu-*.log 2>/dev/null | head -n 1)"
+if [ -n "$detail" ] && grep -q 'rc:       3' "$detail" && grep -q 'status:   FAILED' "$detail"; then
+  ok "menu log: the failed launch keeps a detail file with its exit code"
+else
+  bad "menu log: no usable detail file (found '${detail:-none}')"
+fi
+if [ "$(ls -1 "$SB5E/logs"/menu-*.log 2>/dev/null | wc -l)" -eq 1 ]; then
+  ok "menu log: a clean launch deletes its detail file (no clutter)"
+else
+  bad "menu log: a clean launch left a detail file behind"
+fi
+case "$(cat "$SB5E/fail.out" 2>/dev/null)" in
+  *"exited with 3"*)
+    ok "menu log: the failure names the log on screen" ;;
+  *) bad "menu log: the failure did not point at its log" ;;
+esac
+cap_line="$(awk '/^_cm_launch\(\) \{/{f=1} f && /_cm_capture_start/{print NR; exit}' "$MENU")"
+fin_line="$(awk '/^_cm_launch\(\) \{/{f=1} f && /^  _cm_log_finish/{print NR; exit}' "$MENU")"
+fix_line="$(awk '/^_cm_launch\(\) \{/{f=1} f && /^  _cm_tty_fix$/{print NR; exit}' "$MENU")"
+if [ -n "$cap_line" ] && [ -n "$fin_line" ] && [ -n "$fix_line" ] &&
+  [ "$cap_line" -lt "$fin_line" ] && [ "$fin_line" -lt "$fix_line" ]; then
+  ok "menu log: the pane is read (and closed) before it is repaired"
+else
+  bad "menu log: order capture=$cap_line finish=$fin_line repair=$fix_line (capture<finish<repair required)"
+fi
+if grep -q 'pipe-pane' "$MENU" && grep -q '_cm_pane_tail' "$MENU"; then
+  ok "menu log: pane output is copied with pipe-pane and made printable"
+else
+  bad "menu log: the pane stream is never captured"
+fi
+# a row whose binary is missing is logged too: that is the other way a row fails
+SB5F="$(new_sandbox menu-log-missing)"
+mkdir -p "$SB5F/home" "$SB5F/logs"
+menu_logged "$SB5F" '1\nq\n' >"$SB5F/out" 2>&1 || true
+if grep -q 'rc=127' "$SB5F/logs/menu.log" 2>/dev/null &&
+  grep -q 'status:   MISSING' "$SB5F/logs"/menu-*.log 2>/dev/null; then
+  ok "menu log: choosing a missing agent is logged as MISSING"
+else
+  bad "menu log: a missing agent left no log"
+fi
+# reading it back: `codemux logs` — the audit entry point
+dir_out="$(CODEMUX_LOG_DIR="$SB5E/logs" run_cm "$SB5E" logs --dir 2>/dev/null)"
+if [ "$dir_out" = "$SB5E/logs" ]; then
+  ok "logs command: --dir prints the log directory"
+else
+  bad "logs command: --dir printed '$dir_out'"
+fi
+last_out="$(CODEMUX_LOG_DIR="$SB5E/logs" run_cm "$SB5E" logs --last 2>/dev/null)"
+case "$last_out" in
+  *"rc:       3"*"pane tail"*) ok "logs command: --last shows the failed launch" ;;
+  *"rc:       3"*) ok "logs command: --last shows the failed launch" ;;
+  *) bad "logs command: --last printed '$(printf '%s' "$last_out" | tr '\n' '|' | tail -c 120)'" ;;
+esac
+sum_out="$(CODEMUX_LOG_DIR="$SB5E/logs" run_cm "$SB5E" logs 2>/dev/null)"
+case "$sum_out" in
+  *"newest failed launch"*) ok "logs command: the summary points at the newest failure" ;;
+  *) bad "logs command: summary is '$(printf '%s' "$sum_out" | tr '\n' '|' | tail -c 120)'" ;;
+esac
+default_dir="$(run_cm "$SB5E" logs --dir 2>/dev/null)"
+if [ "$default_dir" = "$SB5E/home/.config/codemux/logs" ]; then
+  ok "logs command: the default directory sits next to the menu script"
+else
+  bad "logs command: default directory is '$default_dir'"
+fi
+
+# =============================================================================
 # 5c. the pi module never touches a broken .bashrc
 # =============================================================================
 SB5C="$(new_sandbox pi-module)"

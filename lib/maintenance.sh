@@ -33,6 +33,63 @@ codemux_strip_managed_blocks() { # <file> <tag...> → stdout without marked blo
   ' "$file"
 }
 
+# --- logs (menu launch log) ---------------------------------------------------
+# Every row picked in the menu writes a line to ~/.config/codemux/logs/menu.log.
+# A launch that fails (agent exits non-zero, prints an error, or is not installed)
+# also keeps a detail file: metadata, exit code and the last 120 lines of pane
+# output. That is what makes an ad card or an agent crash auditable afterwards.
+codemux_logs_dir() { # → directory (CODEMUX_LOG_DIR wins, for the tests)
+  printf '%s' "${CODEMUX_LOG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/codemux/logs}"
+}
+
+codemux_cmd_logs() {
+  local dir mode f newest=""
+  dir="$(codemux_logs_dir)"
+  mode="${1:-}"
+  case "$mode" in
+    --dir) printf '%s\n' "$dir"; return 0 ;;
+    --all | -a)
+      [ -f "$dir/menu.log" ] || { log_info "no launches recorded yet ($dir)"; return 0; }
+      cat "$dir/menu.log"
+      return 0
+      ;;
+    --list | -l)
+      [ -d "$dir" ] || { log_info "no launches recorded yet ($dir)"; return 0; }
+      for f in "$dir"/menu-*.log; do
+        [ -f "$f" ] || continue
+        printf '%s  %s B\n' "$f" "$(wc -c <"$f" | tr -d ' ')"
+      done
+      return 0
+      ;;
+    --last | -L)
+      newest="$(ls -1t "$dir"/menu-*.log 2>/dev/null | head -n 1)"
+      [ -n "$newest" ] || { log_info "no failed launch recorded — nothing to audit"; return 0; }
+      cat "$newest"
+      return 0
+      ;;
+  esac
+  if [ ! -d "$dir" ]; then
+    log_info "no launches recorded yet ($dir)"
+    log_dim "pick a row in the menu — every launch is logged there"
+    return 0
+  fi
+  log_info "log directory: $dir"
+  if [ -f "$dir/menu.log" ]; then
+    printf '\n'
+    log_dim "last launches (menu.log):"
+    tail -n 10 "$dir/menu.log" | sed 's/^/  /'
+  fi
+  newest="$(ls -1t "$dir"/menu-*.log 2>/dev/null | head -n 1)"
+  printf '\n'
+  if [ -n "$newest" ]; then
+    log_warn "newest failed launch: $newest"
+    log_dim "read it: codemux logs --last"
+  else
+    log_ok "no failed launch recorded"
+  fi
+  return 0
+}
+
 # --- doctor ------------------------------------------------------------------
 codemux_cmd_doctor() {
   local a extra_fail=0 rc=0 base size pct free_kb age

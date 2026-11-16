@@ -37,6 +37,7 @@ case "$cmd" in
   status) codemux_cmd_status "$@" ;;
   repair) codemux_cmd_repair "$@" ;;
   memory) codemux_cmd_memory "$@" ;;
+  logs) codemux_cmd_logs "$@" ;;
   update-check) codemux_cmd_update_check "$@" ;;
   doctor) codemux_cmd_doctor "$@" ;;
   upgrade) codemux_cmd_upgrade "$@" ;;

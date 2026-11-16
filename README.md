@@ -122,6 +122,32 @@ reporting, bracketed paste, a half-written OSC string, a paused XOFF — is rese
 once it exits, so the tab is usable immediately and `Ctrl+C`/`Ctrl+L` keep
 working. If a pane ever does freeze, type `fixterm` (blind) and press Enter.
 
+## 🧾 Menu log (auditing a failed row)
+
+Every row you pick is logged, so a broken agent or a failed ad card can be
+audited afterwards instead of guessed:
+
+```bash
+codemux logs           # log directory, last launches, newest failure
+codemux logs --last    # the whole story of the newest failed launch
+codemux logs --all     # every recorded launch
+codemux logs --list    # the detail files kept on disk
+```
+
+- `~/.config/codemux/logs/menu.log` — one line per launch: row, exit code,
+  duration, status. Rotated at 64 KiB (`menu.log.1` keeps the previous one).
+- `~/.config/codemux/logs/menu-<stamp>.log` — kept only when a launch went
+  wrong: time, row, command, cwd, terminal, installed versions, exit code,
+  duration and the last 120 lines of pane output with escape codes stripped.
+
+While an agent runs, its pane stream is copied with `tmux pipe-pane`: no
+terminal mode is touched, and the text is still there after the pane is wiped.
+A clean launch deletes its detail file, the last 40 failures are kept, and a row
+whose binary is missing is logged too (`status: MISSING`).
+
+`CODEMUX_LOG_DIR` moves the directory (the tests use it). If a row fails, the
+menu prints the path on screen: `OpenCode V2 exited with 3 — log: …`.
+
 ## 🧠 Memory that survives sessions
 
 `MEMORY.md` (facts, decisions, paths) and `RECENT.md` (last sessions **plus the
@@ -200,6 +226,7 @@ throwaway server, so a layout change can be looked at instead of assumed.
 | `codemux doctor` | 🩺 deeper checks (bashrc, wrapper, memory size, disk) |
 | `codemux repair` | 🧯 fix stale lock, half-done dpkg, missing V2 shim |
 | `codemux memory` | 🧠 memory status / size |
+| `codemux logs` | 🧾 menu launch log: last launches, newest failure in full |
 | `codemux self-update` | 📦 replace the codemux code (old version backed up) |
 | `codemux uninstall` | 🗑️ remove payloads (your memory/projects stay) |
 

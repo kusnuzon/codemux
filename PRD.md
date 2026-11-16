@@ -669,6 +669,30 @@ to `~/.config/codemux/menu.sh` (mode `700`, `CM_MENU_VERSION` marker). A startup
 - Gate: `OPENCODE_NO_AUTO=1` skips tmux and the menu; without tmux installed the
   block sources the menu directly.
 
+### 12D.1 Launch log (`codemux logs`)
+
+Problem: a row that misbehaves (an agent that dies at once, a broken ad card,
+a binary that vanished) left nothing on disk, so the cause had to be guessed.
+
+- `_cm_log_start` writes `~/.config/codemux/logs/menu-<stamp>-<seq>.log` before
+  the agent starts (time, row, command, cwd, terminal, installed versions). If
+  the process is killed mid-launch, that file is the only trace — hence written
+  first, not last. A counter in the name keeps two launches in the same second
+  apart, otherwise a success would delete the previous failure's evidence.
+- `_cm_capture_start` copies the pane stream with `tmux pipe-pane -o` into
+  `logs/.raw.*`; no terminal mode is touched and the TUI is unaffected.
+- `_cm_log_finish` closes the pipe, waits (bounded, 8 × 0.1 s) for `cat` to flush
+  on EOF — reading once right after `pipe-pane` lost the last lines — strips the
+  escape codes (`_cm_pane_tail`), and decides: exit code ≠ 0, status `missing`,
+  or an error pattern in the output keeps the detail file with the last 120
+  lines; anything else deletes it and leaves one line in `menu.log`.
+- Order matters: capture → log → `_cm_tty_fix`. The repair clears the screen, so
+  a tail read afterwards would be empty.
+- Rotation: `menu.log` at 64 KiB (`menu.log.1`), detail files capped at 40,
+  `.raw.*` debris older than 2 h removed. `CODEMUX_LOG_DIR` overrides the dir.
+- `codemux logs` prints the last launches and the newest failure; `--last`,
+  `--all`, `--list`, `--dir` for the rest.
+
 ## 12E. Managed `~/.tmux.conf` block: dark theme and a tap-able tab strip
 
 tmux 3.8 ships a green status bar that fights a dark terminal, and free-pi needs
