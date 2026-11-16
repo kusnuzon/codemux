@@ -64,69 +64,27 @@ if grep -qx 'set -g mouse on' <<<"$block" &&
 else
   bad "block: no mouse/tab strip"
 fi
-# Fixed-width tabs keep the tap target big enough for a finger even when a
-# title is short.
-# Fixed-width tabs: 20 columns each, so a tap can be mapped to a tab and its
-# own "x" ("+ new tab" sits on the right of the bar).
-if [ "$(grep -o 'p15:#{window_index}' <<<"$block" | wc -l)" -eq 2 ] &&
-  [ "$(grep -o '✕' <<<"$block" | wc -l)" -eq 2 ] &&
+# The window list is tmux's plain "index: name" strip: no custom tab formats to
+# mis-render, and tapping it uses tmux's own MouseDown1Status binding.
+if [ "$(grep -c 'set -g window-status-format " #I: #W "' <<<"$block")" -eq 1 ] &&
+  [ "$(grep -c 'set -g window-status-current-format " #I: #W "' <<<"$block")" -eq 1 ] &&
   grep -qx 'set -g status-left ""' <<<"$block"; then
-  ok "block: fixed-width tabs with their own x and no status-left offset"
+  ok "block: plain window list (no custom tab formats)"
 else
-  bad "block: tab width/x missing"
+  bad "block: window list format is not the plain one"
 fi
-# No box glyphs: drawing ▏…▕ around every tab doubles the lines where two tabs
-# meet. A single separator in the last column of an inactive tab marks the edge
-# instead, and the active tab drops it (its background already marks it). The
-# pending tab draws the same keep/close buttons in both formats, so it has one
-# separator of its own on each line (2 + 1 = 3).
-if ! grep -q '▏\|▕' <<<"$block" &&
-  [ "$(grep -o '│' <<<"$block" | wc -l)" -eq 3 ]; then
-  ok "block: one separator per inactive tab, on its edge, none on the active tab"
+# Everything the old 20-column touch strip needed is gone; leftover conditionals
+# are what used to render nothing when one of their fields was empty.
+if ! grep -q '✕\|@tabstart\|@closepending\|#{?' <<<"$block"; then
+  ok "block: no tab-strip glyphs, paging state or conditionals left"
 else
-  bad "block: tab separators are wrong (doubled box or missing edge line)"
+  bad "block: leftovers from the touch tab strip"
 fi
-# #{?cond,then,else,} with a fourth, empty field breaks a nested conditional:
-# tmux then renders nothing and the whole strip disappears.
-if grep -q 'set -g window-status.*-format ".*,}"$' <<<"$block"; then
-  bad "block: a tab format ends in ,} (four-field conditional renders nothing)"
+# A comma inside a #{?...} branch would end that branch, so no branch may remain.
+if grep -q '#\[.*,.*\]' <<<"$block" && grep -q 'window-status.*#{?' <<<"$block"; then
+  bad "block: a style code still sits inside a conditional branch"
 else
-  ok "block: tab formats close with three-field conditionals"
-fi
-# A comma inside a #{?...} branch ends that branch, so a style code there must
-# write its commas as #, — otherwise the tab renders the literal text
-# "bg=#2a2a2a" instead of a coloured tab.
-badstyle=""
-for line in $(grep -n 'set -g window-status.*-format "' <<<"$block" | cut -d: -f1); do
-  while IFS= read -r code; do
-    case "$code" in
-      *", "*) ;;
-    esac
-    # strip escaped commas, then look for any comma left inside the code
-    rest="${code//#,/}"
-    case "$rest" in
-      *","*) badstyle="$badstyle $code" ;;
-    esac
-  done <<<"$(sed -n "${line}p" <<<"$block" | grep -o '#\[[^]]*\]' | tr ' ' '\n' | grep -o '#\[[^]]*\]')"
-done
-if [ -z "$badstyle" ]; then
-  ok "block: style codes inside the tab conditionals escape their commas"
-else
-  bad "block: unescaped comma in style code:$badstyle"
-fi
-# One page of three 20-column tabs: @tabstart is what a swipe moves, and a tab
-# waiting for its close confirmation turns red.
-if grep -q 'set -g window-status-format "#{?#{&&:#{>=:#{window_index},#{@tabstart}}' <<<"$block" &&
-  grep -q 'set -g window-status-current-format "#{?#{&&:' <<<"$block" &&
-  grep -qx 'set -g @tabstart 0' <<<"$block" &&
-  [ "$(grep -o 'e|+|:#{@tabstart},3' <<<"$block" | wc -l)" -eq 2 ] &&
-  [ "$(grep -o '=12:window_name' <<<"$block" | wc -l)" -eq 2 ] &&
-  [ "$(grep -o 'keep    ' <<<"$block" | wc -l)" -eq 2 ] &&
-  [ "$(grep -o 'close   ' <<<"$block" | wc -l)" -eq 2 ] &&
-  [ "$(grep -o 'ff6b6b' <<<"$block" | wc -l)" -eq 2 ]; then
-  ok "block: one page of three tabs, names cut to their slot, a pending tab turns into keep/close"
-else
-  bad "block: tab paging/conditional format missing"
+  ok "block: no style code inside a conditional branch"
 fi
 [ "$(grep -c 'codemux:tmux begin' <<<"$block")" = "1" ] && ok "block: one begin marker" || bad "block: marker count"
 

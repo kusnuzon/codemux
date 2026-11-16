@@ -306,7 +306,7 @@ if ! grep -q '^# --- banner + menu launcher' "$rc3"; then
 else
   bad "legacy: old block still present"
 fi
-if [ "$(grep -c '_oc_launcher()' "$rc3")" -eq 1 ] &&
+if [ "$(grep -c '_oc_menu_loop()' "$rc3")" -eq 1 ] &&
   [ "$(grep -c 'codemux:launcher begin' "$rc3")" -eq 1 ] &&
   bash -n "$rc3" 2>/dev/null; then
   ok "legacy: single new block + valid"
@@ -337,80 +337,71 @@ else
 fi
 
 # =============================================================================
-# 5. menu flicker guard: cursor hidden + only 4 rows redrawn
+# 5. the launcher block is small, fast and key-free
 # =============================================================================
+# The block is sourced by every interactive shell, so it must not start an agent
+# to read a version and must not read single keys. Both were real bugs: the
+# version probe ran `opencode --version` (1.2 s before every prompt) and the
+# key reader could spin on a terminal a TUI handed back in raw mode.
 TPL="$ROOT/templates/bashrc-block.sh"
-# The version marker lives in the template header, the probe compares it against
-# CODEMUX_LAUNCHER_BLOCK_VERSION: bumping only one of the two leaves `check` at
-# WARN (and users never receive the new block).
-if grep -qF "# codemux:launcher version $(sed -n 's/^CODEMUX_LAUNCHER_BLOCK_VERSION="\(.*\)"$/\1/p' "$ROOT/lib/modules/launcher.sh")" "$TPL"; then
-  ok "menu: template header version matches CODEMUX_LAUNCHER_BLOCK_VERSION"
+SB5="$(new_sandbox menu-items)"
+if ! grep -q 'timeout 8 opencode' "$TPL" && ! grep -q '\$(opencode --version' "$TPL" &&
+  grep -q 'share/opencode/VERSION' "$TPL" && grep -q 'dpkg-query' "$TPL"; then
+  ok "menu: versions come from files, the agent binary is never started"
 else
-  bad "menu: launcher block version in the template header is out of sync"
+  bad "menu: the version probe still runs the agent binary"
 fi
-if grep -qF '\033[?25l' "$TPL" && grep -qF '\033[?25h' "$TPL"; then
-  ok "menu: cursor hidden & restored"
-else
-  bad "menu: cursor escapes (?25l/?25h) incomplete"
-fi
-# The menu cannot rely on the ~/.bashrc wrapper (a component may be a bare
-# binary), so it repairs the terminal itself: once after a component returns and
-# once before handing the shell back. A missing call leaves Termux frozen.
-fix_sites="$(grep -c '_oc_tty_fix' "$TPL")"
-if grep -q '^_oc_tty_fix() {' "$TPL" && [ "$fix_sites" -ge 3 ] && \
-  grep -q '^  _oc_tty_fix$' "$TPL"; then
-  ok "menu: terminal repaired after a component and before the shell"
-else
-  bad "menu: terminal repair helper missing or not on every exit path ($fix_sites sites)"
-fi
-# No single-key reader means no retry loop: the menu reads one line, so a dead
-# terminal (EOF, what a full-screen agent leaves behind) ends it immediately.
-if ! grep -q 'reopens' "$TPL" && ! grep -q 'read -rsn1' "$TPL" && \
+if ! grep -q 'read -rsn1' "$TPL" && ! grep -q '_oc_read_key' "$TPL" &&
   grep -q 'IFS= read -r choice' "$TPL"; then
-  ok "menu: no single-key reader, so nothing can spin on a dead terminal"
+  ok "menu: one typed line per answer (no single-key reader)"
 else
-  bad "menu: a key reader is still there (it can spin on a dead terminal)"
+  bad "menu: a single-key reader is still present"
 fi
-# A frozen screen with a live shell means the TUI left a terminal mode behind
-# (alternate screen / mouse / paste). Every one of them has to be turned off and
-# the terminal has to be told to redraw, in both the menu helper and the
-# ~/.bashrc wrapper.
+# The banner stays: ASCII art plus one meta line with the installed agents.
+if grep -q '█▀▀█' "$TPL" && grep -q 'Termux · Android arm64' "$TPL"; then
+  ok "menu: banner kept (art + version line)"
+else
+  bad "menu: banner missing"
+fi
+# Dropped on purpose: the tmux tab-strip bindings, the quota/update notices and
+# the install dialog. Their absence is what keeps the block small.
+if ! grep -q 'MouseDown1Status' "$TPL" && ! grep -q '_oc_pi_tmux_tabs' "$TPL" &&
+  ! grep -q '_oc_quota_notice' "$TPL" && ! grep -q '_oc_update_notice' "$TPL" &&
+  ! grep -q 'Install it now?' "$TPL"; then
+  ok "menu: no tab-strip bindings, notices or install dialog left"
+else
+  bad "menu: a dropped feature is still in the block"
+fi
+# Small enough to read on one screen.
+lines="$(wc -l <"$TPL")"
+if [ "$lines" -le 220 ]; then
+  ok "menu: the block is $lines lines"
+else
+  bad "menu: the block is still $lines lines (target ≤ 220)"
+fi
+# The terminal repair stays: it is what unfreezes Termux after an agent exits.
 tty_modes_missing=""
-for mode in '\007' '\033\\' '\033[?2026l' '\033[?2031l' '\033[?1049l' '\033[?1000l' '\033[?1002l' '\033[?1003l' \
-  '\033[?1006l' '\033[?1015l' '\033[?1016l' '\033[?1004l' '\033[?2004l' '\033[?1l' '\033>' '\033[!p' \
-  '\033[r' '\033[?6l' '\033[?7h' '\033(B' '\033[2J'; do
+for mode in '\007' '\033\\' '\033[?2026l' '\033[?1049l' '\033[?1002l' \
+  '\033[?2004l' '\033['r '\033[?6l' '\033[?7h' '\033(B' '\033[!p'; do
   grep -qF "$mode" "$TPL" || tty_modes_missing="$tty_modes_missing $mode"
 done
 if [ -z "$tty_modes_missing" ]; then
-  ok "menu: every TUI terminal mode is released and the screen is redrawn"
+  ok "menu: the terminal reset keeps every mode it releases"
 else
   bad "menu: terminal reset is incomplete, missing:$tty_modes_missing"
 fi
-# The same reset has to live in the ~/.bashrc wrapper: it runs around every
-# opencode call, where the menu helper is never reached.
-wrapper_modes_missing=""
-for mode in '\007' '\033\\' '\033[?2026l' '\033[?1049l' '\033[r' '\033[?6l' '\033[?7h' '\033(B' '\033[!p'; do
-  grep -qF "$mode" "$ROOT/lib/modules/memory.sh" || wrapper_modes_missing="$wrapper_modes_missing $mode"
-done
-if [ -z "$wrapper_modes_missing" ]; then
-  ok "menu: the ~/.bashrc wrapper releases the same terminal modes"
+fix_sites="$(grep -c '_oc_tty_fix' "$TPL")"
+if grep -q '^_oc_tty_fix() {' "$TPL" && [ "$fix_sites" -ge 3 ] && grep -q '^  _oc_tty_fix$' "$TPL"; then
+  ok "menu: terminal repaired after a component and before the shell"
 else
-  bad "menu: wrapper terminal reset is incomplete, missing:$wrapper_modes_missing"
+  bad "menu: terminal repair missing on an exit path ($fix_sites sites)"
 fi
-# The menu must not read keys one at a time: a terminal handed back in raw mode
-# by a full-screen agent makes a one-shot key reader spin on EOF, swallow keys
-# or leave the cursor hidden. It is a numbered list answered with `read`.
-if ! grep -q '_oc_read_key()' "$TPL" && ! grep -q 'read -rsn1' "$TPL" && \
-  ! grep -qF '\033[%dA' "$TPL" && grep -q 'IFS= read -r choice' "$TPL"; then
-  ok "menu: answers come from a typed number, with no raw single-key reader"
-else
-  bad "menu: still reads single keys / rewrites the screen with a fixed offset"
-fi
-# every component row is always offered; a missing one is marked "not installed"
+
+# rows: always the same five, a missing agent marked
 menu_keys() { # <sandbox> → keys of the menu rows
   local sb="$1"
   env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
-      PATH="$2"   # only the sandbox bin: the real installed codemux must not leak in
+      PATH="$2"
       . "$1"
       _oc_items
       printf "%s" "${_OC_KEYS[*]}"
@@ -422,375 +413,63 @@ menu_descs() { # <sandbox> → descriptions of the menu rows
       PATH="$2"
       . "$1"
       _oc_items
-      printf "%s\n" "${_OC_DESCS[@]}"
+      printf "%s" "${_OC_DESCS[*]}"
     ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
 }
-menu_names() { # <sandbox> → names of the menu rows
-  local sb="$1"
-  env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
-      PATH="$2"
-      . "$1"
-      _oc_items
-      printf "%s\n" "${_OC_NAMES[@]}"
-    ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
-}
-menu_guide() { # <sandbox> → the "Shell only" command guide
-  local sb="$1"
-  env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" NO_COLOR=1 bash -c '
-      PATH="$2"
-      . "$1"
-      _oc_colors
-      _oc_guide
-    ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
-}
-menu_version() { # <sandbox> → the `version` command output
-  local sb="$1"
-  env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
-      PATH="$2"
-      . "$1"
-      version
-    ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
-}
-menu_meta() { # <sandbox> <key> → meta of one row
-  local sb="$1" k="$2"
-  env HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
-      PATH="$3"
-      . "$1"
-      _oc_meta "$2"
-    ' _ "$TPL" "$k" "$sb/prefix/bin" 2>/dev/null
-}
-menu_launch() { # <sandbox> <key> [TMUX] → run one row, output discarded
-  local sb="$1" k="$2" tmuxval="${3:-}"
-  env -u TMUX HOME="$sb/home" PREFIX="$sb/prefix" OPENCODE_NO_AUTO=1 \
-    TMPDIR="$BASE" TMUX="$tmuxval" bash -c '
-      PATH="$3"
-      . "$1"
-      _oc_colors
-      _oc_launch_component "$2"
-    ' _ "$TPL" "$k" "$sb/prefix/bin" >/dev/null 2>&1
-}
-SB5="$(new_sandbox menu-items)"
-mkdir -p "$SB5/prefix/bin"
+if [ "$(menu_keys "$SB5")" = "v1 v2 pi shell quit" ]; then
+  ok "menu: five rows (v1 v2 pi shell quit)"
+else
+  bad "menu: rows are '$(menu_keys "$SB5")'"
+fi
+case "$(menu_descs "$SB5")" in
+  *"not installed"*) ok "menu: a missing agent is marked not installed" ;;
+  *) bad "menu: a missing agent is not marked" ;;
+esac
+
+# banner meta line: only installed agents are listed
+meta="$(env HOME="$SB5/home" PREFIX="$SB5/prefix" NO_COLOR=1 \
+  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c 'command() { return 1; }; . "$1"; _oc_colors; _oc_banner' \
+  _ "$TPL" 2>/dev/null)"
+case "$meta" in
+  *"no agent yet"*) ok "menu: nothing installed → banner says no agent yet" ;;
+  *) bad "menu: banner meta line is wrong → $(printf '%s' "$meta" | tr '\n' ' ')" ;;
+esac
+# with an agent installed the meta line shows its version, read from a file
 printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode-v2"
 chmod +x "$SB5/prefix/bin/opencode-v2"
-if [ "$(menu_keys "$SB5")" = "v1 v2 pi pitmux shell quit" ] &&
-  menu_descs "$SB5" | sed -n '1p' | grep -q 'not installed'; then
-  ok "menu: V2-only install still offers V1, marked not installed"
-else
-  bad "menu: V2-only rows are $(menu_keys "$SB5")"
-fi
-rm -f "$SB5/prefix/bin/opencode-v2"
-printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode"
-chmod +x "$SB5/prefix/bin/opencode"
-if [ "$(menu_keys "$SB5")" = "v1 v2 pi pitmux shell quit" ] &&
-  menu_descs "$SB5" | sed -n '2p' | grep -q 'not installed'; then
-  ok "menu: V1-only install still offers V2, marked not installed"
-else
-  bad "menu: V1-only rows are $(menu_keys "$SB5")"
-fi
-printf '#!/bin/sh\n' >"$SB5/prefix/bin/opencode-v2"
-printf '#!/bin/sh\n' >"$SB5/prefix/bin/pi"
-chmod +x "$SB5/prefix/bin/opencode-v2" "$SB5/prefix/bin/pi"
-if [ "$(menu_keys "$SB5")" = "v1 v2 pi pitmux shell quit" ] &&
-  ! menu_descs "$SB5" | grep -q 'not installed'; then
-  ok "menu: both installed → six rows, no install note"
-else
-  bad "menu: both rows are $(menu_keys "$SB5")"
-fi
-rm -f "$SB5/prefix/bin/opencode" "$SB5/prefix/bin/opencode-v2" "$SB5/prefix/bin/pi"
-if [ "$(menu_keys "$SB5")" = "v1 v2 pi pitmux shell quit" ] &&
-  [ "$(menu_descs "$SB5" | grep -c 'not installed')" -eq 4 ]; then
-  ok "menu: nothing installed → V1/V2/Pi (and the tmux row) marked not installed"
-else
-  bad "menu: empty rows are $(menu_keys "$SB5")"
-fi
-if [ "$(menu_names "$SB5" | sed -n '3p')" = "Free-pi (Pi)" ]; then
-  ok "menu: the free-pi row is labelled Free-pi (Pi)"
-else
-  bad "menu: free-pi row label is '$(menu_names "$SB5" | sed -n '3p')'"
-fi
-if [ "$(menu_names "$SB5" | sed -n '4p')" = "Free-pi (Pi) · tmux" ]; then
-  ok "menu: the tmux row sits right below pi and is labelled Free-pi (Pi) · tmux"
-else
-  bad "menu: tmux row label is '$(menu_names "$SB5" | sed -n '4p')'"
-fi
-# The tmux row must install the `pi` component, not a `pitmux` one (there is no
-# such component: `codemux install --only pitmux` would fail).
-if [ "$(menu_meta "$SB5" pitmux)" = 'pi|Free-pi (Pi) · tmux|Pi' ]; then
-  ok "menu: the tmux row reuses the pi binary and the pi component"
-else
-  bad "menu: tmux row meta is '$(menu_meta "$SB5" pitmux)'"
-fi
-# --- menu: the tmux row launches pi through tmux, with sane fallbacks ---
-SB6="$(new_sandbox menu-tmux)"
-mkdir -p "$SB6/prefix/bin"
-cat >"$SB6/prefix/bin/pi" <<EOF
-#!/bin/sh
-echo pi >>"$SB6/pi.calls"
-EOF
-cat >"$SB6/prefix/bin/tmux" <<EOF
-#!/bin/sh
-echo "\$*" >>"$SB6/tmux.calls"
-case "\$1" in
-  # Like a real server: the session is absent until the file exists.
-  has-session) [ -e "$SB6/tmux.session" ] ;;
-  *) exit 0 ;;
+mkdir -p "$SB5/prefix/share/opencode-v2"
+printf '2.3.0' >"$SB5/prefix/share/opencode-v2/VERSION"
+meta="$(env HOME="$SB5/home" PREFIX="$SB5/prefix" NO_COLOR=1 \
+  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c 'PATH="$2:$PATH"; . "$1"; _oc_colors; _oc_banner' \
+  _ "$TPL" "$SB5/prefix/bin" 2>/dev/null)"
+case "$meta" in
+  *"v2 2.3.0"*) ok "menu: an installed agent is listed with its version" ;;
+  *) bad "menu: installed agent missing from the banner → $(printf '%s' "$meta" | tr '\n' ' ')" ;;
 esac
-EOF
-chmod +x "$SB6/prefix/bin/pi" "$SB6/prefix/bin/tmux"
-menu_launch "$SB6" pitmux
-if grep -qx "new-session -d -s pi OPENCODE_NO_AUTO=1 bash -ic 'pi --continue || pi'" "$SB6/tmux.calls" 2>/dev/null &&
-  [ "$(tail -n 1 "$SB6/tmux.calls")" = 'attach-session -t pi' ] &&
-  [ ! -s "$SB6/pi.calls" ]; then
-  ok "menu: the tmux row creates the pi session detached, then attaches (pi runs in that window)"
-else
-  bad "menu: tmux row ran '$(tr '\n' ';' <"$SB6/tmux.calls" 2>/dev/null)' (pi calls: $(cat "$SB6/pi.calls" 2>/dev/null))"
-fi
-# One tab = one tmux window, so the key moves must mirror OpenCode V2's
-# session tabs (alt+down/ctrl+tab next, alt+up/shift+tab previous) while
-# staying inert outside the `pi` session. tmux has no ctrl+shift+tab: it never
-# decodes that chord from a plain terminal, so shift+tab is the reverse key.
-if grep -qx 'set-option -t pi default-command OPENCODE_NO_AUTO=1 bash -ic pi' "$SB6/tmux.calls" &&
-  grep -qx 'bind-key -T prefix c if-shell -F #{==:#{session_name},pi} new-window -t pi: -n pi new-window' "$SB6/tmux.calls" &&
-  grep -qx 'rename-window -t pi:0 pi' "$SB6/tmux.calls" &&
-  grep -qx 'bind-key -n C-Tab if-shell -F #{==:#{session_name},pi} next-window send-keys C-Tab' "$SB6/tmux.calls" &&
-  grep -qx 'bind-key -n BTab if-shell -F #{==:#{session_name},pi} previous-window send-keys BTab' "$SB6/tmux.calls" &&
-  grep -qx 'bind-key -n M-Down if-shell -F #{==:#{session_name},pi} next-window send-keys M-Down' "$SB6/tmux.calls" &&
-  grep -qx 'bind-key -n M-Up if-shell -F #{==:#{session_name},pi} previous-window send-keys M-Up' "$SB6/tmux.calls"; then
-  ok "menu: the tmux row maps alt+down/ctrl+tab and alt+up/shift+tab to next/previous tab (inside pi only)"
-else
-  bad "menu: tab keys are '$(grep 'bind-key' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';' | cut -c1-2000) / default-command '$(grep 'set-option' "$SB6/tmux.calls" 2>/dev/null)'"
-fi
-# Touch: one run-shell binding maps a tap on the 20-column tab strip to that
-# tab - the name switches to it, the tab's own "x" asks before closing it - a
-# swipe scrolls the page, and "+ new tab" on the right opens a new one. Only
-# run-shell can read #{mouse_x}.
-if grep -qx 'set-option -t pi status-right  + new tab ' "$SB6/tmux.calls" &&
-  grep -qx 'set-option -t pi @tabstart 0' "$SB6/tmux.calls" &&
-  grep -qx 'set-option -t pi status on' "$SB6/tmux.calls" &&
-  grep -q '^set-option -t pi -u status-format' "$SB6/tmux.calls" &&
-  grep -q '^bind-key -n MouseDown1Status run-shell -b .*x=#{mouse_x}' "$SB6/tmux.calls" &&
-  grep -q 'codemux-tab-drag' "$SB6/tmux.calls" &&
-  grep -q '@closepending' "$SB6/tmux.calls" &&
-  grep -q 'kill-window -t' "$SB6/tmux.calls" &&
-  grep -q 'select-window -t' "$SB6/tmux.calls" &&
-  grep -q '^bind-key -n MouseDrag1Status run-shell -b ' "$SB6/tmux.calls" &&
-  grep -q 'new-window -t .*-n pi' "$SB6/tmux.calls" &&
-  grep -q '^bind-key -n MouseDown1StatusRight run-shell -b .*new-window -t .*@tabstart' "$SB6/tmux.calls"; then
-  ok "menu: tap maps to its tab, 'x' turns that tab into keep/close, swipe scrolls, '+ new tab' opens and pages to the new tab"
-else
-  bad "menu: touch bindings are '$(grep -E 'status-right|MouseDown|MouseDrag|@tabstart' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';' | cut -c1-2000)"
-fi
-# A run-shell command that ends with a failing test makes tmux print the whole
-# command in the message line ("'%s' returned %d"), which looked like a broken
-# tab. Every touch binding must end with an explicit `exit 0`.
-if grep -q "MouseDown1Status \"run-shell -b '.*; exit 0'\"" "$TPL" &&
-  grep -q "MouseDown1StatusRight \"run-shell -b '.*; exit 0'\"" "$TPL" &&
-  grep -q "MouseDrag1Status \"run-shell -b '.*; exit 0'\"" "$TPL"; then
-  ok "menu: touch bindings end with exit 0 (a failing tail would print the script in tmux's message line)"
-else
-  bad "menu: touch binding tails are '$(grep -E 'MouseDown1Status|MouseDown1StatusRight|MouseDrag1Status' "$TPL" | rev | cut -c1-40 | rev | tr '\n' ';')"
-fi
-# A second status line cost the strip a row, and setting only its index left
-# index 0 empty, which made tmux draw an empty first line - every tab
-# disappeared. The block keeps one status line and no session status-format.
-if grep -q "set-option -t pi status on" "$TPL" &&
-  grep -q "set-option -t pi -u status-format" "$TPL" &&
-  ! grep -q "status-format\[1\]" "$TPL"; then
-  ok "menu: one status line only (no session status-format that could blank the strip)"
-else
-  bad "menu: status-format handling is '$(grep -c 'status-format' "$TPL") line(s)'"
-fi
-# The swipe baseline is the press column, so a page turns once the finger has
-# travelled 20 columns in total - short motion events must add up instead of
-# each one replacing the baseline (which is why the strip used to be stuck).
-if grep -qF 'h=\$(( (x - d) / 20 ))' "$TPL" &&
-  grep -q 'h \* 20' "$TPL" &&
-  ! grep -q 'd - x' "$TPL"; then
-  ok "menu: swipe pages by accumulated distance (per-event baseline kept, not overwritten)"
-else
-  bad "menu: swipe maths is '$(grep -o 'h=\$(( (x - d) / 20 ))' "$TPL" | head -1)'"
-fi
-rm -f "$SB6/tmux.session"
-: >"$SB6/tmux.calls"
-menu_launch "$SB6" pitmux "$SB6/tmux-1,1,1"
-if [ "$(cat "$SB6/pi.calls" 2>/dev/null)" = "pi" ] && [ ! -s "$SB6/tmux.calls" ]; then
-  ok "menu: inside tmux the row runs pi in the current session (no nesting)"
-else
-  bad "menu: inside tmux the row ran tmux '$(cat "$SB6/tmux.calls" 2>/dev/null)' / pi '$(cat "$SB6/pi.calls" 2>/dev/null)'"
-fi
-: >"$SB6/tmux.calls"
-: >"$SB6/pi.calls"
-rm -f "$SB6/prefix/bin/tmux"
-menu_launch "$SB6" pitmux
-if [ "$(cat "$SB6/pi.calls" 2>/dev/null)" = "pi" ] && [ ! -s "$SB6/tmux.calls" ]; then
-  ok "menu: without tmux the row still starts pi (warning, no failure)"
-else
-  bad "menu: without tmux the row did not fall back to pi"
-fi
-printf '#!/bin/sh\n' >"$SB5/prefix/bin/pi"
-chmod +x "$SB5/prefix/bin/pi"
-# Capture first: `menu_guide | grep -q` fails under `set -o pipefail` because grep
-# exits early and the producer dies of SIGPIPE (141).
-guide_pi="$(menu_guide "$SB5")"
-if grep -q 'pi *run free-pi directly' <<<"$guide_pi"; then
-  ok "menu: the Shell only guide lists the pi command"
-else
-  bad "menu: the Shell only guide hides pi (guide: $(tr '\n' '|' <<<"$guide_pi"))"
-fi
-if grep -q 'no agent was started' <<<"$guide_pi" &&
-  ! grep -q 'opencode was not started' <<<"$guide_pi"; then
-  ok "menu: the Shell only guide is not OpenCode-specific"
-else
-  bad "menu: the Shell only guide still says opencode was not started"
-fi
-version_out="$(menu_version "$SB5")"
-if grep -q '^Pi (free-pi):' <<<"$version_out"; then
-  ok "menu: version prints the free-pi version row"
-else
-  bad "menu: version hides free-pi ($(tr '\n' '|' <<<"$version_out"))"
-fi
-rm -f "$SB5/prefix/bin/pi"
-if grep -q "_oc_cmd_row 'Ctrl+b ,'" "$TPL" && grep -q "'new tab in the pi session'" "$TPL"; then
-  ok "menu: the Shell only guide shows the tab keys (new tab, rename tab)"
-else
-  bad "menu: the guide hides the tab keys"
-fi
-if ! grep -q 'run free-pi directly' <<<"$(menu_guide "$SB5")"; then
-  ok "menu: no pi on PATH → no pi line in the guide"
-else
-  bad "menu: the guide offers pi although it is not installed"
-fi
-if grep -q '_oc_launch_component()' "$TPL" && grep -q 'Install it now?' "$TPL"; then
-  ok "menu: choosing a missing component asks before installing"
-else
-  bad "menu: missing component has no install confirmation"
-fi
-if grep -q '_oc_row()' "$TPL" && grep -q '033\[K' "$TPL"; then
-  ok "menu: option rows cleared to the end (\\033[K)"
-else
-  bad "menu: option rows do not clear leftover characters"
-fi
-# Ctrl+C interrupts the read (rc > 128) and only cancels the answer; it must not
-# leave the menu or kill the shell.
-if grep -q 'rc" -gt 128' "$TPL" && grep -q 'Ctrl+C interrupts the read' "$TPL"; then
-  ok "menu: Ctrl+C only cancels the answer"
-else
-  bad "menu: Ctrl+C not handled"
-fi
-# An answer that is not a valid number must not start anything.
-if grep -q 'type a number from 1 to' "$TPL"; then
-  ok "menu: an out-of-range answer is rejected with a hint"
-else
-  bad "menu: no hint for a bad answer"
-fi
 
-# quota warning line: shown only when `quota` reports one, empty otherwise
-quota_line() { # <sandbox> → the notice line
-  local sb="$1"
-  env HOME="$sb/home" PREFIX="$sb/prefix" PATH="$sb/prefix/bin" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" \
-    "${BASH:-bash}" -c '
-    ACC=""; DIM=""; R=""
-    . "$1"
-    _oc_quota_notice
-  ' _ "$TPL" 2>/dev/null
-}
-if grep -q '_oc_quota_notice$' "$TPL" || grep -q '^      _oc_quota_notice' "$TPL"; then
-  ok "menu: quota warning is rendered with the menu"
-else
-  bad "menu: quota warning is never called"
-fi
-if [ -z "$(quota_line "$SB5")" ]; then
-  ok "menu: no quota installed → no quota line"
-else
-  bad "menu: quota line printed without quota"
-fi
-printf '#!/bin/sh\nexit 0\n' >"$SB5/prefix/bin/quota"
-chmod +x "$SB5/prefix/bin/quota"
-if [ -z "$(quota_line "$SB5")" ]; then
-  ok "menu: quota below the threshold → silent"
-else
-  bad "menu: quota line printed below the threshold"
-fi
-# The fake interpreter must be a path that exists on this machine: $PREFIX is
-# unset on a plain CI runner, so resolve bash instead of assuming its layout.
-printf '#!%s\nprintf "warn 161/200\\n"\n' "$(command -v bash)" >"$SB5/prefix/bin/quota"
-chmod +x "$SB5/prefix/bin/quota"
-case "$(quota_line "$SB5")" in
-  *"161/200"*) ok "menu: quota warning is shown when the limit is near" ;;
-  *) bad "menu: quota warning not shown" ;;
+# version(): three lines, read from files
+out="$(env HOME="$SB5/home" PREFIX="$SB5/prefix" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" \
+  bash -c 'PATH="$2:$PATH"; . "$1"; version' _ "$TPL" "$SB5/prefix/bin" 2>/dev/null)"
+case "$out" in
+  *"OpenCode V1:"*"OpenCode V2:"*"Free-pi (Pi):"*)
+    ok "menu: version prints the three agents" ;;
+  *) bad "menu: version output is '$(printf '%s' "$out" | tr '\n' '|')'" ;;
 esac
-rm -f "$SB5/prefix/bin/quota"
 
-# =============================================================================
-# 5b. one install confirmation for every row (V1, V2, Pi) + the bashrc entry
-# =============================================================================
-# The dialog must exist once and be used by every installable row: a row that
-# installs without asking is a bug that only shows up when a user presses Enter
-# on something they did not expect to install.
-if grep -q '_oc_confirm_install()' "$TPL" && [ "$(grep -c '_oc_confirm_install "' "$TPL")" -eq 1 ]; then
-  ok "menu: a single install confirmation shared by all rows"
+# a missing agent is reported, never installed from the menu
+out="$(printf '1\n' | timeout 20 env HOME="$SB5/home" PREFIX="$SB5/prefix" \
+  OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c 'PATH="$2"; . "$1"; _oc_menu_loop; printf "rc=%s\n" "$?"' \
+  _ "$TPL" "$SB5/prefix/bin" 2>/dev/null)"
+case "$out" in
+  *"is not installed"*"run: codemux install"*"rc=1"*)
+    ok "menu: choosing a missing agent explains the install command" ;;
+  *) bad "menu: missing agent → $(printf '%s' "$out" | tr '\n' ' ' | tail -c 200)" ;;
+esac
+if grep -q 'OPENCODE_NO_AUTO' "$TPL" && grep -q 'OPENCODE_AUTO_LAUNCHED' "$TPL"; then
+  ok "menu: auto-launch can be skipped (OPENCODE_NO_AUTO=1)"
 else
-  bad "menu: install confirmation is not shared (or duplicated)"
+  bad "menu: no gate around the auto-launch"
 fi
-if grep -qF 'Install it now? [y/N]' "$TPL" && grep -qF 'not installed — nothing changed.' "$TPL"; then
-  ok "menu: the dialog offers [y/N] and reports 'nothing changed' on no"
-else
-  bad "menu: install dialog wording missing"
-fi
-for k in v1 v2 pi; do
-  if _meta="$(env OPENCODE_NO_AUTO=1 bash -c '. "$1"; _oc_meta "$2"' _ "$TPL" "$k" 2>/dev/null)" &&
-    [ -n "$_meta" ]; then
-    ok "menu: row $k goes through the install path (${_meta%%|*})"
-  else
-    bad "menu: row $k has no install metadata"
-  fi
-done
-# Enter on a missing row: "n" must change nothing and must not call codemux
-ask_no() { # <key> → every line printed while answering "n"
-  local sb="$1" key="$2"
-  # The sandbox bin comes first but the real PATH stays behind it: `env bash` is
-  # at $PREFIX/bin/bash on Termux and at /bin/bash on a plain runner, so a PATH
-  # holding only the sandbox would not even find the interpreter.
-  #
-  # Set CODEMUX_ROOT too, not just its value: the block short-circuits on
-  # `command -v codemux` first, and a real codemux on the host PATH would then
-  # run a real install here instead of the sandbox one.
-  env HOME="$sb/home" PREFIX="$sb/prefix" PATH="$sb/prefix/bin:$PATH" \
-    CODEMUX_ROOT="$ROOT" CODEMUX_HOME="$sb/state" CODEMUX_ALLOW_NONANDROID=1 \
-    OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
-      C1=""; C2=""; ACC=""; DIM=""; BOLD=""; HL=""; R=""
-      _oc_cursor_show() { :; }
-      _oc_cursor_hide() { :; }
-      # Force the "missing" path for every row: a real opencode/pi on the host
-      # PATH would otherwise be launched instead of asking the question.
-      command() { [ "$1" = -v ] && return 1; builtin command "$@"; }
-      . "$1"
-      printf "n\n" | _oc_launch_component "$2"
-      printf "rc=%s\n" "$?"
-    ' _ "$TPL" "$key" 2>/dev/null
-}
-SB5B="$(new_sandbox confirm)"
-mkdir -p "$SB5B/prefix/bin" "$SB5B/home"
-for k in v1 v2 pi; do
-  out="$(ask_no "$SB5B" "$k")"
-  case "$out" in
-    *"is not installed yet"*"rc=1"*)
-      ok "menu: $k missing + answer n → nothing installed" ;;
-    *) bad "menu: $k missing + answer n → $(printf '%s' "$out" | tr '\n' ' ')" ;;
-  esac
-done
-if grep -q 'bashrc) ' "$TPL" || grep -q '_oc_bashrc()' "$TPL"; then
-  ok "menu: ~/.bashrc is reachable from the menu"
-else
-  bad "menu: no ~/.bashrc entry in the menu"
-fi
-if grep -qE "^      b \| B\) _oc_bashrc" "$TPL"; then
-  ok "menu: b opens the ~/.bashrc options"
-else
-  bad "menu: no key hint for ~/.bashrc"
-fi
-
 # =============================================================================
 # 5d. a dead stdin never traps the menu (the /quit bug)
 # =============================================================================
@@ -822,10 +501,10 @@ case "$out" in
     ok "menu: a dead stdin ends the menu instead of spinning" ;;
   *) bad "menu: a dead stdin hangs the menu → $(printf '%s' "$out" | tr '\n' ' ')" ;;
 esac
-out="$(menu_with '5\n')"
+out="$(menu_with '4\n')"
 case "$out" in
-  *"Shell only"*"menu rc=0"*)
-    ok "menu: typing 5 (Shell only) returns to the shell" ;;
+  *"menu rc=0"*)
+    ok "menu: typing 4 (Shell only) returns to the shell" ;;
   *) bad "menu: typing a number did not run the row → $(printf '%s' "$out" | tr '\n' ' ')" ;;
 esac
 out="$(menu_with 'q\n')"
@@ -902,78 +581,6 @@ if [ "$(grep -c 'echo keep' "$SB5C/home/.bashrc")" -eq 1 ]; then
 else
   bad "pi module: rewrite damaged the rest of .bashrc"
 fi
-
-# =============================================================================
-# 6. update notice: stale cache rows are hidden
-# =============================================================================
-SB6="$(new_sandbox notice)"
-mkdir -p "$SB6/home/.config/codemux" "$SB6/prefix/share/opencode" "$SB6/prefix/share/opencode-v2"
-printf '1.19.5' >"$SB6/prefix/share/opencode/VERSION"
-printf '2.2.3' >"$SB6/prefix/share/opencode-v2/VERSION"
-: >"$SB6/home/.config/codemux/.update-check.stamp" # do not re-check over the network
-
-notice() { # <cache content> → print the notice line
-  local sb="$1"
-  env HOME="$sb/home" PREFIX="$sb/prefix" PATH="$sb/prefix/bin:$PATH" OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '
-    ACC=""; DIM=""; R=""
-    eval "$(cat "$1")"
-    _oc_update_notice
-  ' _ "$TPL" 2>/dev/null
-}
-
-# cache says 2.2.2 → 2.2.3 while 2.2.3 is installed (the state right after an upgrade)
-printf 'codemux\t0.6.1\t0.6.1\tok\nopencode-v1\t1.19.5\t1.19.5\tok\nopencode-v2\t2.2.2\t2.2.3\tupdate\n' \
-  >"$SB6/home/.config/codemux/update-cache.tsv"
-out="$(notice "$SB6")"
-if [ -z "$out" ]; then
-  ok "notice: stale cache (version already installed) is not shown"
-else
-  bad "notice: still suggests an update that already finished"
-fi
-
-# a genuinely new release → must be shown
-printf 'opencode-v2\t2.2.3\t2.2.4\tupdate\n' >"$SB6/home/.config/codemux/update-cache.tsv"
-out="$(notice "$SB6")"
-case "$out" in
-  *"opencode-v2 2.2.4"*) ok "notice: a real update is still shown" ;;
-  *) bad "notice: a real update got hidden too" ;;
-esac
-
-# no installed VERSION (not detected) → hide nothing
-rm -f "$SB6/prefix/share/opencode-v2/VERSION"
-out="$(notice "$SB6")"
-case "$out" in
-  *"opencode-v2 2.2.4"*) ok "notice: undetected version → the row is still shown" ;;
-  *) bad "notice: row vanished when the version was undetected" ;;
-esac
-
-# an upstream check once failed (status na) → do not lock for 24h, retry within ≤1h
-mkdir -p "$SB6/prefix/bin"
-cat >"$SB6/prefix/bin/codemux" <<EOS
-#!$(command -v bash)
-: >"\$HOME/retry-marker"
-EOS
-chmod 700 "$SB6/prefix/bin/codemux"
-printf 'codemux\t0.6.3\t-\tna\nopencode-v1\t1.19.5\t-\tna\nopencode-v2\t2.2.3\t-\tna\n' \
-  >"$SB6/home/.config/codemux/update-cache.tsv"
-touch -t "$(date -d '2 hours ago' +%Y%m%d%H%M)" "$SB6/home/.config/codemux/.update-check.stamp"
-rm -f "$SB6/home/retry-marker"
-notice "$SB6" >/dev/null
-sleep 0.3
-[ -f "$SB6/home/retry-marker" ] &&
-  ok "notice: a 'na' result triggers a re-check within 1h" ||
-  bad "notice: a 'na' result is not re-checked"
-
-# conversely: a complete result (no na) still waits 24 hours
-printf 'codemux\t0.6.3\t0.6.3\tok\nopencode-v2\t2.2.3\t2.2.5\tupdate\n' \
-  >"$SB6/home/.config/codemux/update-cache.tsv"
-touch -t "$(date -d '2 hours ago' +%Y%m%d%H%M)" "$SB6/home/.config/codemux/.update-check.stamp"
-rm -f "$SB6/home/retry-marker"
-notice "$SB6" >/dev/null
-sleep 0.3
-[ ! -f "$SB6/home/retry-marker" ] &&
-  ok "notice: a complete cache does not trigger excessive re-checks" ||
-  bad "notice: a complete cache re-checks too soon"
 
 rm -rf "$SANDBOX_ROOT"
 printf '\n%s passed · %s failed\n' "$pass" "$fail"

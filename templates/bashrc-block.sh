@@ -1,76 +1,60 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 30
-# Termux startup banner + menu block. Change it via the codemux repo template,
-# then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
-# The menu is a numbered list: type a number, then Enter (q quits, b ~/.bashrc).
-# Every row is always offered: a component that is not installed is marked
-# "not installed", and choosing it asks for confirmation before installing.
-# Skip everything: OPENCODE_NO_AUTO=1 bash
+# codemux:launcher version 31
+# Termux banner + a numbered menu. Every interactive shell sources this block,
+# so it stays small and fast:
+#   * no agent binary is ever started to read a version (files only),
+#   * the menu is answered with a typed number — there is no single-key reader,
+#     because a full-screen agent can hand the terminal back in raw mode, where
+#     one-key reads spin on EOF, swallow keys or leave the cursor hidden.
+# Skip the menu: OPENCODE_NO_AUTO=1 bash
+
+# Colours (empty when the output is not a terminal or NO_COLOR is set).
+_oc_colors() {
+  C1=''; C2=''; ACC=''; DIM=''; BOLD=''; R=''
+  if [ -z "${NO_COLOR:-}" ] && [ -t 1 ]; then
+    C1=$'\033[38;5;243m'   # OPEN — dark grey
+    C2=$'\033[38;5;231m'   # CODE — white
+    ACC=$'\033[38;5;213m'
+    DIM=$'\033[2m'
+    BOLD=$'\033[1m'
+    R=$'\033[0m'
+  fi
+}
+
+# Installed version of one component, read from a file. `opencode --version`
+# would start the 200 MB payload (1.2 s in front of every prompt), so the
+# payload's own VERSION file is used and dpkg is the fallback.
 _oc_ver() {
-  local v=""
+  local pre="${PREFIX:-/data/data/com.termux/files/usr}" v=""
   case "$1" in
     v1)
-      # real payload version; dpkg-query can lag behind the payload
-      if command -v opencode >/dev/null 2>&1; then
-        v="$(timeout 8 opencode --version 2>/dev/null | head -n 1 | tr -d '[:space:]')"
-      fi
+      v="$(cat "$pre/share/opencode/VERSION" 2>/dev/null)"
       [ -n "$v" ] || v="$(dpkg-query -W -f='${Version}' opencode 2>/dev/null)"
       ;;
-    v2) v="$(cat "$PREFIX/share/opencode-v2/VERSION" 2>/dev/null)" ;;
+    v2) v="$(cat "$pre/share/opencode-v2/VERSION" 2>/dev/null)" ;;
     pi)
-      # free-pi writes no VERSION file into its agent dir, so the number comes
-      # from the package npx actually installed (read straight from the
-      # manifest: `free-pi-cli --version` boots node and is too slow for a
-      # menu redraw).
-      v="$(cat "$HOME/.free-pi/agent/VERSION" 2>/dev/null)"
-      if [ -z "$v" ]; then
-        local pj
-        for pj in "$HOME"/.npm/_npx/*/node_modules/free-pi-cli/package.json; do
-          [ -f "$pj" ] || continue
-          v="$(grep -m1 -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$pj" 2>/dev/null |
-               sed 's/.*"\([^"]*\)"$/\1/')"
-          [ -n "$v" ] && break
-        done
-      fi
-      if [ -z "$v" ] && command -v free-pi-cli >/dev/null 2>&1; then
-        v="$(timeout 5 free-pi-cli --version 2>/dev/null | head -n 1 | tr -d '[:space:]')"
-        v="${v#free-pi-cli}"
-      fi
+      v="$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' \
+        "$HOME"/.npm/_npx/*/node_modules/free-pi-cli/package.json 2>/dev/null | head -n 1)"
       ;;
   esac
   printf '%s' "${v:-?}"
 }
 
-_oc_colors() {
-  C1=''; C2=''; ACC=''; DIM=''; BOLD=''; HL=''; R=''
-  if [ -z "${NO_COLOR:-}" ] && [ -t 1 ]; then
-    C1=$'\033[38;5;243m'   # OPEN — dark grey
-    C2=$'\033[38;5;231m'   # CODE — white
-    ACC=$'\033[38;5;213m'; DIM=$'\033[2m'
-    BOLD=$'\033[1m'; HL=$'\033[48;5;236m'; R=$'\033[0m'
-  fi
-}
-
 _oc_banner() {
   printf '\n'
   # each line: first 4 glyphs (OPEN) grey, remaining 4 glyphs (CODE) white
-  local a
+  local a bits=""
   for a in "█▀▀█ █▀▀█ █▀▀▀ █▀▀▄ █▀▀▀ █▀▀█ █▀▀▄ █▀▀▀" \
            "█  █ █▀▀▀ █▀▀  █  █ █    █  █ █  █ █▀▀ " \
            "▀▀▀▀ ▀    ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"; do
     printf '   %s%s%s%s%s%s\n' "$C1" "${a:0:19}" "$R" "$C2" "${a:19}" "$R"
   done
-  # Only the installed components are listed (V1 only / V2 only / both).
-  local bits=""
-  if command -v opencode >/dev/null 2>&1; then
-    bits="v1 $(_oc_ver v1)"
-  fi
-  if command -v opencode-v2 >/dev/null 2>&1; then
+  # only the agents that are actually installed
+  command -v opencode >/dev/null 2>&1 && bits="v1 $(_oc_ver v1)"
+  command -v opencode-v2 >/dev/null 2>&1 &&
     bits="${bits:+$bits  ·  }v2 $(_oc_ver v2)"
-  fi
-  if command -v pi >/dev/null 2>&1; then
+  command -v pi >/dev/null 2>&1 &&
     bits="${bits:+$bits  ·  }free-pi $(_oc_ver pi)"
-  fi
   if [ -n "$bits" ]; then
     printf '   %sTermux · Android arm64%s   %s%s%s\n\n' "$DIM" "$R" "$DIM" "$bits" "$R"
   else
@@ -78,388 +62,103 @@ _oc_banner() {
   fi
 }
 
-# Every component row is always shown. A missing one is marked "not installed"
-# and choosing it offers to install it (see _oc_launch_component).
+# Menu rows. Every row is always offered; a missing agent is marked and the
+# choice explains how to install it (the menu never installs by itself).
 _oc_items() {
   _OC_KEYS=()
   _OC_NAMES=()
   _OC_DESCS=()
-  _OC_STATE=()
+  local v
   if command -v opencode >/dev/null 2>&1; then
-    _OC_KEYS+=("v1"); _OC_NAMES+=("OpenCode V1")
-    _OC_DESCS+=("$(_oc_ver v1) · stable · legacy DB"); _OC_STATE+=("installed")
+    _OC_DESCS+=("$(_oc_ver v1) · stable")
   else
-    _OC_KEYS+=("v1"); _OC_NAMES+=("OpenCode V1")
-    _OC_DESCS+=("not installed · Enter to install"); _OC_STATE+=("missing")
+    _OC_DESCS+=("not installed")
   fi
+  _OC_KEYS+=("v1"); _OC_NAMES+=("OpenCode V1")
   if command -v opencode-v2 >/dev/null 2>&1; then
-    _OC_KEYS+=("v2"); _OC_NAMES+=("OpenCode V2")
-    _OC_DESCS+=("$(_oc_ver v2) · new · separate DB"); _OC_STATE+=("installed")
+    _OC_DESCS+=("$(_oc_ver v2) · separate DB")
   else
-    _OC_KEYS+=("v2"); _OC_NAMES+=("OpenCode V2")
-    _OC_DESCS+=("not installed · Enter to install"); _OC_STATE+=("missing")
+    _OC_DESCS+=("not installed")
   fi
-  # Two rows for the same agent: plain pi, and pi inside a tmux session (so it
-  # can be detached with Ctrl+b d and reattached later). The version probe runs
-  # once and feeds both rows.
-  local pidesc="not installed · Enter to install" pistate="missing"
+  _OC_KEYS+=("v2"); _OC_NAMES+=("OpenCode V2")
   if command -v pi >/dev/null 2>&1; then
-    pidesc="$(_oc_ver pi) · free-pi agent"; pistate="installed"
+    _OC_DESCS+=("$(_oc_ver pi) · free-pi agent")
+  else
+    _OC_DESCS+=("not installed")
   fi
   _OC_KEYS+=("pi"); _OC_NAMES+=("Free-pi (Pi)")
-  _OC_DESCS+=("$pidesc"); _OC_STATE+=("$pistate")
-  _OC_KEYS+=("pitmux"); _OC_NAMES+=("Free-pi (Pi) · tmux")
-  if [ "$pistate" = "installed" ]; then
-    _OC_DESCS+=("$(_oc_ver pi) · inside tmux")
-  else
-    _OC_DESCS+=("not installed · Enter to install")
-  fi
-  _OC_STATE+=("$pistate")
-  # `bashrc` is not a row: the block is edited with `b` (see the hint line).
-  _OC_KEYS+=("shell"); _OC_NAMES+=("Shell only"); _OC_DESCS+=("no agent"); _OC_STATE+=("installed")
-  _OC_KEYS+=("quit"); _OC_NAMES+=("Quit"); _OC_DESCS+=("close Termux"); _OC_STATE+=("installed")
+  _OC_KEYS+=("shell"); _OC_NAMES+=("Shell only"); _OC_DESCS+=("no agent")
+  _OC_KEYS+=("quit"); _OC_NAMES+=("Quit"); _OC_DESCS+=("close Termux")
   _OC_COUNT="${#_OC_KEYS[@]}"
-  # Column width follows the longest name: adding a row must not misalign the
-  # descriptions (a hardcoded width did exactly that once).
-  local n w=13
-  for n in "${_OC_NAMES[@]}"; do
-    [ "${#n}" -gt "$w" ] && w="${#n}"
-  done
-  _OC_NAMEW=$((w + 1))
 }
 
-# One menu row. No selection marker: the menu is a numbered list and the user
-# answers with a number, so there is no highlighted row to redraw.
-_oc_row() {
-  local idx="$1" namepad
-  printf -v namepad '%-*s' "${_OC_NAMEW:-14}" "${_OC_NAMES[$idx]}"
-  printf '  %s%d%s  %s%s%s  %s%s%s\033[K\n' \
-    "$BOLD" "$((idx + 1))" "$R" "$BOLD" "$namepad" "$R" \
-    "$DIM" "${_OC_DESCS[$idx]}$R"
-}
-
-# The menu is a plain numbered list and the user types a number, then Enter.
-# No arrow keys and no single-key reader: a full-screen agent can hand the
-# terminal back in raw mode, where a one-shot key reader spins (EOF forever),
-# swallows keys or leaves the cursor hidden.
 _oc_menu() {
-  local i
-  printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
+  local i pad
+  printf '  %s───────────────────────────────────────────%s\n' "$DIM" "$R"
   for ((i = 0; i < _OC_COUNT; i++)); do
-    _oc_row "$i"
+    printf -v pad '%-15s' "${_OC_NAMES[$i]}"
+    printf '  %s%d%s  %s%s%s  %s%s%s\n' \
+      "$BOLD" "$((i + 1))" "$R" "$BOLD" "$pad" "$R" "$DIM" "${_OC_DESCS[$i]}$R"
   done
-  printf '  %s───────────────────────────────────────────────%s\n' "$DIM" "$R"
-  printf '  %stype a number, then Enter%s   %sq quit%s   %sb .bashrc%s\n\n' \
-    "$DIM" "$R" "$DIM" "$R" "$DIM" "$R"
+  printf '  %s───────────────────────────────────────────%s\n' "$DIM" "$R"
+  printf '  %stype a number, then Enter%s   %sq quit%s\n\n' "$DIM" "$R" "$DIM" "$R"
 }
 
-# Version that is actually installed right now (empty when undetectable).
-# Used to filter out stale cache rows.
-_oc_live_ver() {
-  local pre="${PREFIX:-/data/data/com.termux/files/usr}"
-  case "$1" in
-    opencode-v1) cat "$pre/share/opencode/VERSION" 2>/dev/null ;;
-    opencode-v2) cat "$pre/share/opencode-v2/VERSION" 2>/dev/null ;;
-    *) : ;;
-  esac
-}
-
-# Update notice line (reads the codemux cache; never blocks the prompt).
-_oc_update_notice() {
-  local dir="$HOME/.config/codemux"
-  local cache="$dir/update-cache.tsv" stamp="$dir/.update-check.stamp"
-  local age=-1 s_age=999999 n=0 v1 v2 rows stale=0 unknown=0 wait_h=6
-  v1="$(_oc_live_ver opencode-v1)"
-  v2="$(_oc_live_ver opencode-v2)"
-  if [ -f "$cache" ]; then
-    age=$(( ( $(date +%s) - $(stat -c %Y "$cache" 2>/dev/null || echo 0) ) / 3600 ))
-    # A row is stale when the "local" version in the cache differs from the
-    # installed one (e.g. the payload was replaced outside the menu). Stale
-    # rows are hidden and the cache is forced to re-check.
-    # "na" = upstream check failed (network down/timeout). Do not trust it for
-    # 24 h: retry at most once per hour.
-    { read -r n; read -r rows; read -r stale; read -r unknown; } < <(awk -F'\t' -v v1="$v1" -v v2="$v2" '
-      $4=="update" {
-        if (($1=="opencode-v1" && v1!="" && $2!=v1) ||
-            ($1=="opencode-v2" && v2!="" && $2!=v2)) { stale=1; next }
-        out = out sep (($1=="apt") ? $2 " apt packages" : $1 " " $3); sep = " · "
-        n++
-      }
-      $4=="na" { unknown++ }
-      END { print n+0; print out; print (stale?1:0); print unknown+0 }' "$cache" 2>/dev/null)
-    n="${n// /}"
-    if [ "${n:-0}" -gt 0 ] && [ -n "$rows" ]; then
-      printf '   %supdate available:%s %s\n' "$ACC" "$R" "$rows"
-      printf '   %srun: codemux upgrade%s\n\n' "$DIM" "$R"
-    fi
-    [ "${stale:-0}" = "1" ] && age=999999 # cache mismatch → re-check
-    if [ "${unknown:-0}" -gt 0 ]; then
-      age=999999 # incomplete result → retry sooner
-      wait_h=1
-    fi
-  fi
-  # check in the background when the cache is stale; at most once every 6 h
-  command -v codemux >/dev/null 2>&1 || return 0
-  if [ -f "$stamp" ]; then
-    s_age=$(( ( $(date +%s) - $(stat -c %Y "$stamp" 2>/dev/null || echo 0) ) / 3600 ))
-  fi
-  if { [ ! -f "$cache" ] || [ "$age" -ge 24 ]; } && [ "$s_age" -ge "$wait_h" ]; then
-    mkdir -p "$dir" 2>/dev/null
-    : >"$stamp" 2>/dev/null
-    ( codemux update-check --quiet >/dev/null 2>&1 & ) >/dev/null 2>&1
-  fi
-}
-
-_oc_cursor_hide() { printf '\033[?25l'; }
-_oc_cursor_show() { printf '\033[?25h'; }
-
-# A full-screen agent can hand the terminal back with the wrong termios (raw
-# mode, echo off) or still inside the alternate screen. The shell then looks
-# frozen: keys arrive but nothing echoes and Enter never submits. Repair it
-# whatever the agent's exit code was — a clean exit (/exit, /quit) leaves the
-# same mess on some terminals, so gating on rc != 0 is not enough. stty reads the
-# terminal from /dev/tty because stdin can be the broken fd.
+# A full-screen agent can hand the terminal back inside the alternate screen (or
+# in the middle of an OSC string), and Termux then keeps showing the last frame
+# while the shell below is alive — keys do nothing and only `exit` works. Reset
+# every mode a TUI can switch on, then clear and home so the prompt is redrawn.
 _oc_tty_fix() {
   [ -t 1 ] || return 0
   if [ -r /dev/tty ]; then
     command -v stty >/dev/null 2>&1 && stty sane </dev/tty 2>/dev/null
   fi
-  # Leave every mode a full-screen TUI can switch on, and first break out of a
-  # half-written control string: a TUI that is killed in the middle of an OSC or
-  # DCS sequence leaves the emulator swallowing everything until a terminator,
-  # so the screen keeps the last frame while the shell below keeps working.
-  #   BEL + ST  end a dangling OSC / DCS / APC string
-  #   ?2026l    synchronized output off (an open frame is never painted)
-  #   ?2031l    colour-scheme notifications off
-  #   ?1049l    back to the main screen     ?1000/1002/1003/1006/1015/1016l  mouse off
-  #   ?1004l    focus events off           ?2004l  bracketed paste off
-  #   ?1l       normal cursor keys         ESC >   numeric keypad
-  #   ESC[r     full scroll region          ?6l     origin mode off
-  #   ?7h       autowrap on               ESC(B   ASCII charset
-  #   ESC[!p    soft reset (DECSTR)
-  # then clear + home so the terminal has to draw the shell prompt again.
   printf '\007\033\\\033\\\033[?2026l\033[?2031l\033[?1049l\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1015l\033[?1016l\033[?1004l\033[?2004l\033[?1l\033>\033[!p\033[r\033[?6l\033[?7h\033(B\033[0m\033[?25h\033[2J\033[H'
   return 0
 }
 
-# Quota warning (one short line, only when `quota` is installed and the free
-# model usage is close to the daily limit). Read-only, no network, ~0.1 s.
-_oc_quota_notice() {
-  command -v quota >/dev/null 2>&1 || return 0
-  local line
-  line="$(quota --warn 2>/dev/null)" || true
-  [ -n "$line" ] && printf '   %s%s%s\n\n' "$ACC" "$line" "$R"
-  return 0
-}
-
-# Meta of one row: <key> -> "<binary>|<label>|<missing text>".
-# Every row that can be installed goes through the same confirmation path, so
-# Pi and V1/V2 cannot drift apart.
-_oc_meta() {
-  case "$1" in
-    v1) printf 'opencode|OpenCode V1|V1' ;;
-    v2) printf 'opencode-v2|OpenCode V2|V2' ;;
-    pi) printf 'pi|Free-pi (Pi)|Pi' ;;
-    # Same binary and same install path as `pi`; only the launcher differs.
-    pitmux) printf 'pi|Free-pi (Pi) · tmux|Pi' ;;
-    *) return 1 ;;
-  esac
-}
-
-# One question for every installable row: "… is not installed yet. Install it
-# now? [y/N]". Enter alone is a no, and the answer never changes anything else.
-_oc_confirm_install() {
-  local label="$1" ans=""
-  printf '\n  %s%s is not installed yet.%s\n' "$BOLD" "$label" "$R"
-  printf '  Install it now? [y/N] '
-  _oc_cursor_show
-  IFS= read -r ans || ans=""
-  _oc_cursor_hide
-  case "$ans" in
-    y | Y | yes | YES | Ya | ya) return 0 ;;
-  esac
-  printf '  %snot installed — nothing changed.%s\n\n' "$DIM" "$R"
-  return 1
-}
-
-# free-pi has no session tabs of its own. OpenCode V2 shows open sessions as
-# tabs and switches them with ctrl+tab / alt+down (session.tab.next) and
-# ctrl+shift+tab / alt+up (session.tab.previous). The closest equivalent is one
-# tmux window per pi inside a single session named `pi`: the tmux status line
-# becomes the tab strip. The keys below only act inside that session and are
-# passed through everywhere else, so the rest of tmux keeps its defaults.
-# ctrl+shift+tab is not reachable here (tmux never decodes that chord from a
-# plain terminal), so shift+tab stands in for it; both are echoed as-is.
-_oc_pi_tmux_tabs() {
-  # A new window (C-b c) starts a NEW pi session instead of a bare shell, and
-  # every tab keeps the name "pi" until pi renames it to the current prompt.
-  tmux set-option -t pi default-command 'OPENCODE_NO_AUTO=1 bash -ic pi' 2>/dev/null || true
-  tmux set-option -t pi automatic-rename off 2>/dev/null || true
-  tmux rename-window -t pi:0 pi 2>/dev/null || true
-  # "pi:" is the session, not the window that is also called pi: without the
-  # colon tmux would aim at that window and `new-window` would refuse the index.
-  tmux bind-key -T prefix c if-shell -F '#{==:#{session_name},pi}' 'new-window -t pi: -n pi' new-window 2>/dev/null || true
-  # Touch: a finger tap on the status bar is a left click and a swipe is a
-  # drag. The strip shows a page of three 20-column tabs, so the tap can be
-  # mapped to its tab: the name switches to it, and the tab's own "x" turns
-  # that tab into two buttons (keep, close) instead of asking on a second
-  # status line. A swipe pages by one tab per 20 columns dragged
-  # (#{@tabstart}); the drag baseline is the press column, so short motion
-  # events still add up. Only run-shell can read #{mouse_x}.
-  # ONE status line only: a second line cost the strip a row, and setting only
-  # its index left index 0 empty, which made tmux draw an empty first status
-  # line and every tab vanished. The close question lives in the tab itself.
-  tmux set-option -t pi status on 2>/dev/null || true
-  tmux set-option -t pi -u status-format 2>/dev/null || true
-  tmux set-option -t pi @tabstart 0 2>/dev/null || true
-  tmux set-option -t pi status-right ' + new tab ' 2>/dev/null || true
-  tmux bind-key -n MouseDown1Status "run-shell -b 'x=#{mouse_x}; s=\"#{session_name}\"; f=\${TMPDIR:-\${PREFIX:-/data/data/com.termux/files/usr}/tmp}/codemux-tab-drag.\$s; printf %s \"\$x\" > \"\$f\"; st=\$(tmux show-options -t \"\$s:\" -qv @tabstart); st=\${st:-0}; i=\$((st + x / 20)); o=\$((x % 20)); n=\$(tmux list-windows -t \"\$s:\" 2>/dev/null | grep -c .); p=\$(tmux show-options -t \"\$s:\" -qv @closepending); if [ -n \"\$p\" ]; then tmux set-option -t \"\$s:\" -u @closepending; if [ \"\$i\" = \"\$p\" ]; then if [ \"\$o\" -ge 10 ] && [ \"\$n\" -gt 1 ]; then tmux kill-window -t \"\$s:\$p\"; tmux move-window -r -t \"\$s:\"; n=\$(tmux list-windows -t \"\$s:\" 2>/dev/null | grep -c .); k=\$((n - 3)); [ \"\$k\" -lt 0 ] && k=0; st=\$(tmux show-options -t \"\$s:\" -qv @tabstart); st=\${st:-0}; [ \"\$st\" -gt \"\$k\" ] && tmux set-option -t \"\$s:\" @tabstart \"\$k\"; fi; exit 0; fi; fi; [ \"\$i\" -lt \"\$n\" ] || exit 0; if [ \"\$o\" -ge 17 ] && [ \"\$o\" -le 19 ] && [ \"\$s\" = pi ] && [ \"\$n\" -gt 1 ]; then tmux set-option -t \"\$s:\" @closepending \"\$i\"; else tmux select-window -t \"\$s:\$i\"; fi; exit 0'" 2>/dev/null || true
-  tmux bind-key -n MouseDown1StatusRight "run-shell -b 'x=#{mouse_x}; w=#{client_width}; s=\"#{session_name}\"; tmux set-option -t \"\$s:\" -u @closepending; tmux new-window -t \"\$s:\" -n pi; n=\$(tmux list-windows -t \"\$s:\" 2>/dev/null | grep -c .); k=\$((n - 3)); [ \"\$k\" -lt 0 ] && k=0; tmux set-option -t \"\$s:\" @tabstart \"\$k\"; exit 0'" 2>/dev/null || true
-  tmux bind-key -n MouseDrag1Status "run-shell -b 'x=#{mouse_x}; s=\"#{session_name}\"; f=\${TMPDIR:-\${PREFIX:-/data/data/com.termux/files/usr}/tmp}/codemux-tab-drag.\$s; d=\$(cat \"\$f\" 2>/dev/null); [ -n \"\$d\" ] || exit 0; st=\$(tmux show-options -t \"\$s:\" -qv @tabstart); st=\${st:-0}; n=\$(tmux list-windows -t \"\$s:\" 2>/dev/null | grep -c .); k=\$((n - 3)); [ \"\$k\" -lt 0 ] && k=0; h=\$(( (x - d) / 20 )); if [ \"\$h\" -ne 0 ]; then st=\$((st + h)); [ \"\$st\" -lt 0 ] && st=0; [ \"\$st\" -gt \"\$k\" ] && st=\"\$k\"; tmux set-option -t \"\$s:\" @tabstart \"\$st\"; printf %s \"\$((d + h * 20))\" > \"\$f\"; fi; exit 0'" 2>/dev/null || true
-  tmux bind-key -n C-Tab if-shell -F '#{==:#{session_name},pi}' next-window 'send-keys C-Tab' 2>/dev/null || true
-  tmux bind-key -n BTab if-shell -F '#{==:#{session_name},pi}' previous-window 'send-keys BTab' 2>/dev/null || true
-  tmux bind-key -n M-Down if-shell -F '#{==:#{session_name},pi}' next-window 'send-keys M-Down' 2>/dev/null || true
-  tmux bind-key -n M-Up if-shell -F '#{==:#{session_name},pi}' previous-window 'send-keys M-Up' 2>/dev/null || true
-}
-
-# Run a component. When its payload is missing, ask first, then install it.
-# Returns 0 when the component ran, 1 when it is still missing/cancelled.
+# Run one component. Missing agents are reported, never installed from here.
 _oc_launch_component() {
-  local key="$1" meta bin label short rc install_key
-  meta="$(_oc_meta "$key")" || return 1
-  # `pitmux` is not a component name: it installs exactly like `pi`.
-  install_key="$key"
-  [ "$install_key" = "pitmux" ] && install_key="pi"
-  bin="${meta%%|*}"
-  meta="${meta#*|}"
-  label="${meta%%|*}"
-  short="${meta#*|}"
-  if ! command -v "$bin" >/dev/null 2>&1; then
-    _oc_confirm_install "$label" || return 1
-    printf '  %s→ installing %s (this can take a while)…%s\n\n' "$DIM" "$label" "$R"
-    if command -v codemux >/dev/null 2>&1; then
-      codemux install --only "$install_key"
-    elif [ -x "$CODEMUX_ROOT/bin/codemux" ]; then
-      "$CODEMUX_ROOT/bin/codemux" install --only "$install_key"
-    else
-      printf '  %scodemux not found — cannot install.%s\n\n' "$DIM" "$R"
-      return 1
-    fi
-    rc=$?
-    hash -r 2>/dev/null || true
-    _oc_cursor_hide
-    if [ "$rc" -ne 0 ] || ! command -v "$bin" >/dev/null 2>&1; then
-      printf '\n  %sinstall failed (rc=%s) — see the log above.%s\n\n' "$DIM" "$rc" "$R"
-      return 1
-    fi
-  fi
-  printf '\n'
-  _oc_cursor_show
-  printf '  %s→ %s%s\n\n' "$DIM" "$label" "$R"
+  local key="$1" cmd="" name=""
   case "$key" in
-    v1) opencode ;;
-    v2) opencode-v2 ;;
-    pi)
-      # the pi alias should already exist; fall back to the official entry
-      if alias pi >/dev/null 2>&1 || command -v pi >/dev/null 2>&1; then
-        pi
-      else
-        npx -y free-pi-cli@latest
-      fi
-      ;;
-    pitmux)
-      if [ -n "$TMUX" ]; then
-        # Already inside a tmux session: nesting one only garbles the terminal.
-        printf '  %salready inside tmux — running pi in this session%s\n\n' "$DIM" "$R"
-        pi
-      elif command -v tmux >/dev/null 2>&1; then
-        # One tab = one tmux window. The command string runs an interactive bash
-        # so the `pi` alias applies, and OPENCODE_NO_AUTO keeps that bash from
-        # drawing the codemux menu first. The first tab resumes the last session
-        # for this directory and falls back to a fresh one; tabs opened later
-        # start a new session. The session is created detached so the tab keys
-        # and default-command can be set before the first attach.
-        tmux has-session -t pi: 2>/dev/null ||
-          tmux new-session -d -s pi "OPENCODE_NO_AUTO=1 bash -ic 'pi --continue || pi'"
-        _oc_pi_tmux_tabs
-        tmux attach-session -t pi
-      else
-        printf '  %stmux is not installed — running pi without tmux%s\n' "$DIM" "$R"
-        printf '  %sinstall it with: pkg install tmux%s\n\n' "$DIM" "$R"
-        pi
-      fi
-      ;;
+    v1) cmd="opencode"; name="OpenCode V1" ;;
+    v2) cmd="opencode-v2"; name="OpenCode V2" ;;
+    pi) cmd="pi"; name="Free-pi (Pi)" ;;
     *) return 1 ;;
   esac
-  # A full-screen agent (pi, opencode) can hand back a terminal with a broken
-  # termios and can leave the shared stdin at EOF: the shell then has a terminal
-  # that answers nothing, so the menu would never read another key and the shell
-  # itself looks frozen. Repair the terminal, then reopen the controlling one.
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    printf '\n  %s%s is not installed%s — run: %scodemux install%s\n\n' \
+      "$BOLD" "$name" "$R" "$ACC" "$R"
+    return 1
+  fi
+  printf '  %s→ %s%s\n\n' "$DIM" "$name" "$R"
+  "$cmd"
+  # repair the terminal whatever the exit code was
   _oc_tty_fix
   if [ -t 1 ] && [ -r /dev/tty ]; then
     exec 0</dev/tty 2>/dev/null || true
   fi
-  _oc_cursor_hide
   return 0
 }
 
-# `~/.bashrc` is a real choice on this menu: the block lives in that file, so a
-# user must be able to open, back up, adopt or remove it from the menu itself.
-_oc_bashrc() {
-  local ans
-  if [ -x "$CODEMUX_ROOT/bin/launcher.sh" ]; then
-    printf '\n'
-    _oc_cursor_show
-    "$CODEMUX_ROOT/bin/launcher.sh" --bashrc
-    _oc_cursor_hide
-    return 0
-  fi
-  if ! command -v codemux >/dev/null 2>&1; then
-    printf '\n  %scodemux not found — cannot manage ~/.bashrc.%s\n\n' "$DIM" "$R"
-    return 1
-  fi
-  printf '\n  %s~/.bashrc%s\n' "$BOLD" "$R"
-  printf '    %s1%s open in an editor\n' "$ACC" "$R"
-  printf '    %s2%s back up to ~/.bashrc.bak\n' "$ACC" "$R"
-  printf '    %s3%s reinstall the codemux block\n' "$ACC" "$R"
-  printf '    %s4%s remove the codemux block\n' "$ACC" "$R"
-  printf '    %s5%s show the block\n' "$ACC" "$R"
-  printf '  %s[1-5, Enter to cancel]%s ' "$DIM" "$R"
-  _oc_cursor_show
-  ans=""
-  IFS= read -r ans || ans=""
-  case "$ans" in
-    1) if command -v nano >/dev/null 2>&1; then nano "$HOME/.bashrc"; else vi "$HOME/.bashrc"; fi ;;
-    2) cp "$HOME/.bashrc" "$HOME/.bashrc.bak.$(date +%s)" && printf '  %sbackup written%s\n' "$DIM" "$R" ;;
-    3) codemux install --only launcher ;;
-    4) codemux uninstall --keep-bashrc >/dev/null 2>&1 || printf '  %sremove the block by hand%s\n' "$DIM" "$R" ;;
-    5) awk '/codemux:launcher b(egin)/{f=1} f{print} /codemux:launcher e(nd)/{f=0}' "$HOME/.bashrc" ;;
-    *) printf '  %snothing changed.%s\n' "$DIM" "$R" ;;
-  esac
-  _oc_cursor_hide
-  return 0
-}
-
-# Returns 0 = continue to the shell, 1 = exit Termux.
+# The menu: print the rows, read one line, act. A dead stdin (EOF) or `q`
+# leaves the menu; Ctrl+C (rc > 128) only cancels the answer.
 _oc_menu_loop() {
-  local key choice rc choice_file="$HOME/.local/state/opencode-choice"
+  local choice rc key
   while :; do
     _oc_items
+    _oc_colors
     printf '\033[2J\033[H'
     _oc_banner
-    _oc_update_notice
-    _oc_quota_notice
     _oc_menu
     printf '  %sChoice%s: ' "$BOLD" "$R"
     choice=""
     IFS= read -r choice
     rc=$?
-    # Ctrl+C interrupts the read (rc > 128): cancel this answer, keep the menu.
     if [ "$rc" -gt 128 ]; then
       printf '\n'
       continue
     fi
-    # No terminal left to read from: leave the menu instead of looping for ever.
     if [ "$rc" -ne 0 ]; then
       printf '\n'
       return 1
@@ -468,111 +167,39 @@ _oc_menu_loop() {
     case "$choice" in
       '') continue ;;
       q | Q | quit | exit) printf '\n'; return 1 ;;
-      b | B) _oc_bashrc; continue ;;
     esac
     case "$choice" in
-      *[!0-9]*)
-        printf '  %stype a number from 1 to %d, or q%s\n' "$DIM" "$_OC_COUNT" "$R"
-        continue
-        ;;
+      *[!0-9]*) choice=0 ;;
     esac
     if [ "$choice" -lt 1 ] || [ "$choice" -gt "$_OC_COUNT" ]; then
       printf '  %stype a number from 1 to %d, or q%s\n' "$DIM" "$_OC_COUNT" "$R"
       continue
     fi
     key="${_OC_KEYS[$((choice - 1))]}"
-    printf '\n'
     case "$key" in
-      v1 | v2 | pi | pitmux)
-        if _oc_launch_component "$key"; then
-          mkdir -p "$HOME/.local/state" 2>/dev/null
-          printf '%s\n' "$key" >"$choice_file" 2>/dev/null
-        fi
-        ;;
-      shell) _oc_tty_fix; return 0 ;;
-      quit) return 1 ;;
+      v1 | v2 | pi) _oc_launch_component "$key" ;;
+      shell) printf '\n'; _oc_tty_fix; return 0 ;;
+      quit) printf '\n'; return 1 ;;
     esac
   done
 }
 
-# One command guide row.
-_oc_cmd_row() {
-  printf '    %s%-13s%s%s\n' "$ACC" "$1" "$R" "$2"
+menu() { _oc_menu_loop; }
+
+version() {
+  printf 'OpenCode V1: %s\n' "$(_oc_ver v1)"
+  printf 'OpenCode V2: %s\n' "$(_oc_ver v2)"
+  printf 'Free-pi (Pi): %s\n' "$(_oc_ver pi)"
 }
 
-# Short guide shown after choosing "Shell only".
-_oc_guide() {
-  printf '  %sShell only selected — no agent was started.%s\n\n' "$DIM" "$R"
-  printf '  %sAvailable commands:%s\n' "$BOLD" "$R"
-  _oc_cmd_row menu          'back to the choice menu'
-  command -v opencode >/dev/null 2>&1 &&
-    _oc_cmd_row opencode    'run OpenCode V1 directly'
-  command -v opencode-v2 >/dev/null 2>&1 &&
-    _oc_cmd_row opencode-v2 'run OpenCode V2 directly'
-  command -v pi >/dev/null 2>&1 &&
-    _oc_cmd_row pi          'run free-pi directly'
-  command -v pi >/dev/null 2>&1 && command -v tmux >/dev/null 2>&1 &&
-    _oc_cmd_row 'tmux new -A -s pi' 'free-pi in tmux (Ctrl+b d detaches)'
-  command -v tmux >/dev/null 2>&1 &&
-    _oc_cmd_row 'Ctrl+b c' 'new tab in the pi session'
-  command -v tmux >/dev/null 2>&1 &&
-    _oc_cmd_row 'Ctrl+b ,' 'rename the tab (yours is never overwritten)'
-  [ -f "$PREFIX/share/opencode-v2/doctor.sh" ] &&
-    _oc_cmd_row doctor      'health check for the OpenCode V2 install'
-  _oc_cmd_row version       'show the installed agent versions'
-  command -v quota >/dev/null 2>&1 &&
-    _oc_cmd_row quota       'estimated remaining free-model quota'
-  _oc_cmd_row codemux       'check & maintain Termux (check / install / status)'
-  _oc_cmd_row 'keluar|exit' 'close Termux'
-  printf '\n  %sType %smenu%s at any time to return to this menu.%s\n' "$DIM" "$BOLD" "$R" "$R"
-  printf '  %sInside an agent, type exit or press Ctrl+C → back to the menu.%s\n\n' "$DIM" "$R"
-}
-
-# Run the launcher; used at startup and by the `menu` command.
-_oc_launcher() {
-  _oc_colors
+# Welcome a fresh interactive shell with the menu (skip: OPENCODE_NO_AUTO=1).
+if [ -z "${OPENCODE_NO_AUTO:-}" ] && [ -t 0 ] && [ -t 1 ] && [ -z "${OPENCODE_AUTO_LAUNCHED:-}" ]; then
+  export OPENCODE_AUTO_LAUNCHED=1
   if _oc_menu_loop; then
-    trap - INT
-    _oc_cursor_show
     printf '  %sBack to the shell.%s\n\n' "$DIM" "$R"
-    _oc_guide
   else
-    trap - INT
-    _oc_cursor_show
     printf '  %sGoodbye.%s\n\n' "$DIM" "$R"
     exit 0
   fi
-  unset C1 C2 ACC DIM BOLD HL R KEY
-}
-
-menu() { _oc_launcher; }
-version() {
-  local found=0
-  if command -v opencode >/dev/null 2>&1; then
-    printf 'OpenCode V1 : %s\n' "$(_oc_ver v1)"
-    found=1
-  fi
-  if command -v opencode-v2 >/dev/null 2>&1; then
-    printf 'OpenCode V2 : %s\n' "$(_oc_ver v2)"
-    found=1
-  fi
-  if command -v pi >/dev/null 2>&1; then
-    printf 'Pi (free-pi): %s\n' "$(_oc_ver pi)"
-    found=1
-  fi
-  [ "$found" -eq 1 ] || printf 'no agent installed — run: codemux install\n'
-}
-doctor() {
-  if [ -f "$PREFIX/share/opencode-v2/doctor.sh" ]; then
-    bash "$PREFIX/share/opencode-v2/doctor.sh" "$@"
-  else
-    printf 'doctor.sh not found (OpenCode V2 is not installed).\n'
-  fi
-}
-keluar() { exit 0; }
-
-if [ -z "$OPENCODE_NO_AUTO" ] && [ -t 0 ] && [ -t 1 ] && [ -z "$OPENCODE_AUTO_LAUNCHED" ]; then
-  export OPENCODE_AUTO_LAUNCHED=1
-  _oc_launcher
 fi
 # codemux:launcher end

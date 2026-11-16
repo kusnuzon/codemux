@@ -74,16 +74,16 @@ known to work on Termux. That pulls `clang`/LLVM (~500 MB) as a build dependency
 Every new Termux session opens a menu — nothing is hidden:
 
 ```
-  1  OpenCode V1       1.19.5 · stable · legacy DB
-  2  OpenCode V2       not installed · Enter to install
-  3  Free-pi (Pi)      0.6.22 · free-pi agent
-  4  Free-pi (Pi) · tmux  0.6.22 · inside tmux
-  5  Shell only        no agent
-  6  Quit              close Termux
+  ───────────────────────────────────────────
+  1  OpenCode V1      1.19.5 · stable
+  2  OpenCode V2      2.3.0 · separate DB
+  3  Free-pi (Pi)     0.6.22 · free-pi agent
+  4  Shell only       no agent
+  5  Quit             close Termux
+  ───────────────────────────────────────────
+  type a number, then Enter   q quit
 
-  type a number, then Enter   q quit   b .bashrc
-
-  Choice: 3
+  Choice:
 ```
 
 The answer is always a **typed number**: no arrow keys, no single-key reader.
@@ -91,41 +91,20 @@ A full-screen agent can hand the terminal back in raw mode; a one-shot key
 reader then spins on EOF, swallows keys or leaves the cursor hidden, which made
 the menu look frozen.
 
-The tmux row turns the closest free-pi equivalent of OpenCode's session tabs
-into tmux: **one tab = one tmux window** inside a single session named `pi`.
-The move keys copy OpenCode V2 (`session.tab.next` / `session.tab.previous`):
+Above the rows sits the banner: the `OPEN CODE` art, the platform, and the
+versions of the agents that are actually installed. Versions come from files
+(`$PREFIX/share/opencode/VERSION`, the dpkg record, the free-pi manifest) — the
+menu never starts an agent binary to ask it, which used to cost 1.2 s before
+every prompt.
 
-| key | action |
-| --- | --- |
-| `Alt+↓` · `Ctrl+Tab` | next tab |
-| `Alt+↑` · `Shift+Tab` | previous tab |
-| `Ctrl+b c` | new tab (a second free-pi, not a shell) |
-| `Ctrl+b ,` | rename the tab by hand (the automatic title then leaves it alone) |
-| `Ctrl+b d` | detach (every pi keeps running) |
+The whole block is ~190 lines and sources in well under 50 ms. A missing agent
+is marked `not installed`; choosing it prints the matching `codemux install`
+command instead of installing anything behind your back. Skip the menu with
+`OPENCODE_NO_AUTO=1 bash`. `b` is gone: edit `~/.bashrc` directly.
 
-Tabs are also **tappable**: the strip sits on the top status bar, every tab is
-padded to one finger-sized width, and the right corner holds two buttons —
-` x ` closes the current tab (never the last one) and ` + new tab ` opens a new
-one. Tapping a tab name switches to it, so a phone needs no keyboard at all.
-
-A tab is a tmux window named after the prompt you sent (an extension renames it
-on the first message, without calling a model). The session is created with
-`pi --continue`, so opening the row resumes the last conversation instead of
-starting over; a fresh tab (`Ctrl+b c`, ` + new tab `) is a clean session.
-
-`Ctrl+Tab` needs a terminal that reports modified keys (extended keys); `Alt+↑/↓`
-works everywhere, which is why it is listed first. Those keys only act inside the
-`pi` session and are passed through everywhere else, so other tmux sessions keep
-their defaults. Choosing the row again attaches the running session;
-`tmux kill-session -t pi` ends all tabs. Without tmux the row warns and starts
-plain `pi` instead; inside tmux it never nests a second session.
-
-Choosing a component that is not installed asks `Install it now? [y/N]` first —
-one dialog shared by every row (V1, V2, Pi). Answer `n` and nothing changes.
-`b` opens the `~/.bashrc` options. Skip the menu with `OPENCODE_NO_AUTO=1 bash`.
-
-`--only pi` adds the `pi` row and its `pi` wrapper without touching the OpenCode
-choice; `codemux check` shows it as its own row.
+Whatever a full-screen agent leaves behind — the alternate screen, mouse
+reporting, bracketed paste, a half-written OSC string — is reset once it exits,
+so the shell below is usable immediately and `Ctrl+C`/`Ctrl+L` keep working.
 
 ## 🧠 Memory that survives sessions
 
@@ -258,7 +237,7 @@ The suites, if you want to run one by hand:
 bash tests/smoke.sh       # syntax, help, check --json, progress bar, dry runs
 bash tests/resume.sh      # install killed midway, then resumed
 bash tests/adapter.sh     # V1/V2 adapters: download → run detached → verify
-bash tests/launcher-memory.sh  # menu, memory merge, update notice, quota line
+bash tests/launcher-memory.sh  # menu block, memory merge, wrapper versions
 bash tests/maintenance.sh # update-check, doctor, upgrade, uninstall
 bash tests/release.sh     # bootstrap tarball + self-update
 bash tests/tmuxconf.sh    # managed ~/.tmux.conf block: fresh, stale, blocked
