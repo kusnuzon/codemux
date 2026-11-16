@@ -161,12 +161,12 @@ codemux_cmd_update_check() {
   n="$(codemux_update_count)"
 
   if [ "$json" -eq 1 ]; then
-    printf '{"diperiksa":"%s","update":%d,"komponen":[' "$(date '+%Y-%m-%dT%H:%M:%S')" "$n"
+    printf '{"checked":"%s","updates":%d,"components":[' "$(date '+%Y-%m-%dT%H:%M:%S')" "$n"
     local first=1 comp local_v latest_v st
     while IFS=$'\t' read -r comp local_v latest_v st; do
       [ -n "$comp" ] || continue
       [ "$first" -eq 1 ] || printf ','
-      printf '{"nama":"%s","lokal":"%s","terbaru":"%s","status":"%s"}' \
+      printf '{"name":"%s","local":"%s","latest":"%s","status":"%s"}' \
         "$(json_escape "$comp")" "$(json_escape "$local_v")" \
         "$(json_escape "$latest_v")" "$(json_escape "$st")"
       first=0

@@ -287,19 +287,24 @@ codemux_apt_install() {
   local pkgs=("$@") out rc=0
   [ "${#pkgs[@]}" -gt 0 ] || return 0
   have apt-get || return 1
+  # `rc=$?` must sit in an `else` branch: after a failed `if` with no `else
+  # branch the statement itself returns 0, so a plain `rc=$?` read 0 and every
+  # rejected package looked like a successful install.
   if out="$(DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     -o Dpkg::Options::=--force-confold "${pkgs[@]}" 2>&1)"; then
     return 0
+  else
+    rc=$?
   fi
-  rc=$?
   case "$out" in
     *"Unable to locate package"*|*"has no installation candidate"*|*"404"*)
       codemux_apt_update || true
       if out="$(DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         -o Dpkg::Options::=--force-confold --fix-missing "${pkgs[@]}" 2>&1)"; then
         return 0
+      else
+        rc=$?
       fi
-      rc=$?
       ;;
   esac
   printf '%s\n' "$out" | tail -n 3 >&2
@@ -521,7 +526,7 @@ install options:
   --fresh            start from step 1 (do not resume)
   --only v2|v1|both  install OpenCode V2 only (default), V1 only, or both (default:
                      ask, or keep the saved choice; non-interactive → v2)
-  --only pi          add the pi (free-pi) menu row and its `pi` alias
+  --only pi          add the pi (free-pi) menu row and its `pi` wrapper
   --components X     same as --only
   --skip a,b         skip modules (deps,mirror,storage,toolset,glibc,v1,v2,pi,launcher,dotfiles,memory,self)
   -y, --yes          no confirmation, never ask (keep the saved/default choice)
@@ -574,8 +579,11 @@ codemux_versions() {
     printf '%-16s %s\n' "opencode-v2" "$(opencode_v2_version)"
     found=1
   fi
-  [ "$found" -eq 1 ] || printf '%-16s %s\n' "components" "none installed yet"
-  printf '%-16s %s\n' "components" "$(codemux_components_get)"
+  if [ "$found" -eq 1 ]; then
+    printf '%-16s %s\n' "components" "$(codemux_components_get)"
+  else
+    printf '%-16s %s\n' "components" "none installed yet (selected: $(codemux_components_get))"
+  fi
 }
 
 codemux_not_ready() {

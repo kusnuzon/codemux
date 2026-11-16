@@ -273,7 +273,10 @@ codemux_cmd_upgrade() {
     *) log_fail "cannot write $CODEMUX_HOME"; return 2 ;;
   esac
   # shellcheck disable=SC2064
-  trap 'codemux_lock_release' EXIT INT TERM
+  # See lib/install.sh: the INT handler must exit, or Ctrl+C frees the lock while
+  # the remaining steps keep running unlocked.
+  trap 'codemux_lock_release; exit 130' INT TERM
+  trap 'codemux_lock_release' EXIT
   codemux_log_start
   printf 'upgrade start · only=%s\n' "${only:-all}" >>"$CODEMUX_LOG"
 

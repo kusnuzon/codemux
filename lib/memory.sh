@@ -48,7 +48,7 @@ codemux_cmd_memory() {
   if [ "$pct" -ge 100 ]; then st=FAIL; elif [ "$pct" -ge 90 ]; then st=WARN; else st=OK; fi
 
   if [ "$json" -eq 1 ]; then
-    printf '{"folder":"%s","total_bytes":%d,"memory_bytes":%d,"limit_bytes":%d,"persen":%d,"status":"%s","wrapper_bashrc":%s,' \
+    printf '{"folder":"%s","total_bytes":%d,"memory_bytes":%d,"limit_bytes":%d,"percent":%d,"status":"%s","wrapper_bashrc":%s,' \
       "$(json_escape "$base")" "$total" "$size" "$CODEMUX_MEMORY_LIMIT" "$pct" "$st" \
       "$(codemux_memory_wrapper_present && echo true || echo false)"
     printf '"instructions":['

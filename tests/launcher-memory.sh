@@ -84,6 +84,49 @@ SKIP_ONLY_LAUNCHER="deps,mirror,storage,toolset,glibc,v1,v2,dotfiles,memory"
 SKIP_ONLY_PI="deps,mirror,storage,toolset,glibc,v1,v2,launcher,dotfiles,memory"
 
 # =============================================================================
+# 0. version markers: one number, two files
+# =============================================================================
+# Every managed block carries its version twice — a constant in lib/ and a line
+# in the template. Bumping one and not the other makes the probe report
+# "outdated" forever (install rewrites the block, the probe stays unhappy), so
+# the pair is checked here instead of being trusted.
+TPL_VER="$(sed -n 's/^# codemux:launcher version \([0-9]*\)$/\1/p' "$ROOT/templates/bashrc-block.sh" | head -n 1)"
+LIB_VER="$(sed -n 's/^CODEMUX_LAUNCHER_BLOCK_VERSION="\(.*\)"$/\1/p' "$ROOT/lib/modules/launcher.sh")"
+if [ -n "$TPL_VER" ] && [ "$TPL_VER" = "$LIB_VER" ]; then
+  ok "launcher block version: template $TPL_VER = module $LIB_VER"
+else
+  bad "launcher block version mismatch: template '${TPL_VER:-none}' vs module '${LIB_VER:-none}'"
+fi
+TPL_MENU_VER="$(sed -n 's/^CM_MENU_VERSION="\(.*\)"$/\1/p' "$ROOT/templates/menu.sh")"
+LIB_MENU_VER="$(sed -n 's/^CODEMUX_MENU_SCRIPT_VERSION="\(.*\)"$/\1/p' "$ROOT/lib/modules/launcher.sh")"
+if [ -n "$TPL_MENU_VER" ] && [ "$TPL_MENU_VER" = "$LIB_MENU_VER" ]; then
+  ok "menu script version: template $TPL_MENU_VER = module $LIB_MENU_VER"
+else
+  bad "menu script version mismatch: template '${TPL_MENU_VER:-none}' vs module '${LIB_MENU_VER:-none}'"
+fi
+# The wrapper body used to hard-code its own version line; it is printed from
+# CODEMUX_MEMORY_WRAPPER_VERSION now, and that has to keep holding.
+body_ver="$(bash -c '. "$1/lib/common.sh"; . "$1/lib/modules/memory.sh"; codemux_memory_wrapper_body' _ "$ROOT" 2>/dev/null |
+  grep -c "^# codemux:memory version $MEM_VER$")"
+if [ "${body_ver:-0}" -eq 1 ]; then
+  ok "memory wrapper body carries version $MEM_VER"
+else
+  bad "memory wrapper body version marker ($body_ver occurrences of $MEM_VER)"
+fi
+
+# A lock directory without a pid file is debris (interrupted install, full disk).
+# It must be discarded, not honoured: otherwise every later install refuses to
+# start with "another process is running: none".
+LOCK_SB="$SANDBOX_ROOT/lock"
+mkdir -p "$LOCK_SB/home/.config/codemux/lock"
+if env -i HOME="$LOCK_SB/home" PATH="$PATH" PREFIX="$LOCK_SB/prefix" CODEMUX_ROOT="$ROOT" \
+  bash -c '. "$CODEMUX_ROOT/lib/common.sh"; . "$CODEMUX_ROOT/lib/state.sh"; codemux_lock_acquire' >/dev/null 2>&1; then
+  ok "lock: a pid-less lock directory is discarded"
+else
+  bad "lock: a pid-less lock directory blocks every later install"
+fi
+
+# =============================================================================
 # 1. Fresh: every M4 module installed from scratch
 # =============================================================================
 SB="$(new_sandbox fresh)"
@@ -190,7 +233,7 @@ if run_cm "$SB" check --json >"$SB/check.json" 2>/dev/null; then :; fi
 if python3 - <<PY 2>/dev/null
 import json
 d = json.load(open("$SB/check.json"))
-st = {m["modul"]: m["status"] for m in d["modul"]}
+st = {m["module"]: m["status"] for m in d["modules"]}
 for k in ("launcher", "dotfiles", "memory"):
     assert st[k] == "OK", (k, st[k])
 PY
@@ -198,7 +241,7 @@ then
   ok "fresh: check → launcher/dotfiles/memory OK"
 else
   bad "fresh: check still not OK ($(python3 -c '
-import json;d=json.load(open("'"$SB"'/check.json"));print({m["modul"]:m["status"] for m in d["modul"]})' 2>/dev/null))"
+import json;d=json.load(open("'"$SB"'/check.json"));print({m["module"]:m["status"] for m in d["modules"]})' 2>/dev/null))"
 fi
 
 if run_cm "$SB" memory >"$SB/memory.log" 2>&1 && grep -q 'cross-session memory' "$SB/memory.log" &&
@@ -611,6 +654,33 @@ if [ "$(grep -c 'echo keep' "$SB5C/home/.bashrc")" -eq 1 ]; then
   ok "pi module: lines outside the block survive the rewrite"
 else
   bad "pi module: rewrite damaged the rest of .bashrc"
+fi
+
+# =============================================================================
+# 5d. `--only pi` must not forget the OpenCode choice
+# =============================================================================
+# pi is a tail module and always runs, so saving "pi" as the component list made
+# `check` report the installed V1/V2 as SKIP — a wrapper-only install silently
+# deselected the agents the user had picked.
+SB5D="$(new_sandbox pi-components)"
+printf 'v1\n' >"$SB5D/state/components"
+printf '#!/bin/sh\n' >"$SB5D/prefix/bin/free-pi-cli"
+chmod +x "$SB5D/prefix/bin/free-pi-cli"
+PATH="$SB5D/prefix/bin:$PATH" run_cm "$SB5D" install --yes --only pi --skip "$SKIP_ONLY_PI" \
+  >"$SB5D/out.log" 2>&1 || true
+if [ "$(cat "$SB5D/state/components" 2>/dev/null)" = v1 ]; then
+  ok "--only pi keeps the saved component choice (v1)"
+else
+  bad "--only pi overwrote the component choice ('$(cat "$SB5D/state/components" 2>/dev/null)')"
+fi
+# And an explicit V1/V2 choice is still saved.
+printf 'v1\n' >"$SB5D/state/components"
+PATH="$SB5D/prefix/bin:$PATH" run_cm "$SB5D" install --yes --only v2 --skip "$SKIP_ONLY_PI" \
+  >"$SB5D/out2.log" 2>&1 || true
+if [ "$(cat "$SB5D/state/components" 2>/dev/null)" = v2 ]; then
+  ok "--only v2 still saves the component choice"
+else
+  bad "--only v2 did not save the choice ('$(cat "$SB5D/state/components" 2>/dev/null)')"
 fi
 
 rm -rf "$SANDBOX_ROOT"

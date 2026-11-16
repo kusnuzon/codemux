@@ -64,7 +64,9 @@ codemux_cmd_check() {
     esac
 
     if [ "$json" -eq 1 ]; then
-      J+=("{\"modul\":\"$(json_escape "$label")\",\"status\":\"$PROBE\",\"catatan\":\"$(json_escape "$NOTE")\"}")
+      # English keys, like every other --json surface (`memory --json` already
+      # uses folder/total_bytes/...). The old Indonesian names were leftovers.
+      J+=("{\"module\":\"$(json_escape "$label")\",\"status\":\"$PROBE\",\"note\":\"$(json_escape "$NOTE")\"}")
     else
       case "$PROBE" in
         OK) printf '[%2d/%2d] %-12s %sOK%s    %s%s%s\n' "$i" "$total" "$label" "$C_OK" "$C_R" "$C_DIM" "$NOTE" "$C_R" ;;
@@ -81,7 +83,7 @@ codemux_cmd_check() {
   joined="${joined%,}"
 
   if [ "$json" -eq 1 ]; then
-    printf '{"codemux":"%s","versi":"%s","komponen":"%s","modul":[%s],"ringkasan":{"ok":%d,"warn":%d,"miss":%d,"fail":%d,"skip":%d}}\n' \
+    printf '{"codemux":"%s","version":"%s","components":"%s","modules":[%s],"summary":{"ok":%d,"warn":%d,"miss":%d,"fail":%d,"skip":%d}}\n' \
       "$CODEMUX_NAME" "$CODEMUX_VERSION" "$comps" "$joined" "$ok" "$warn" "$miss" "$fail" "$skip"
   else
     printf '\n'

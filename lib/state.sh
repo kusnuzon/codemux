@@ -123,6 +123,12 @@ codemux_lock_acquire() {
       return 1
     fi
     rm -rf "$dir" 2>/dev/null || true
+  else
+    # A lock directory with no pid file is never written by this code path (the
+    # pid is created right after mkdir). It is debris — from an interrupted
+    # install, a full disk, or a hand-made directory — and honouring it would
+    # keep every later install out with "another process is running: none".
+    rm -rf "$dir" 2>/dev/null || true
   fi
   mkdir "$dir" 2>/dev/null || return 1
   printf '%s\n' "$$" >"$dir/pid"

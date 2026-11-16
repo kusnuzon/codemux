@@ -122,8 +122,11 @@ codemux_cmd_install() {
   fi
   [ -n "$comps" ] || comps="$(codemux_components_get)"
 
-  # Remember the choice so check/upgrade/update-check follow it later.
-  if [ "$dry" -eq 0 ]; then
+  # Remember the choice so check/upgrade/update-check follow it later. `--only
+  # pi` (and CODEMUX_COMPONENTS=pi) must NOT forget an earlier v1/v2 choice: pi
+  # is a tail module that always runs, so the OpenCode part of the answer stays
+  # whatever it was. `--only v1|v2|both` still saves, as documented.
+  if [ "$dry" -eq 0 ] && [ "$comps" != pi ]; then
     codemux_components_set "$comps" || log_warn "cannot save the component choice in $compfile"
   fi
   codemux_install_modules "$comps"
@@ -189,7 +192,11 @@ codemux_cmd_install() {
     *) log_fail "cannot write $CODEMUX_HOME"; return 2 ;;
   esac
   # shellcheck disable=SC2064
-  trap 'codemux_lock_release' EXIT INT TERM
+  # Release the lock, then really stop: a bare `trap 'codemux_lock_release' INT`
+  # returns into the interrupted loop, so Ctrl+C freed the lock while --yes kept
+  # installing — two runs, one lock. EXIT still runs the handler once.
+  trap 'codemux_lock_release; exit 130' INT TERM
+  trap 'codemux_lock_release' EXIT
 
   codemux_state_init
   codemux_log_start

@@ -46,8 +46,8 @@ run_cm "$SB" update-check --json >"$SB/uc.json" 2>"$SB/uc.err"
 if python3 - <<PY 2>/dev/null
 import json
 d = json.load(open("$SB/uc.json"))
-assert d["update"] == 3, d
-st = {k["nama"]: k["status"] for k in d["komponen"]}
+assert d["updates"] == 3, d
+st = {k["name"]: k["status"] for k in d["components"]}
 assert st["codemux"] == "update", st
 assert st["opencode-v1"] == "update", st
 assert st["opencode-v2"] == "update", st
@@ -64,7 +64,7 @@ run_cm "$SB" check --json >"$SB/check.json" 2>/dev/null || true
 if python3 - <<PY 2>/dev/null
 import json
 d = json.load(open("$SB/check.json"))
-st = {m["modul"]: m["status"] for m in d["modul"]}
+st = {m["module"]: m["status"] for m in d["modules"]}
 assert st["update-cache"] == "OK", st["update-cache"]
 PY
 then
@@ -84,7 +84,7 @@ env HOME="$SB/home" CODEMUX_HOME="$SB/state" PREFIX="$SB/prefix" TMPDIR="$BASE" 
 if python3 - <<PY 2>/dev/null
 import json
 d = json.load(open("$SB/uc2.json"))
-assert d["update"] == 0, d
+assert d["updates"] == 0, d
 PY
 then
   ok "update-check: same versions → 0 updates"

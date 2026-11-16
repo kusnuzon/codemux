@@ -90,13 +90,15 @@ codemux_pi_write_block() {
 }
 
 m_pi_probe() {
-  local bin rc="$HOME/.bashrc" have=""
+  # `blk`, not `have`: a local variable named like the `have()` helper would
+  # shadow the function inside this scope.
+  local bin rc="$HOME/.bashrc" blk=""
   bin="$(codemux_pi_bin)"
-  [ -f "$rc" ] && have="$(grep -m 1 -F '# codemux:pi begin' "$rc" 2>/dev/null)"
+  [ -f "$rc" ] && blk="$(grep -m 1 -F '# codemux:pi begin' "$rc" 2>/dev/null)"
 
   if [ -z "$bin" ]; then
     PROBE=MISS
-    if [ -n "$have" ]; then
+    if [ -n "$blk" ]; then
       NOTE="the pi wrapper exists but the free-pi-cli command does not (npx cache was cleared)"
     else
       NOTE="pi (free-pi) is not installed yet"
@@ -108,11 +110,11 @@ m_pi_probe() {
     fi
     return
   fi
-  if [ -z "$have" ]; then
+  if [ -z "$blk" ]; then
     PROBE=WARN; NOTE="pi is installed but the pi wrapper in \$HOME/.bashrc is missing"
     return
   fi
-  case "$have" in
+  case "$blk" in
     *"version $CODEMUX_PI_BLOCK_VERSION"*) ;;
     *) PROBE=WARN; NOTE="the pi wrapper in \$HOME/.bashrc is outdated"; return ;;
   esac

@@ -160,11 +160,13 @@ codemux install --only both   # V1 + V2 (more disk)
   saved/default choice is used — default `v2`.
 - The choice is saved in `~/.config/codemux/components` (`v1`, `v2`, `v1 v2`)
   and reused by `install`, `check`, `update-check`; `--only` overrides it.
+  `--only pi` only adds the free-pi wrapper and keeps the saved v1/v2 choice.
 - Base modules are always installed: `deps mirror storage toolset glibc` +
   `launcher dotfiles memory self`. Only the payload module (`v1`/`v2`) follows
   the choice, so V1-only = 10 modules, V2-only = 10, both = 11.
 - `check` reports an unselected component as `SKIP` ("not selected") and counts
-  it in `ringkasan.skip`; `--json` gains a `komponen` key.
+  it in `summary.skip`; `--json` gains a `components` key. Every `--json` output
+  uses English keys (`modules`/`status`/`note`/`summary`, `checked`/`updates`).
 - `upgrade` (no `--only`) updates apt + **only the payloads actually installed**
   (detected by `$PREFIX/share/opencode{,-v2}/opencode.real`) + the launcher, so
   a V1-only device never pulls V2 in; `update-check` omits rows for components

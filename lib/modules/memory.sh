@@ -163,10 +163,12 @@ codemux_memory_ensure_instructions() {
 CODEMUX_MEMORY_WRAPPER_VERSION="5"
 
 codemux_memory_wrapper_body() {
+  # The version line is printed from the constant, never typed twice: bumping the
+  # constant alone would leave the marker on the old number, the probe would keep
+  # reporting "outdated", and every install would rewrite an identical block.
+  printf '\n%s\n' "# codemux:memory begin  (managed by codemux — refresh the session summary before opencode)"
+  printf '# codemux:memory version %s\n' "$CODEMUX_MEMORY_WRAPPER_VERSION"
   cat <<'EOS'
-
-# codemux:memory begin  (managed by codemux — refresh the session summary before opencode)
-# codemux:memory version 5
 _oc_refresh_digest() {
   [ -x "$HOME/.config/opencode/bin/session-digest.py" ] || return 0
   python3 "$HOME/.config/opencode/bin/session-digest.py" >/dev/null 2>&1
@@ -222,9 +224,14 @@ codemux_memory_wrapper_current() {
 # shadowing nothing but confuse readers, so it is dropped: one definition, one
 # behaviour. awk keeps this to a single pass and cannot touch other blocks.
 codemux_memory_drop_legacy_wrapper() {
-  local rc="$HOME/.bashrc" tmp bak
+  local rc="$HOME/.bashrc" tmp bak tdir
   grep -q '^# --- refresh the session summary before opencode starts' "$rc" 2>/dev/null || return 0
-  tmp="$(mktemp)" || return 1
+  # `mktemp` with no template uses /tmp, which Termux does not have: fall back to
+  # $TMPDIR and then the prefix's tmp, like the launcher module does.
+  tdir="${TMPDIR:-${PREFIX:-/tmp}}"
+  mkdir -p "$tdir" 2>/dev/null || tdir="$HOME/.cache/codemux"
+  mkdir -p "$tdir" 2>/dev/null || return 1
+  tmp="$(mktemp "$tdir/codemux-memrc.XXXXXX" 2>/dev/null)" || return 1
   awk '
     /^# --- refresh the session summary before opencode starts/ { skip = 1; next }
     skip && /^opencode-v2\(\) \{/ { in_v2 = 1; next }

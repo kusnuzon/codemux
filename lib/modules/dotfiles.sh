@@ -13,7 +13,7 @@ m_dotfiles_probe() {
   fi
 
   if [ "${#missing[@]}" -eq 0 ]; then
-    PROBE=OK; NOTE=".bash_profile + .hushlogin + .tmux.conf (dark theme)"
+    PROBE=OK; NOTE=".bash_profile + .hushlogin + .tmux.conf (black bar, tap-able tabs)"
   else
     PROBE=MISS; NOTE="missing: ${missing[*]}"
   fi

@@ -34,10 +34,10 @@ if printf '%s' "$json_out" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
 assert d["codemux"] == "codemux", d
-assert len(d["modul"]) == 14, len(d["modul"])
-r = d["ringkasan"]
+assert len(d["modules"]) == 14, len(d["modules"])
+r = d["summary"]
 assert r["ok"] + r["warn"] + r["miss"] + r["fail"] + r["skip"] == 14, r
-assert d["komponen"] in ("v1", "v2", "v1 v2", "pi"), d
+assert d["components"] in ("v1", "v2", "v1 v2", "pi"), d
 '; then
   ok "check --json"
 else
@@ -105,9 +105,9 @@ out="$(env HOME="$SB/home" CODEMUX_HOME="$SB/state" PREFIX="$SB/prefix" \
 if printf '%s' "$out" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
-assert d["komponen"] == "v1", d
-assert d["ringkasan"]["skip"] == 1, d["ringkasan"]
-st = {m["modul"]: m["status"] for m in d["modul"]}
+assert d["components"] == "v1", d
+assert d["summary"]["skip"] == 1, d["summary"]
+st = {m["module"]: m["status"] for m in d["modules"]}
 assert st["opencode-v2"] == "SKIP", st
 assert st["opencode-v1"] != "SKIP", st
 '; then
@@ -237,6 +237,27 @@ if [ -d "$ROOT/../opencode-termux" ] || [ -d "$ROOT/../opencode-termux-v2" ]; th
   fi
 else
   printf 'skip tmux config sync (sibling repos not checked out)\n'
+fi
+
+# 9d. `apt_install` must pass apt's exit code on. The old code read `$?` after a
+#     failed `if` (status 0), so a rejected package looked like a success and the
+#     module then reported "OK" without the tool being installed.
+fake_apt="$(mktemp -d)"
+printf '#!/bin/sh\nprintf "E: Unable to locate package nope\\n" >&2\nexit 100\n' >"$fake_apt/apt-get"
+chmod +x "$fake_apt/apt-get"
+if PATH="$fake_apt:$PATH" codemux_apt_install nope >/dev/null 2>&1; then
+  bad "apt_install hides a failed install (exit 0)"
+else
+  ok "apt_install returns apt's failure (non-zero)"
+fi
+rm -rf "$fake_apt"
+
+# 9e. `version` prints the components row once, whatever is installed
+n_comp="$(codemux_versions | grep -c '^components')"
+if [ "$n_comp" -eq 1 ]; then
+  ok "versions: one components row"
+else
+  bad "versions: $n_comp components rows"
 fi
 
 # 10. codemux_content_length: only a 2xx length counts, never an error page
