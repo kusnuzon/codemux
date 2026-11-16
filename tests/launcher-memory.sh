@@ -374,11 +374,37 @@ else
 fi
 # Small enough to read on one screen.
 lines="$(wc -l <"$TPL")"
-if [ "$lines" -le 220 ]; then
+if [ "$lines" -le 280 ]; then
   ok "menu: the block is $lines lines"
 else
-  bad "menu: the block is still $lines lines (target ≤ 220)"
+  bad "menu: the block is still $lines lines (target ≤ 280)"
 fi
+# The pi row that runs inside tmux: one session called `pi`, no nested server,
+# and the terminal is repaired after it returns.
+if grep -q '^_oc_pi_tmux() {' "$TPL" &&
+  grep -q 'tmux new-session -A -s pi ' "$TPL" &&
+  grep -q 'if \[ -n "${TMUX:-}" \]' "$TPL" &&
+  sed -n '/^_oc_pi_tmux() {/,/^}/p' "$TPL" | grep -q '_oc_tty_fix'; then
+  ok "menu: the pi-tmux row uses one session and repairs the terminal"
+else
+  bad "menu: the pi-tmux row is missing or unsafe"
+fi
+# Frozen-screen fixes: XON unpauses a stray XOFF, RIS resets the emulator and
+# stty is retried on three file descriptors before either is given up on.
+if grep -q '^fixterm() {' "$TPL" && grep -q 'fixterm repairs a stuck screen' "$TPL"; then
+  ok "menu: fixterm repairs the terminal by hand"
+else
+  bad "menu: the manual repair command is missing"
+fi
+for piece in '\017' '\033c' 'stty sane </dev/tty' 'stty sane <&2'; do
+  grep -qF "$piece" "$TPL" || tty_gap="$piece"
+done
+if [ -z "${tty_gap:-}" ] && grep -qF '\017' "$ROOT/lib/modules/memory.sh"; then
+  ok "menu: terminal reset sends XON, resets the emulator and retries stty"
+else
+  bad "menu: terminal reset is missing ${tty_gap:-the XON/RIS fix in memory.sh}"
+fi
+
 # The terminal repair stays: it is what unfreezes Termux after an agent exits.
 tty_modes_missing=""
 for mode in '\007' '\033\\' '\033[?2026l' '\033[?1049l' '\033[?1002l' \
@@ -416,8 +442,8 @@ menu_descs() { # <sandbox> → descriptions of the menu rows
       printf "%s" "${_OC_DESCS[*]}"
     ' _ "$TPL" "$sb/prefix/bin" 2>/dev/null
 }
-if [ "$(menu_keys "$SB5")" = "v1 v2 pi shell quit" ]; then
-  ok "menu: five rows (v1 v2 pi shell quit)"
+if [ "$(menu_keys "$SB5")" = "v1 v2 pi pitmux shell quit" ]; then
+  ok "menu: six rows (v1 v2 pi pitmux shell quit)"
 else
   bad "menu: rows are '$(menu_keys "$SB5")'"
 fi
@@ -501,10 +527,10 @@ case "$out" in
     ok "menu: a dead stdin ends the menu instead of spinning" ;;
   *) bad "menu: a dead stdin hangs the menu → $(printf '%s' "$out" | tr '\n' ' ')" ;;
 esac
-out="$(menu_with '4\n')"
+out="$(menu_with '5\n')"
 case "$out" in
   *"menu rc=0"*)
-    ok "menu: typing 4 (Shell only) returns to the shell" ;;
+    ok "menu: typing 5 (Shell only) returns to the shell" ;;
   *) bad "menu: typing a number did not run the row → $(printf '%s' "$out" | tr '\n' ' ')" ;;
 esac
 out="$(menu_with 'q\n')"

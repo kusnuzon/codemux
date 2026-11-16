@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 31
+# codemux:launcher version 34
 # Termux banner + a numbered menu. Every interactive shell sources this block,
 # so it stays small and fast:
 #   * no agent binary is ever started to read a version (files only),
@@ -87,6 +87,12 @@ _oc_items() {
     _OC_DESCS+=("not installed")
   fi
   _OC_KEYS+=("pi"); _OC_NAMES+=("Free-pi (Pi)")
+  if command -v tmux >/dev/null 2>&1; then
+    _OC_DESCS+=("tabs · tmux")
+  else
+    _OC_DESCS+=("tmux missing")
+  fi
+  _OC_KEYS+=("pitmux"); _OC_NAMES+=("Free-pi (Pi) · tmux")
   _OC_KEYS+=("shell"); _OC_NAMES+=("Shell only"); _OC_DESCS+=("no agent")
   _OC_KEYS+=("quit"); _OC_NAMES+=("Quit"); _OC_DESCS+=("close Termux")
   _OC_COUNT="${#_OC_KEYS[@]}"
@@ -96,24 +102,75 @@ _oc_menu() {
   local i pad
   printf '  %s───────────────────────────────────────────%s\n' "$DIM" "$R"
   for ((i = 0; i < _OC_COUNT; i++)); do
-    printf -v pad '%-15s' "${_OC_NAMES[$i]}"
+    printf -v pad '%-19s' "${_OC_NAMES[$i]}"
     printf '  %s%d%s  %s%s%s  %s%s%s\n' \
       "$BOLD" "$((i + 1))" "$R" "$BOLD" "$pad" "$R" "$DIM" "${_OC_DESCS[$i]}$R"
   done
   printf '  %s───────────────────────────────────────────%s\n' "$DIM" "$R"
-  printf '  %stype a number, then Enter%s   %sq quit%s\n\n' "$DIM" "$R" "$DIM" "$R"
+  printf '  %stype a number, then Enter%s   %sq quit%s   %sfixterm repairs a stuck screen%s\n\n' \
+    "$DIM" "$R" "$DIM" "$R" "$DIM" "$R"
 }
 
 # A full-screen agent can hand the terminal back inside the alternate screen (or
-# in the middle of an OSC string), and Termux then keeps showing the last frame
-# while the shell below is alive — keys do nothing and only `exit` works. Reset
-# every mode a TUI can switch on, then clear and home so the prompt is redrawn.
+# in the middle of an OSC/DCS string), with flow control paused, or with the
+# termios flags still raw. Termux then keeps showing the last frame while the
+# shell below is alive — keys do nothing and only `exit` works. Repair it in
+# four steps, in this order:
+#   1. close a control string a killed TUI left open (BEL ends OSC, ST ends
+#      DCS/APC) — until it is closed the emulator swallows ALL later output;
+#   2. send XON: a stray Ctrl+S/XOFF pauses output and looks exactly frozen;
+#   3. termios back to sane, trying stdin, /dev/tty and stderr in turn;
+#   4. leave every screen mode, reset the emulator (RIS), then clear + home.
+# The bytes go to /dev/tty when it can be opened: an agent may have left stdout
+# pointing somewhere else, and then the repair would be written into that file.
 _oc_tty_fix() {
   [ -t 1 ] || return 0
-  if [ -r /dev/tty ]; then
-    command -v stty >/dev/null 2>&1 && stty sane </dev/tty 2>/dev/null
+  local out=/dev/stdout
+  { : >/dev/tty; } 2>/dev/null && out=/dev/tty
+  printf '\007\033\\\033\\\017' >"$out"
+  if command -v stty >/dev/null 2>&1; then
+    stty sane </dev/tty 2>/dev/null || stty sane 2>/dev/null || stty sane <&2 2>/dev/null
   fi
-  printf '\007\033\\\033\\\033[?2026l\033[?2031l\033[?1049l\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1015l\033[?1016l\033[?1004l\033[?2004l\033[?1l\033>\033[!p\033[r\033[?6l\033[?7h\033(B\033[0m\033[?25h\033[2J\033[H'
+  printf '\033[?2026l\033[?2031l\033[?1049l\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1015l\033[?1016l\033[?1004l\033[?2004l\033[?1l\033>\033[!p\033[r\033[?6l\033[?7h\033(B\033[0m\033[?25h\033c\033[2J\033[H' >"$out"
+  # One line of evidence, so a later report of "still frozen" can be checked.
+  command -v stty >/dev/null 2>&1 &&
+    stty -a 2>/dev/null | tr -s ' ' ' ' | head -n 1 \
+      >"${TMPDIR:-${PREFIX:-/tmp}}/codemux-tty-fix.log" 2>/dev/null
+  return 0
+}
+
+# Blind escape hatch: if the screen ever stays frozen after an agent, the shell
+# below is still alive, so typing `fixterm` and pressing Enter repairs it.
+fixterm() { _oc_tty_fix; printf '  terminal repaired\n'; }
+
+# pi inside a tmux session: one session called `pi`, so a `Ctrl+b d` detach keeps
+# the agent alive and `Ctrl+b c` opens another tab. The real terminal then only
+# ever sees tmux's own output, never the agent's escape stream.
+_oc_pi_tmux() {
+  local pi_cmd='OPENCODE_NO_AUTO=1 bash -ic "pi --continue || pi"'
+  if ! command -v pi >/dev/null 2>&1; then
+    printf '\n  %sFree-pi (Pi) is not installed%s — run: %scodemux install%s\n\n' \
+      "$BOLD" "$R" "$ACC" "$R"
+    return 1
+  fi
+  if ! command -v tmux >/dev/null 2>&1; then
+    printf '\n  %stmux is not installed — starting pi without it%s\n\n' "$DIM" "$R"
+    pi
+    _oc_tty_fix
+    return 0
+  fi
+  printf '  %s→ Free-pi (Pi) in tmux · Ctrl+b d detach, Ctrl+b c new tab%s\n\n' "$DIM" "$R"
+  if [ -n "${TMUX:-}" ]; then
+    # already inside tmux: nesting servers only confuses the keys
+    pi --continue || pi
+  else
+    eval "tmux new-session -A -s pi $pi_cmd"
+  fi
+  # whatever happened, the terminal is put back before the menu returns
+  _oc_tty_fix
+  if [ -t 1 ] && [ -r /dev/tty ]; then
+    exec 0</dev/tty 2>/dev/null || true
+  fi
   return 0
 }
 
@@ -124,6 +181,7 @@ _oc_launch_component() {
     v1) cmd="opencode"; name="OpenCode V1" ;;
     v2) cmd="opencode-v2"; name="OpenCode V2" ;;
     pi) cmd="pi"; name="Free-pi (Pi)" ;;
+    pitmux) _oc_pi_tmux; return 0 ;;
     *) return 1 ;;
   esac
   if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -177,7 +235,7 @@ _oc_menu_loop() {
     fi
     key="${_OC_KEYS[$((choice - 1))]}"
     case "$key" in
-      v1 | v2 | pi) _oc_launch_component "$key" ;;
+      v1 | v2 | pi | pitmux) _oc_launch_component "$key" ;;
       shell) printf '\n'; _oc_tty_fix; return 0 ;;
       quit) printf '\n'; return 1 ;;
     esac
