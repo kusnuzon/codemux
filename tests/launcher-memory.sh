@@ -838,20 +838,46 @@ if ! grep -q 'codemux:pi begin' "$SB5C/home/.bashrc"; then
 else
   bad "pi module: appended to an already broken .bashrc"
 fi
-# Now a valid .bashrc: the alias must appear exactly once, and the next run
-# must not add a second block.
+# Now a valid .bashrc: the wrapper must appear exactly once, and the next run
+# must not add a second block. The wrapper is a function (not an alias) so the
+# terminal is repaired after pi exits: _oc_tty_fix has to be called from it.
 printf 'echo keep\n' >"$SB5C/home/.bashrc"
 PATH="$SB5C/prefix/bin:$PATH" run_cm "$SB5C" install --only pi --skip "$SKIP_ONLY_PI" >"$SB5C/out2.log" 2>&1 || true
-if grep -q 'codemux:pi begin' "$SB5C/home/.bashrc" && grep -q 'alias pi=' "$SB5C/home/.bashrc"; then
-  ok "pi module: the alias is added once .bashrc is valid"
+if grep -q 'codemux:pi begin' "$SB5C/home/.bashrc" && grep -q '^pi() {' "$SB5C/home/.bashrc"; then
+  ok "pi module: the wrapper is added once .bashrc is valid"
 else
-  bad "pi module: alias not added to a valid .bashrc"
+  bad "pi module: wrapper not added to a valid .bashrc"
+fi
+if grep -q '_oc_tty_fix' "$SB5C/home/.bashrc"; then
+  ok "pi module: the wrapper repairs the terminal after pi exits"
+else
+  bad "pi module: wrapper does not call _oc_tty_fix"
+fi
+if grep -q 'version 2)' "$SB5C/home/.bashrc"; then
+  ok "pi module: the wrapper block carries its version marker"
+else
+  bad "pi module: wrapper block has no version marker"
 fi
 PATH="$SB5C/prefix/bin:$PATH" run_cm "$SB5C" install --only pi --skip "$SKIP_ONLY_PI" >"$SB5C/out3.log" 2>&1 || true
 if [ "$(grep -c 'codemux:pi begin' "$SB5C/home/.bashrc")" -eq 1 ]; then
-  ok "pi module: idempotent (one alias block)"
+  ok "pi module: idempotent (one wrapper block)"
 else
-  bad "pi module: the alias block was duplicated"
+  bad "pi module: the wrapper block was duplicated"
+fi
+# An older codemux wrote a bare `alias pi=`; that leaves the terminal broken
+# after exit. The next install must turn it into the wrapper in place.
+printf 'echo keep\n# codemux:pi begin  (managed by codemux)\nalias pi=/old/bin/free-pi-cli\n# codemux:pi end\n' \
+  >"$SB5C/home/.bashrc"
+PATH="$SB5C/prefix/bin:$PATH" run_cm "$SB5C" install --only pi --skip "$SKIP_ONLY_PI" >"$SB5C/out4.log" 2>&1 || true
+if ! grep -q 'alias pi=' "$SB5C/home/.bashrc" && grep -q '^pi() {' "$SB5C/home/.bashrc"; then
+  ok "pi module: an old alias block is rewritten as the wrapper"
+else
+  bad "pi module: old alias block was left in place"
+fi
+if [ "$(grep -c 'echo keep' "$SB5C/home/.bashrc")" -eq 1 ]; then
+  ok "pi module: lines outside the block survive the rewrite"
+else
+  bad "pi module: rewrite damaged the rest of .bashrc"
 fi
 
 # =============================================================================

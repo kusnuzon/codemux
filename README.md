@@ -112,7 +112,7 @@ Choosing a component that is not installed asks `Install it now? [y/N]` first â€
 one dialog shared by every row (V1, V2, Pi). Answer `n` and nothing changes.
 `b` opens the `~/.bashrc` options. Skip the menu with `OPENCODE_NO_AUTO=1 bash`.
 
-`--only pi` adds the `pi` row and its `alias pi` without touching the OpenCode
+`--only pi` adds the `pi` row and its `pi` wrapper without touching the OpenCode
 choice; `codemux check` shows it as its own row.
 
 ## ðŸ§  Memory that survives sessions
