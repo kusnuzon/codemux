@@ -69,12 +69,23 @@ fi
 # Boxed, fixed-width tabs: 20 columns each, so a tap can be mapped to a tab
 # and its own "x" (border on both sides, "+ new tab" on the right of the bar).
 if [ "$(grep -c 'p15:#{window_index}' <<<"$block")" = 2 ] &&
-  [ "$(grep -c '✕' <<<"$block")" = 2 ] &&
-  [ "$(grep -c '▏' <<<"$block")" = 2 ] &&
+  [ "$(grep -o '✕' <<<"$block" | wc -l)" -eq 4 ] &&
+  [ "$(grep -o '▏' <<<"$block" | wc -l)" -eq 2 ] &&
   grep -qx 'set -g status-left ""' <<<"$block"; then
   ok "block: boxed fixed-width tabs with their own x and no status-left offset"
 else
   bad "block: tab box/border missing"
+fi
+# One page of three 20-column tabs: @tabstart is what a swipe moves, and a tab
+# waiting for its close confirmation turns red.
+if grep -q 'set -g window-status-format "#{?#{&&:#{>=:#{window_index},#{@tabstart}}' <<<"$block" &&
+  grep -q 'set -g window-status-current-format "#{?#{&&:' <<<"$block" &&
+  grep -qx 'set -g @tabstart 0' <<<"$block" &&
+  [ "$(grep -o 'e|+|:#{@tabstart},3' <<<"$block" | wc -l)" -eq 2 ] &&
+  [ "$(grep -o 'ff6b6b' <<<"$block" | wc -l)" -eq 4 ]; then
+  ok "block: one page of three tabs, swipe offset and red pending tab"
+else
+  bad "block: tab paging/conditional format missing"
 fi
 [ "$(grep -c 'codemux:tmux begin' <<<"$block")" = "1" ] && ok "block: one begin marker" || bad "block: marker count"
 

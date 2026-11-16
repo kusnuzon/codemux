@@ -467,20 +467,25 @@ if grep -qx 'set-option -t pi default-command OPENCODE_NO_AUTO=1 bash -ic pi' "$
   grep -qx 'bind-key -n M-Up if-shell -F #{==:#{session_name},pi} previous-window send-keys M-Up' "$SB6/tmux.calls"; then
   ok "menu: the tmux row maps alt+down/ctrl+tab and alt+up/shift+tab to next/previous tab (inside pi only)"
 else
-  bad "menu: tab keys are '$(grep 'bind-key' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';')' / default-command '$(grep 'set-option' "$SB6/tmux.calls" 2>/dev/null)'"
+  bad "menu: tab keys are '$(grep 'bind-key' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';' | cut -c1-2000) / default-command '$(grep 'set-option' "$SB6/tmux.calls" 2>/dev/null)'"
 fi
 # Touch: one run-shell binding maps a tap on the 20-column tab strip to that
-# tab - the name switches to it, the tab's own "x" asks before closing it - and
-# "+ new tab" on the right opens a new one. Only run-shell can read #{mouse_x}.
+# tab - the name switches to it, the tab's own "x" asks before closing it - a
+# swipe scrolls the page, and "+ new tab" on the right opens a new one. Only
+# run-shell can read #{mouse_x}.
 if grep -qx 'set-option -t pi status-right  + new tab ' "$SB6/tmux.calls" &&
+  grep -qx 'set-option -t pi @tabstart 0' "$SB6/tmux.calls" &&
   grep -q '^bind-key -n MouseDown1Status run-shell -b .*x=#{mouse_x}' "$SB6/tmux.calls" &&
-  grep -q 'display-menu -c "#{client_name}" -T "Close this tab?"' "$SB6/tmux.calls" &&
-  grep -q 'kill-window -t \$s:\$id' "$SB6/tmux.calls" &&
+  grep -q 'codemux-tab-drag' "$SB6/tmux.calls" &&
+  grep -q '@closepending' "$SB6/tmux.calls" &&
+  grep -q 'keep    close' "$SB6/tmux.calls" &&
+  grep -q 'kill-window -t' "$SB6/tmux.calls" &&
   grep -q 'select-window -t' "$SB6/tmux.calls" &&
+  grep -q '^bind-key -n MouseDrag1Status run-shell -b ' "$SB6/tmux.calls" &&
   grep -q '^bind-key -n MouseDown1StatusRight run-shell -b ' "$SB6/tmux.calls"; then
-  ok "menu: the tab strip maps a tap to a tab, its own 'x' asks first, '+ new tab' on the right"
+  ok "menu: tap maps to its tab, the tab's own 'x' asks first, swipe scrolls, '+ new tab' on the right"
 else
-  bad "menu: touch bindings are '$(grep -E 'status-right|MouseDown' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';')'"
+  bad "menu: touch bindings are '$(grep -E 'status-right|MouseDown|MouseDrag|@tabstart' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';' | cut -c1-2000)"
 fi
 rm -f "$SB6/tmux.session"
 : >"$SB6/tmux.calls"

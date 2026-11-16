@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 18
+# codemux:launcher version 19
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -344,14 +344,16 @@ _oc_pi_tmux_tabs() {
   # "pi:" is the session, not the window that is also called pi: without the
   # colon tmux would aim at that window and `new-window` would refuse the index.
   tmux bind-key -T prefix c if-shell -F '#{==:#{session_name},pi}' 'new-window -t pi: -n pi' new-window 2>/dev/null || true
-  # Touch: a finger tap is a left click on the status bar. Every tab is 20
-  # columns wide (see the managed tmux block) and the strip starts at column
-  # zero, so one run-shell binding can map a tap to a tab: tapping the name
-  # switches to it, tapping its "x" asks before closing it. Only run-shell can
-  # read #{mouse_x} - if-shell is evaluated before the click arrives.
+  # Touch: a finger tap on the status bar is a left click and a swipe is a
+  # drag. The strip shows a page of three 20-column tabs, so the tap can be
+  # mapped to its tab: the name switches to it, the tab's own "x" asks before
+  # closing it, and swiping the bar scrolls the page by one tab (#{@tabstart}).
+  # Only run-shell can read #{mouse_x}: if-shell is evaluated too early.
+  tmux set-option -t pi @tabstart 0 2>/dev/null || true
   tmux set-option -t pi status-right ' + new tab ' 2>/dev/null || true
-  tmux bind-key -n MouseDown1Status "run-shell -b 'x=#{mouse_x}; s=\"#{session_name}\"; i=\$((x/20)); o=\$((x%20)); list=\$(tmux list-windows -t \"\$s:\" 2>/dev/null | cut -d: -f1); n=\$(printf \"%s\n\" \"\$list\" | grep -c .); [ \"\$i\" -lt \"\$n\" ] || exit 0; id=\$(printf \"%s\n\" \"\$list\" | sed -n \"\$((i+1))p\"); if [ \"\$o\" -ge 17 ] && [ \"\$o\" -le 18 ] && [ \"\$s\" = pi ]; then [ \"\$n\" -gt 1 ] && tmux display-menu -c \"#{client_name}\" -T \"Close this tab?\" -x W -y W \"Close\" c \"kill-window -t \$s:\$id\" \"Keep\" q \"\"; else tmux select-window -t \"\$s:\$id\"; fi'" 2>/dev/null || true
-  tmux bind-key -n MouseDown1StatusRight "run-shell -b '[ \"#{session_name}\" = pi ] || exit 0; [ #{mouse_x} -ge \$((#{client_width} - #{n:status-right})) ] || exit 0; tmux new-window -t pi: -n pi'" 2>/dev/null || true
+  tmux bind-key -n MouseDown1Status "run-shell -b 'x=#{mouse_x}; s=\"#{session_name}\"; f=\${TMPDIR:-\${PREFIX:-/data/data/com.termux/files/usr}/tmp}/codemux-tab-drag.\$s; st=\$(tmux show-options -t \"\$s:\" -qv @tabstart); st=\${st:-0}; i=\$((st + x/20)); o=\$((x%20)); n=\$(tmux list-windows -t \"\$s:\" 2>/dev/null | grep -c .); [ \"\$i\" -lt \"\$n\" ] || exit 0; printf %s \"\$x\" > \"\$f\"; tmux set-option -t \"\$s:\" -u @closepending; tmux set-option -t \"\$s:\" status-right \" + new tab \"; if [ \"\$o\" -ge 17 ] && [ \"\$o\" -le 18 ] && [ \"\$s\" = pi ] && [ \"\$n\" -gt 1 ]; then tmux set-option -t \"\$s:\" @closepending \"\$i\"; tmux set-option -t \"\$s:\" status-right \"  keep    close  \"; else tmux select-window -t \"\$s:\$i\"; fi'" 2>/dev/null || true
+  tmux bind-key -n MouseDown1StatusRight "run-shell -b 'x=#{mouse_x}; w=#{client_width}; s=\"#{session_name}\"; p=\$(tmux show-options -t \"\$s:\" -qv @closepending); if [ -n \"\$p\" ]; then o=\$((x - (w - 17))); tmux set-option -t \"\$s:\" -u @closepending; tmux set-option -t \"\$s:\" status-right \" + new tab \"; if [ \"\$o\" -ge 8 ] && [ \"\$o\" -le 16 ]; then tmux kill-window -t \"\$s:\$p\"; tmux move-window -r -t \"\$s:\"; fi; else tmux new-window -t pi: -n pi; fi'" 2>/dev/null || true
+  tmux bind-key -n MouseDrag1Status "run-shell -b 'x=#{mouse_x}; s=\"#{session_name}\"; f=\${TMPDIR:-\${PREFIX:-/data/data/com.termux/files/usr}/tmp}/codemux-tab-drag.\$s; d=\$(cat \"\$f\" 2>/dev/null || echo \$x); st=\$(tmux show-options -t \"\$s:\" -qv @tabstart); st=\${st:-0}; n=\$(tmux list-windows -t \"\$s:\" 2>/dev/null | grep -c .); k=\$((n - 3)); [ \"\$k\" -lt 0 ] && k=0; if [ \$((x - d)) -ge 20 ]; then st=\$((st + 1)); elif [ \$((d - x)) -ge 20 ]; then st=\$((st - 1)); fi; [ \"\$st\" -lt 0 ] && st=0; [ \"\$st\" -gt \"\$k\" ] && st=\$k; tmux set-option -t \"\$s:\" @tabstart \"\$st\"; printf %s \"\$x\" > \"\$f\"'" 2>/dev/null || true
   tmux bind-key -n C-Tab if-shell -F '#{==:#{session_name},pi}' next-window 'send-keys C-Tab' 2>/dev/null || true
   tmux bind-key -n BTab if-shell -F '#{==:#{session_name},pi}' previous-window 'send-keys BTab' 2>/dev/null || true
   tmux bind-key -n M-Down if-shell -F '#{==:#{session_name},pi}' next-window 'send-keys M-Down' 2>/dev/null || true
