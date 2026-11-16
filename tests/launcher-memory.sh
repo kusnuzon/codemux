@@ -469,11 +469,16 @@ if grep -qx 'set-option -t pi default-command OPENCODE_NO_AUTO=1 bash -ic pi' "$
 else
   bad "menu: tab keys are '$(grep 'bind-key' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';')' / default-command '$(grep 'set-option' "$SB6/tmux.calls" 2>/dev/null)'"
 fi
-# Touch: tmux's own MouseDown1Status switches to the tapped tab, so all this
-# adds is the "+ new tab" button on the right and the wide target for it.
-if grep -qx "set-option -t pi status-right  + new tab " "$SB6/tmux.calls" &&
-  grep -qx 'bind-key -n MouseDown1StatusRight if-shell -F #{==:#{session_name},pi} new-window -t pi: -n pi send-keys MouseDown1StatusRight' "$SB6/tmux.calls"; then
-  ok "menu: the tmux row adds the tap-friendly '+ new tab' button (inside pi only)"
+# Touch: tmux's own MouseDown1Status switches to the tapped tab. The right end
+# of the bar is two buttons, "x" (close) and "+ new tab" (open); one run-shell
+# binding tells them apart by the click position, because only run-shell can
+# read #{mouse_x}, and it never closes the last tab.
+if grep -qx 'set-option -t pi status-right  x  + new tab ' "$SB6/tmux.calls" &&
+  grep -q '^bind-key -n MouseDown1StatusRight run-shell -b .*x=#{mouse_x}' "$SB6/tmux.calls" &&
+  grep -q 'kill-window -t #{window_id}' "$SB6/tmux.calls" &&
+  grep -q 'new-window -t pi: -n pi' "$SB6/tmux.calls" &&
+  grep -q '#{session_windows}" -gt 1' "$SB6/tmux.calls"; then
+  ok "menu: the tmux row adds tap-friendly 'x' (close, never the last tab) and '+ new tab'"
 else
   bad "menu: touch bindings are '$(grep -E 'status-right|MouseDown' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';')'"
 fi
