@@ -743,10 +743,19 @@ case "$sum_out" in
   *) bad "logs command: summary is '$(printf '%s' "$sum_out" | tr '\n' '|' | tail -c 120)'" ;;
 esac
 default_dir="$(run_cm "$SB5E" logs --dir 2>/dev/null)"
-if [ "$default_dir" = "$SB5E/home/.config/codemux/logs" ]; then
+# Same order the code uses: CODEMUX_LOG_DIR, then XDG_CONFIG_HOME, then HOME.
+# CI runners set XDG_CONFIG_HOME, so hard-coding the HOME path breaks there.
+want_default="${XDG_CONFIG_HOME:-$SB5E/home/.config}/codemux/logs"
+if [ "$default_dir" = "$want_default" ]; then
   ok "logs command: the default directory sits next to the menu script"
 else
-  bad "logs command: default directory is '$default_dir'"
+  bad "logs command: default directory is '$default_dir' (want '$want_default')"
+fi
+xdg_out="$(XDG_CONFIG_HOME="$SB5E/xdg" run_cm "$SB5E" logs --dir 2>/dev/null)"
+if [ "$xdg_out" = "$SB5E/xdg/codemux/logs" ]; then
+  ok "logs command: XDG_CONFIG_HOME wins over HOME"
+else
+  bad "logs command: XDG default '$xdg_out'"
 fi
 
 # =============================================================================
