@@ -244,8 +244,11 @@ fi
 #     Network is optional: skipped when github.com is unreachable.
 if curl -fsI --max-time 8 https://github.com >/dev/null 2>&1; then
   # cd out of the repo first: a 404 URL must not fall through to a file here.
+  # The expected length is the local VERSION file: hard-coding it breaks every
+  # version bump (0.7.9 → 6 bytes, 0.7.10 → 7) and CI covers the pushed commit.
+  want="$(wc -c <VERSION 2>/dev/null | tr -d ' ')"
   n="$(cd / && codemux_content_length https://github.com/kusnuzon/codemux/raw/main/VERSION)"
-  if [ "$n" = "6" ]; then ok "content-length 200 ($n)"; else bad "content-length 200 ($n, want 6)"; fi
+  if [ -n "$want" ] && [ "$n" = "$want" ]; then ok "content-length 200 ($n)"; else bad "content-length 200 ($n, want ${want:-unknown})"; fi
   n="$(cd / && codemux_content_length https://github.com/kusnuzon/codemux/raw/main/NOPE-$$.txt)"
   if [ -z "$n" ]; then ok "content-length 404 (empty)"; else bad "content-length 404 ($n, want empty)"; fi
 else
