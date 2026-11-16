@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 26
+# codemux:launcher version 27
 # Termux startup banner + menu block. Change it via the codemux repo template,
 # then run `codemux install`. Skip the menu: OPENCODE_NO_AUTO=1 bash
 # The menu uses arrow keys (↑/↓) + Enter, or the row number and q.
@@ -178,8 +178,10 @@ _oc_read_key() {
   # A component that exits can leave stdin at EOF (a terminal that a full-screen
   # UI handed back, or a closed fd): `read` then fails instantly and forever, so
   # a plain retry loop spins at 100% CPU and the menu never comes back. Count the
-  # failures, reopen the terminal once, and give up with `eof` if it is gone.
-  local empty=0 rc
+  # failures, reopen the terminal (at most twice: if the new fd also answers
+  # EOF immediately, retrying forever would spin at 100% CPU and freeze
+  # Termux), and give up with `eof` if it is gone.
+  local empty=0 rc reopens=0
   _oc_eof=0
   while :; do
     IFS= read -rsn1 -t 0.2 KEY && break
@@ -193,7 +195,8 @@ _oc_read_key() {
     fi
     empty=$((empty + 1))
     if [ "$empty" -ge 5 ]; then
-      if [ -r /dev/tty ] && exec 0</dev/tty 2>/dev/null; then
+      if [ "$reopens" -lt 2 ] && [ -r /dev/tty ] && exec 0</dev/tty 2>/dev/null; then
+        reopens=$((reopens + 1))
         empty=0
         continue
       fi
@@ -286,6 +289,21 @@ _oc_update_notice() {
 
 _oc_cursor_hide() { printf '\033[?25l'; }
 _oc_cursor_show() { printf '\033[?25h'; }
+
+# A full-screen agent can hand the terminal back with the wrong termios (raw
+# mode, echo off) or still inside the alternate screen. The shell then looks
+# frozen: keys arrive but nothing echoes and Enter never submits. Repair it
+# whatever the agent's exit code was — a clean exit (/exit, /quit) leaves the
+# same mess on some terminals, so gating on rc != 0 is not enough. stty reads the
+# terminal from /dev/tty because stdin can be the broken fd.
+_oc_tty_fix() {
+  [ -t 1 ] || return 0
+  if [ -r /dev/tty ]; then
+    command -v stty >/dev/null 2>&1 && stty sane </dev/tty 2>/dev/null
+  fi
+  printf '\033[?1049l\033[?25h\033[0m'
+  return 0
+}
 
 # Quota warning (one short line, only when `quota` is installed and the free
 # model usage is close to the daily limit). Read-only, no network, ~0.1 s.
@@ -436,9 +454,11 @@ _oc_launch_component() {
       ;;
     *) return 1 ;;
   esac
-  # A full-screen agent (pi, opencode) can leave the shared stdin at EOF when it
-  # exits with /quit: the shell then has a terminal that answers nothing, so the
-  # menu would never read another key. Reopen the controlling terminal here.
+  # A full-screen agent (pi, opencode) can hand back a terminal with a broken
+  # termios and can leave the shared stdin at EOF: the shell then has a terminal
+  # that answers nothing, so the menu would never read another key and the shell
+  # itself looks frozen. Repair the terminal, then reopen the controlling one.
+  _oc_tty_fix
   if [ -t 1 ] && [ -r /dev/tty ]; then
     exec 0</dev/tty 2>/dev/null || true
   fi
@@ -534,7 +554,11 @@ _oc_menu_loop() {
             [ "$sel" -ge "$_OC_COUNT" ] && sel=$((_OC_COUNT - 1))
             full=1
             ;;
-          shell) printf '\n'; return 0 ;;
+          shell)
+            printf '\n'
+            _oc_tty_fix
+            return 0
+            ;;
           quit) printf '\n'; return 1 ;;
         esac
         # a redraw is needed whatever happened (an install changes the rows)
@@ -557,7 +581,11 @@ _oc_menu_loop() {
                 printf '%s\n' "${_OC_KEYS[$sel]}" >"$choice_file" 2>/dev/null
               fi
               ;;
-            shell) printf '\n'; return 0 ;;
+            shell)
+              printf '\n'
+              _oc_tty_fix
+              return 0
+              ;;
             quit) printf '\n'; return 1 ;;
           esac
           _oc_items

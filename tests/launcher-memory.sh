@@ -110,6 +110,27 @@ else
 fi
 if grep -q '_oc_refresh_digest()' "$rc_file"; then ok "fresh: digest wrapper present"; else bad "fresh: digest wrapper missing"; fi
 
+# The wrapper has to put the terminal back after EVERY agent run, not only a
+# failed one: a clean /exit can leave raw termios, and the shell then looks
+# frozen — keys arrive, nothing echoes (V1 → "Shell only" froze Termux). Gating
+# the repair on a non-zero exit code is exactly what failed.
+if grep -q 'codemux:memory version 2' "$rc_file" &&
+  [ "$(grep -c 'codemux:memory begin' "$rc_file")" -eq 1 ]; then
+  ok "fresh: wrapper is version 2 and written exactly once"
+else
+  bad "fresh: wrapper block is missing, duplicated or still version 1"
+fi
+if grep -q '\[ "\$rc" -ne 0 \] && _oc_tty_repair' "$rc_file"; then
+  bad "fresh: terminal repair is still gated on a failed exit code"
+else
+  ok "fresh: terminal repair runs after every agent run"
+fi
+if sed -n '/^opencode() {/,/^}/p' "$rc_file" | grep -q '_oc_tty_repair'; then
+  ok "fresh: the opencode wrapper repairs the terminal"
+else
+  bad "fresh: the opencode wrapper never repairs the terminal"
+fi
+
 # The pi menu row shows the installed free-pi version. free-pi writes no
 # VERSION file, so the number must come from the npx package manifest.
 mkdir -p "$SB/home/.npm/_npx/deadbeef/node_modules/free-pi-cli"
@@ -189,6 +210,31 @@ if [ "$(grep -c 'codemux:launcher begin' "$rc_file")" -eq 1 ] &&
   ok "fresh: second install is idempotent (no duplicates)"
 else
   bad "fresh: second install duplicated blocks/entries"
+fi
+
+# =============================================================================
+# 1b. a markerless wrapper from opencode-termux is replaced, not doubled
+# =============================================================================
+SB1B="$(new_sandbox legacy-wrapper)"
+cat >"$SB1B/home/.bashrc" <<'EOB'
+# --- refresh the session summary before opencode starts (install.sh) ---
+_oc_refresh_digest() { :; }
+_oc_tty_repair() { :; }
+opencode() { :; }
+opencode-v2() { :; }
+EOB
+run_cm "$SB1B" install --skip "$SKIP_ALL_BUT_M4" >"$SB1B/install.log" 2>&1
+legacy_rc="$SB1B/home/.bashrc"
+if [ "$(grep -c '^# --- refresh the session summary' "$legacy_rc")" -eq 0 ]; then
+  ok "legacy: the old markerless wrapper is dropped"
+else
+  bad "legacy: the old markerless wrapper survived (two definitions)"
+fi
+if [ "$(grep -c 'codemux:memory version 2' "$legacy_rc")" -eq 1 ] &&
+  bash -n "$legacy_rc" 2>/dev/null; then
+  ok "legacy: exactly one current wrapper remains and .bashrc is valid"
+else
+  bad "legacy: wrapper count/validity is wrong after the rewrite"
 fi
 
 # =============================================================================
@@ -303,6 +349,22 @@ if grep -qF '\033[?25l' "$TPL" && grep -qF '\033[?25h' "$TPL"; then
   ok "menu: cursor hidden & restored"
 else
   bad "menu: cursor escapes (?25l/?25h) incomplete"
+fi
+# The menu cannot rely on the ~/.bashrc wrapper (a component may be a bare
+# binary), so it repairs the terminal itself: once after a component returns and
+# once before handing the shell back. A missing call leaves Termux frozen.
+fix_sites="$(grep -c '_oc_tty_fix' "$TPL")"
+if grep -q '^_oc_tty_fix() {' "$TPL" && [ "$fix_sites" -ge 4 ]; then
+  ok "menu: terminal repaired after a component and before the shell"
+else
+  bad "menu: terminal repair helper missing or not on every exit path ($fix_sites sites)"
+fi
+# A terminal that re-opens but answers EOF instantly must not be retried
+# forever: that loop burns the CPU and freezes the phone.
+if grep -q 'reopens' "$TPL"; then
+  ok "menu: the key reader limits terminal re-opens (cannot spin)"
+else
+  bad "menu: the key reader can still spin on a dead terminal"
 fi
 if grep -qF '\033[%dA' "$TPL" && ! grep -qF '\033[7A' "$TPL" && ! grep -qF '\033[8A' "$TPL"; then
   ok "menu: redraws only the option rows (dynamic offset)"
@@ -705,7 +767,10 @@ mkdir -p "$SB5D/prefix/bin" "$SB5D/home"
 # full-screen agent leaves behind.
 EOF_SETSID=()
 command -v setsid >/dev/null 2>&1 && EOF_SETSID=(setsid)
-out="$(env HOME="$SB5D/home" PREFIX="$SB5D/prefix" PATH="$SB5D/prefix/bin:$PATH" \
+# `timeout` is the real assertion here: a spinning reader burns the CPU forever
+# and the suite would never finish. 20 s is far beyond the ~1 s the EOF path
+# needs (five failed reads plus the re-open attempts).
+out="$(timeout 20 env HOME="$SB5D/home" PREFIX="$SB5D/prefix" PATH="$SB5D/prefix/bin:$PATH" \
   CODEMUX_ROOT="$ROOT" CODEMUX_HOME="$SB5D/state" CODEMUX_ALLOW_NONANDROID=1 \
   OPENCODE_NO_AUTO=1 TMPDIR="$BASE" "${EOF_SETSID[@]}" bash -c '
     C1=""; C2=""; ACC=""; DIM=""; BOLD=""; HL=""; R=""

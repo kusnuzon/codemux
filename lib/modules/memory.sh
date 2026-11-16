@@ -113,8 +113,12 @@ m_memory_probe() {
     PROBE=WARN; NOTE="digest wrapper in ~/.bashrc is missing (added during install)"
     return
   fi
-  if ! grep -q '_oc_tty_repair()' "$HOME/.bashrc" 2>/dev/null; then
-    PROBE=WARN; NOTE="bashrc wrapper predates the V1 XDG guard (updated during install)"
+  if ! codemux_memory_wrapper_current; then
+    PROBE=WARN; NOTE="bashrc wrapper predates the terminal repair (rewritten during install)"
+    return
+  fi
+  if grep -q '^# --- refresh the session summary before opencode starts' "$HOME/.bashrc" 2>/dev/null; then
+    PROBE=WARN; NOTE="legacy opencode-termux wrapper still in .bashrc (removed during install)"
     return
   fi
 
@@ -152,30 +156,34 @@ codemux_memory_ensure_instructions() {
   return 0
 }
 
-# Digest wrapper in ~/.bashrc (shared by V1 & V2).
-codemux_memory_ensure_wrapper() {
-  local rc="$HOME/.bashrc" size bak
-  if codemux_memory_wrapper_present; then
-    codemux_memory_ensure_xdg_guard
-    return 0
-  fi
-  [ -f "$rc" ] || : >"$rc" || return 1
-  bak="$(codemux_backup memory "$rc")" || return 1
-  size="$(wc -c <"$rc" 2>/dev/null || echo 0)"
-  size="${size// /}"
+# Digest wrapper in ~/.bashrc (shared by V1 & V2). The block carries a version
+# marker: the body has to be rewritten whenever it changes, because an older
+# block that is already in the file would keep winning (same function names,
+# first definition is overridden but two copies are dead weight).
+CODEMUX_MEMORY_WRAPPER_VERSION="2"
 
-  cat >>"$rc" <<'EOS'
+codemux_memory_wrapper_body() {
+  cat <<'EOS'
 
 # codemux:memory begin  (managed by codemux — refresh the session summary before opencode)
+# codemux:memory version 2
 _oc_refresh_digest() {
   [ -x "$HOME/.config/opencode/bin/session-digest.py" ] || return 0
   python3 "$HOME/.config/opencode/bin/session-digest.py" >/dev/null 2>&1
 }
 # V1 keeps its own database. Drop the V2 XDG_* values so starting V1 from a V2
 # shell cannot point it at the V2 database ("no session table", blank screen).
+# Also put the terminal back after EVERY agent run: a clean /exit can still
+# leave raw termios or the alternate screen behind, and the shell then looks
+# frozen (keys arrive, nothing echoes). Gating the repair on a failed exit code
+# is not enough. stty reads /dev/tty because stdin can be the broken fd.
 _oc_tty_repair() {
   [ -t 1 ] || return 0
-  stty sane 2>/dev/null
+  if [ -r /dev/tty ]; then
+    stty sane </dev/tty 2>/dev/null
+  else
+    stty sane 2>/dev/null
+  fi
   printf '\033[?1049l\033[?25h\033[0m'
 }
 opencode() {
@@ -183,7 +191,7 @@ opencode() {
   local rc=0
   ( unset XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME; command opencode "$@" )
   rc=$?
-  [ "$rc" -ne 0 ] && _oc_tty_repair
+  _oc_tty_repair
   return "$rc"
 }
 opencode-v2() {
@@ -191,55 +199,72 @@ opencode-v2() {
   local rc=0
   command opencode-v2 "$@"
   rc=$?
-  [ "$rc" -ne 0 ] && _oc_tty_repair
+  _oc_tty_repair
   return "$rc"
 }
 # codemux:memory end
 EOS
+}
 
+codemux_memory_wrapper_current() {
+  grep -q "codemux:memory version $CODEMUX_MEMORY_WRAPPER_VERSION" "$HOME/.bashrc" 2>/dev/null
+}
+
+# Older `opencode-termux` installers appended a markerless copy of this wrapper
+# to ~/.bashrc (header: "--- refresh the session summary ..."). It carries the
+# old "repair only when the exit code is non-zero" behaviour and would keep
+# shadowing nothing but confuse readers, so it is dropped: one definition, one
+# behaviour. awk keeps this to a single pass and cannot touch other blocks.
+codemux_memory_drop_legacy_wrapper() {
+  local rc="$HOME/.bashrc" tmp bak
+  grep -q '^# --- refresh the session summary before opencode starts' "$rc" 2>/dev/null || return 0
+  tmp="$(mktemp)" || return 1
+  awk '
+    /^# --- refresh the session summary before opencode starts/ { skip = 1; next }
+    skip && /^opencode-v2\(\) \{/ { in_v2 = 1; next }
+    skip && in_v2 && /^\}/ { skip = 0; in_v2 = 0; next }
+    !skip { print }
+  ' "$rc" >"$tmp" || { rm -f "$tmp"; return 1; }
+  bak="$(codemux_backup memory "$rc")" || true
+  if ! cp "$tmp" "$rc" 2>/dev/null; then
+    rm -f "$tmp"
+    return 1
+  fi
+  rm -f "$tmp"
   if ! bash -n "$rc" 2>/dev/null; then
-    # restore the original size (we only appended to the tail)
-    truncate -s "$size" "$rc" 2>/dev/null || { [ -n "$bak" ] && cp -a "$bak" "$rc"; }
+    [ -n "$bak" ] && cp -a "$bak" "$rc"
     return 1
   fi
   chmod 600 "$rc" 2>/dev/null || true
   return 0
 }
 
-# Older installs only refresh the digest. Append a guard block further down the
-# file (later definitions win) so V1 starts with its own XDG paths and a crashed
-# TUI restores the terminal instead of leaving a black, unresponsive screen.
-codemux_memory_ensure_xdg_guard() {
-  local rc="$HOME/.bashrc"
-  grep -q '_oc_tty_repair()' "$rc" 2>/dev/null && return 0
-  cat >>"$rc" <<'EOS'
-
-# codemux:memory-xdg begin  (managed by codemux — V1 keeps its own database)
-_oc_tty_repair() {
-  [ -t 1 ] || return 0
-  stty sane 2>/dev/null
-  printf '\033[?1049l\033[?25h\033[0m'
-}
-opencode() {
-  _oc_refresh_digest
-  local rc=0
-  ( unset XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME; command opencode "$@" )
-  rc=$?
-  [ "$rc" -ne 0 ] && _oc_tty_repair
-  return "$rc"
-}
-opencode-v2() {
-  _oc_refresh_digest
-  local rc=0
-  command opencode-v2 "$@"
-  rc=$?
-  [ "$rc" -ne 0 ] && _oc_tty_repair
-  return "$rc"
-}
-# codemux:memory-xdg end
-EOS
-  bash -n "$rc" 2>/dev/null || return 1
+# Replace any marked wrapper block with the current body. The old block is
+# removed first (both the `memory` and the legacy `memory-xdg` variant) so the
+# file keeps exactly one definition.
+codemux_memory_write_wrapper() {
+  local rc="$HOME/.bashrc" bak
+  [ -f "$rc" ] || : >"$rc" || return 1
+  bak="$(codemux_backup memory "$rc")" || return 1
+  sed -i '/^# codemux:memory begin/,/^# codemux:memory end/d' "$rc" 2>/dev/null || true
+  sed -i '/^# codemux:memory-xdg begin/,/^# codemux:memory-xdg end/d' "$rc" 2>/dev/null || true
+  codemux_memory_drop_legacy_wrapper || true
+  codemux_memory_wrapper_body >>"$rc" || return 1
+  if ! bash -n "$rc" 2>/dev/null; then
+    [ -n "$bak" ] && cp -a "$bak" "$rc"
+    return 1
+  fi
   chmod 600 "$rc" 2>/dev/null || true
+  return 0
+}
+
+# Digest wrapper in ~/.bashrc (shared by V1 & V2).
+codemux_memory_ensure_wrapper() {
+  # A wrapper from an older `opencode-termux` install has no marker, so the
+  # rewrite below cannot see it: drop it first, then decide.
+  codemux_memory_drop_legacy_wrapper || true
+  codemux_memory_wrapper_current && return 0
+  codemux_memory_write_wrapper || return 1
   return 0
 }
 
