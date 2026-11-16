@@ -113,9 +113,10 @@ terminal back in a bad state used to break exactly that code.
 | `Ctrl+b d` | detach — everything keeps running |
 | `Ctrl+b [` | scroll back inside a tab |
 
-A missing agent is marked `not installed`; choosing it prints the matching
-`codemux install` command instead of installing anything behind your back. Skip
-tmux and the menu entirely with `OPENCODE_NO_AUTO=1 bash`.
+A missing agent is marked `not installed`; choosing it asks `Install it now?
+[y/N]` and only a `y` runs `codemux install --yes --only <component>` for that
+one component. Any other answer changes nothing and leaves a notice in the
+menu. Skip tmux and the menu entirely with `OPENCODE_NO_AUTO=1 bash`.
 
 Whatever a full-screen agent leaves behind — the alternate screen, mouse
 reporting, bracketed paste, a half-written OSC string, a paused XOFF — is reset

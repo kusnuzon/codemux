@@ -562,13 +562,44 @@ case "$out" in
     ok "menu: a bad answer is rejected without starting anything" ;;
   *) bad "menu: a bad answer was not rejected" ;;
 esac
-# a missing agent is reported, never installed from the menu
-out="$(menu_with '1\n')"
+# a missing agent asks before anything is downloaded
+out="$(menu_with '1\nn\n')"
 case "$out" in
-  *"is not installed"*"run: codemux install"*)
-    ok "menu: choosing a missing agent explains the install command" ;;
+  *"is not installed"*"Install it now? [y/N]"*)
+    ok "menu: choosing a missing agent asks before installing" ;;
   *) bad "menu: missing agent → $(printf '%s' "$out" | tr '\n' ' ' | tail -c 200)" ;;
 esac
+case "$out" in
+  *"is not installed — codemux install --only v1"*)
+    ok "menu: answering n keeps a notice inside the menu" ;;
+  *) bad "menu: answering n left no notice → $(printf '%s' "$out" | tr '\n' ' ' | tail -c 200)" ;;
+esac
+# answering y installs only that component, then puts the saved component list
+# back so the other agent does not turn into SKIP in `codemux check`
+stub="$SB5D/prefix/bin/codemux"
+mkdir -p "$SB5D/prefix/bin" "$SB5D/state"
+printf '#!%s\nprintf "%%s\\n" "$*" >>%s\n' "$(command -v bash)" "$SB5D/install.args" >"$stub"
+chmod +x "$stub"
+printf 'v1 v2\n' >"$SB5D/state/components"
+out="$(menu_with '1\ny\n')"
+args="$(cat "$SB5D/install.args" 2>/dev/null)"
+comps_after="$(cat "$SB5D/state/components" 2>/dev/null)"
+if [ "$args" = "install --yes --only v1" ]; then
+  ok "menu: answering y installs only the chosen component"
+else
+  bad "menu: installer called with '$args'"
+fi
+if [ "$comps_after" = "v1 v2" ]; then
+  ok "menu: the install keeps the saved component list"
+else
+  bad "menu: component list after install = '$comps_after'"
+fi
+case "$out" in
+  *"OpenCode V1 installed"*)
+    ok "menu: a finished install is reported in the menu" ;;
+  *) bad "menu: no install result → $(printf '%s' "$out" | tr '\n' ' ' | tail -c 200)" ;;
+esac
+rm -f "$stub" "$SB5D/install.args" "$SB5D/state/components"
 # quitting inside tmux must close the session, not leave a dead pane behind
 if grep -q 'tmux kill-session' "$MENU" && grep -q 'kill-session -t "\$(tmux display-message' "$MENU"; then
   ok "menu: Quit closes the tmux session it runs in"

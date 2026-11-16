@@ -172,8 +172,10 @@ codemux install --only both   # V1 + V2 (more disk)
   a V1-only device never pulls V2 in; `update-check` omits rows for components
   that are not installed.
 - The startup menu always shows V1 and V2. A missing component is marked
-  "not installed" and selecting it asks for confirmation before installing only
-  that component.
+  "not installed" and selecting it asks `Install it now? [y/N]`; a `y` installs
+  only that component (`codemux install --yes --only <component>`), anything
+  else changes nothing. The saved component list is restored afterwards, so an
+  install from one row never turns the other agent into SKIP.
 
 ### 6B. Progress feedback (never look frozen)
 
@@ -656,8 +658,9 @@ to `~/.config/codemux/menu.sh` (mode `700`, `CM_MENU_VERSION` marker). A startup
   `package.json` in the npx cache). Running `opencode --version` cost 1.2 s on
   every new prompt, so it is never done.
 - `_cm_items` / `_cm_list` — five fixed rows (`v1 v2 pi shell quit`); a missing
-  agent is marked `not installed` and choosing it prints the `codemux install`
-  command. Nothing is installed from the menu.
+  agent is marked `not installed` and choosing it asks `Install it now? [y/N]`.
+  Only `y` runs the installer, and the answer is remembered as a notice line in
+  the list instead of a message that the next redraw wipes away.
 - `_cm_menu_loop` — one typed line per answer (`IFS= read -r`). No single-key
   reader: a TUI can hand the terminal back in raw mode, where one-key reads spin
   on EOF, swallow keys or leave the cursor hidden — the "frozen menu" bug.
@@ -823,8 +826,10 @@ resume 16 · release 7 · adapter 12 · tmuxconf 42 · tabctl 19) |
    missing component stays untouched.
 10. **S10 (menu install)** Given only one component is installed, When the menu
     opens, Then every row is still shown and the missing ones say `not installed`;
-    choosing one prints `codemux install --only <component>` and changes nothing
-    (the menu never installs by itself).
+    choosing one asks `Install it now? [y/N]`. Answering `n` changes nothing and
+    leaves `! <name> is not installed — codemux install --only <component>` in
+    the menu; answering `y` runs `codemux install --yes --only <component>` and
+    reports `! <name> installed` (or the failure with its rc).
 11. **S11 (quota)** Given `quota` is installed and today's usage is below the
     threshold, When the menu opens, Then no quota line appears; Given usage is at
     or above 80 %, Then `⚠ quota N/200 (P%) · run: quota` is printed. Given

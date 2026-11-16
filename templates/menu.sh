@@ -11,7 +11,7 @@
 # Rows are answered by typing a number, never by a single key: a one-key reader
 # needs raw mode and spins on EOF when the terminal comes back raw.
 
-CM_MENU_VERSION="6"
+CM_MENU_VERSION="7"
 
 # Colours are empty when the output is not a terminal or NO_COLOR is set.
 _cm_colors() {
@@ -105,6 +105,9 @@ _cm_list() {
       "$BOLD" "$((i + 1))" "$R" "$BOLD" "$pad" "$R" "$DIM" "${_CM_DESCS[$i]}" "$R"
   done
   printf '  %s───────────────────────────────────────────%s\n' "$DIM" "$R"
+  if [ -n "${_CM_NOTICE:-}" ]; then
+    printf '  %s!%s %s%s%s\n' "$ACC" "$R" "$DIM" "$_CM_NOTICE" "$R"
+  fi
   if [ -n "${_CM_LASTLOG:-}" ]; then
     printf '  %s!%s %slast launch failed — codemux logs --last%s\n' \
       "$ACC" "$R" "$DIM" "$R"
@@ -344,7 +347,48 @@ _cm_pi_bin() {
   return 1
 }
 
-# Run one component. A missing agent is reported, never installed from here.
+# A row whose binary is missing offers to install it. The question is a plain
+# y/N: a stray keypress must never start a download or touch the system.
+_cm_install_prompt() { # <key> <name>
+  local key="$1" name="$2" ans="" rc=0 saved="" compfile
+  printf '\n  %s%s is not installed.%s\n' "$BOLD" "$name" "$R"
+  printf '  %sInstall it now?%s [y/N]: ' "$BOLD" "$R"
+  IFS= read -r ans || ans=""
+  case "$ans" in
+    y | Y | yes | Yes | YES) ;;
+    *)
+      printf '\n'
+      return 1
+      ;;
+  esac
+  printf '\n  %s→ installing %s%s\n\n' "$DIM" "$name" "$R"
+  _cm_tab_title "install $key"
+  # `--only v1|v2` saves the component choice; put the old list back so an
+  # install started from one row never hides the other installed agent from
+  # `codemux check`.
+  compfile="${CODEMUX_HOME:-$HOME/.config/codemux}/components"
+  [ -r "$compfile" ] && saved="$(cat "$compfile" 2>/dev/null)"
+  if command -v codemux >/dev/null 2>&1; then
+    _cm_capture_start
+    codemux install --yes --only "$key"
+    rc=$?
+    _cm_capture_stop
+  else
+    printf '  %scodemux is not in PATH — cannot install%s\n\n' "$ACC" "$R"
+    rc=127
+  fi
+  [ -n "$saved" ] && printf '%s\n' "$saved" >"$compfile" 2>/dev/null
+  _cm_tty_fix
+  _cm_tab_title "menu"
+  if [ "$rc" -eq 0 ]; then
+    _CM_NOTICE="$name installed"
+  else
+    _CM_NOTICE="install of $name failed (rc=$rc) — codemux install --only $key"
+  fi
+  return 0
+}
+
+# Run one component. A missing agent is offered for install, never started.
 _cm_launch() {
   local key="$1" cmd="" name="" rc=0
   case "$key" in
@@ -357,11 +401,13 @@ _cm_launch() {
   _cm_log_start "$key" "$name" "$cmd"
   if [ -z "$cmd" ] || ! command -v "$cmd" >/dev/null 2>&1; then
     _cm_log_finish 127 missing
-    printf '\n  %s%s is not installed%s — run: %scodemux install%s\n' \
-      "$BOLD" "$name" "$R" "$ACC" "$R"
-    printf '  %slogged: %s%s\n\n' "$DIM" "$_CM_LOG" "$R"
+    if _cm_install_prompt "$key" "$name"; then
+      return 0
+    fi
+    _CM_NOTICE="$name is not installed — codemux install --only $key"
     return 1
   fi
+  _CM_NOTICE=""
   _cm_tab_title "$key"
   printf '  %s→ %s%s\n\n' "$DIM" "$name" "$R"
   _cm_capture_start
