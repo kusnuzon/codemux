@@ -68,13 +68,19 @@ fi
 # title is short.
 # Boxed, fixed-width tabs: 20 columns each, so a tap can be mapped to a tab
 # and its own "x" (border on both sides, "+ new tab" on the right of the bar).
-if [ "$(grep -c 'p15:#{window_index}' <<<"$block")" = 2 ] &&
+if [ "$(grep -o 'p16:#{window_index}' <<<"$block" | wc -l)" -eq 4 ] &&
   [ "$(grep -o '✕' <<<"$block" | wc -l)" -eq 4 ] &&
-  [ "$(grep -o '▏' <<<"$block" | wc -l)" -eq 2 ] &&
   grep -qx 'set -g status-left ""' <<<"$block"; then
-  ok "block: boxed fixed-width tabs with their own x and no status-left offset"
+  ok "block: fixed-width tabs with their own x and no status-left offset"
 else
-  bad "block: tab box/border missing"
+  bad "block: tab width/x missing"
+fi
+# A tab has no border glyphs: one background block for the active tab is
+# enough, and drawing lines around every tab doubles them where tabs meet.
+if ! grep -q '▏\|▕' <<<"$block"; then
+  ok "block: tabs draw no box, so neighbouring borders cannot double up"
+else
+  bad "block: border glyphs are back in the tab format"
 fi
 # A comma inside a #{?...} branch ends that branch, so a style code there must
 # write its commas as #, — otherwise the tab renders the literal text
@@ -103,8 +109,9 @@ if grep -q 'set -g window-status-format "#{?#{&&:#{>=:#{window_index},#{@tabstar
   grep -q 'set -g window-status-current-format "#{?#{&&:' <<<"$block" &&
   grep -qx 'set -g @tabstart 0' <<<"$block" &&
   [ "$(grep -o 'e|+|:#{@tabstart},3' <<<"$block" | wc -l)" -eq 2 ] &&
-  [ "$(grep -o 'ff6b6b' <<<"$block" | wc -l)" -eq 4 ]; then
-  ok "block: one page of three tabs, swipe offset and red pending tab"
+  [ "$(grep -o '=12:window_name' <<<"$block" | wc -l)" -eq 4 ] &&
+  [ "$(grep -o 'ff6b6b' <<<"$block" | wc -l)" -eq 2 ]; then
+  ok "block: one page of three tabs, names cut to their slot, red pending tab"
 else
   bad "block: tab paging/conditional format missing"
 fi
