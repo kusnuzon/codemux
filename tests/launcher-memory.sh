@@ -488,6 +488,16 @@ if grep -qx 'set-option -t pi status-right  + new tab ' "$SB6/tmux.calls" &&
 else
   bad "menu: touch bindings are '$(grep -E 'status-right|MouseDown|MouseDrag|@tabstart' "$SB6/tmux.calls" 2>/dev/null | tr '\n' ';' | cut -c1-2000)"
 fi
+# A run-shell command that ends with a failing test makes tmux print the whole
+# command in the message line ("'%s' returned %d"), which looked like a broken
+# tab. Every touch binding must end with an explicit `exit 0`.
+if grep -q "MouseDown1Status \"run-shell -b '.*; fi; exit 0'\"" "$TPL" &&
+  grep -q "MouseDown1StatusRight \"run-shell -b '.*; fi; exit 0'\"" "$TPL" &&
+  grep -q "MouseDrag1Status \"run-shell -b '.*; exit 0'\"" "$TPL"; then
+  ok "menu: touch bindings end with exit 0 (a failing tail would print the script in tmux's message line)"
+else
+  bad "menu: touch binding tails are '$(grep -E 'MouseDown1Status|MouseDown1StatusRight|MouseDrag1Status' "$TPL" | rev | cut -c1-40 | rev | tr '\n' ';')"
+fi
 rm -f "$SB6/tmux.session"
 : >"$SB6/tmux.calls"
 menu_launch "$SB6" pitmux "$SB6/tmux-1,1,1"
