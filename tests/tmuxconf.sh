@@ -66,21 +66,30 @@ else
 fi
 # Fixed-width tabs keep the tap target big enough for a finger even when a
 # title is short.
-# Boxed, fixed-width tabs: 20 columns each, so a tap can be mapped to a tab
-# and its own "x" (border on both sides, "+ new tab" on the right of the bar).
-if [ "$(grep -o 'p16:#{window_index}' <<<"$block" | wc -l)" -eq 4 ] &&
+# Fixed-width tabs: 20 columns each, so a tap can be mapped to a tab and its
+# own "x" ("+ new tab" sits on the right of the bar).
+if [ "$(grep -o 'p15:#{window_index}' <<<"$block" | wc -l)" -eq 4 ] &&
   [ "$(grep -o '✕' <<<"$block" | wc -l)" -eq 4 ] &&
   grep -qx 'set -g status-left ""' <<<"$block"; then
   ok "block: fixed-width tabs with their own x and no status-left offset"
 else
   bad "block: tab width/x missing"
 fi
-# A tab has no border glyphs: one background block for the active tab is
-# enough, and drawing lines around every tab doubles them where tabs meet.
-if ! grep -q '▏\|▕' <<<"$block"; then
-  ok "block: tabs draw no box, so neighbouring borders cannot double up"
+# No box glyphs: drawing ▏…▕ around every tab doubles the lines where two tabs
+# meet. A single separator in the last column of an inactive tab marks the edge
+# instead, and the active tab drops it (its background already marks it).
+if ! grep -q '▏\|▕' <<<"$block" &&
+  [ "$(grep -o '│' <<<"$block" | wc -l)" -eq 2 ]; then
+  ok "block: one separator per inactive tab, on its edge, none on the active tab"
 else
-  bad "block: border glyphs are back in the tab format"
+  bad "block: tab separators are wrong (doubled box or missing edge line)"
+fi
+# #{?cond,then,else,} with a fourth, empty field breaks a nested conditional:
+# tmux then renders nothing and the whole strip disappears.
+if grep -q 'set -g window-status.*-format ".*,}"$' <<<"$block"; then
+  bad "block: a tab format ends in ,} (four-field conditional renders nothing)"
+else
+  ok "block: tab formats close with three-field conditionals"
 fi
 # A comma inside a #{?...} branch ends that branch, so a style code there must
 # write its commas as #, — otherwise the tab renders the literal text
@@ -110,7 +119,7 @@ if grep -q 'set -g window-status-format "#{?#{&&:#{>=:#{window_index},#{@tabstar
   grep -qx 'set -g @tabstart 0' <<<"$block" &&
   [ "$(grep -o 'e|+|:#{@tabstart},3' <<<"$block" | wc -l)" -eq 2 ] &&
   [ "$(grep -o '=12:window_name' <<<"$block" | wc -l)" -eq 4 ] &&
-  [ "$(grep -o 'ff6b6b' <<<"$block" | wc -l)" -eq 2 ]; then
+  [ "$(grep -o 'ff6b6b' <<<"$block" | wc -l)" -eq 3 ]; then
   ok "block: one page of three tabs, names cut to their slot, red pending tab"
 else
   bad "block: tab paging/conditional format missing"
