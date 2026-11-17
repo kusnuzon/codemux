@@ -574,6 +574,96 @@ case "$out" in
     ok "menu: a bad answer is rejected without starting anything" ;;
   *) bad "menu: a bad answer was not rejected" ;;
 esac
+# A 25-digit number overflows `[`'s integer parse; it must get the same
+# rejection notice as any other junk, not be swallowed silently. The trailing
+# q must still quit, proving the loop did not derail.
+out="$(menu_with '99999999999999999999999999\nq\n')"
+case "$out" in
+  *"type a number from 1 to"*"menu rc=1"*)
+    ok "menu: an overflowing number is rejected like any other junk" ;;
+  *) bad "menu: an overflowing number was swallowed silently" ;;
+esac
+# Ctrl+C must cancel the answer, not kill the tab. On a real tty a SIGINT
+# kills a bash whose `read` has no trap armed (a fifo kill -INT does NOT
+# reproduce this: bash defers the signal there), so drive the menu on a pty
+# and send a real ^C, exactly like the terminal does.
+intpy="$BASE/menu-int.py"
+cat >"$intpy" <<'PYEOF'
+import os, pty, re, select, sys, time, shutil
+menu, home, prefix, state, root = sys.argv[1:6]
+env = dict(os.environ)
+for k in ("TMUX", "TMUX_PANE", "XDG_CONFIG_HOME"):
+    env.pop(k, None)
+env.update(HOME=home, PREFIX=prefix, CODEMUX_ROOT=root, CODEMUX_HOME=state,
+           CODEMUX_ALLOW_NONANDROID="1", OPENCODE_NO_AUTO="1")
+pid, fd = pty.fork()
+if pid == 0:
+    # menu path must be $1, never $0: menu.sh auto-runs when $0 equals its
+    # own BASH_SOURCE, which would nest a second menu loop inside the test.
+    os.execve(shutil.which("bash"), ["bash", "-c",
+        'C1=""; C2=""; ACC=""; DIM=""; BOLD=""; R=""; . "$1"; '
+        '_cm_menu_loop; printf "\\nMENU-INT-EXIT rc=%s\\n" "$?"', "_", menu], env)
+buf = b""
+
+def clean():
+    return re.sub(rb"\x1b\[[0-9;]*m", b"", buf)
+
+def drain(secs):
+    """Read the pty for up to `secs`; False once the child is gone."""
+    global buf
+    end = time.time() + secs
+    while time.time() < end:
+        r, _, _ = select.select([fd], [], [], 0.1)
+        if r:
+            try:
+                d = os.read(fd, 4096)
+            except OSError:
+                return False
+            if not d:
+                return False
+            buf += d
+    return True
+
+end = time.time() + 10
+while time.time() < end:
+    if not drain(0.3):
+        break
+    if b"Choice" in clean():
+        break
+else:
+    print("NO-PROMPT")
+    sys.exit(1)
+buf = b""
+os.write(fd, b"\x03")            # a real ^C: the tty line discipline sends SIGINT
+time.sleep(0.6)
+if os.waitpid(pid, os.WNOHANG)[0] != 0:
+    print("DIED-ON-INT")
+    sys.exit(2)
+os.write(fd, b"q\r")             # pty Enter is \r; icrnl turns it into \n
+deadline = time.time() + 10
+while time.time() < deadline:
+    # check the buffer BEFORE acting on EOF: the child prints MENU-INT-EXIT
+    # and exits immediately, so the next drain often reports EOF first
+    got = drain(0.3)
+    if b"MENU-INT-EXIT" in buf:
+        sys.exit(0 if b"rc=1" in buf else 4)
+    if not got:
+        break
+print("NO-EXIT")
+sys.exit(5)
+PYEOF
+intrc=0
+timeout 30 python3 "$intpy" "$MENU" "$SB5D/home" "$SB5D/prefix" \
+  "$SB5D/state" "$ROOT" >"$BASE/menu-int.out" 2>&1 || intrc=$?
+case "$intrc" in
+  0)
+    ok "menu: Ctrl+C cancels the answer, the menu redraws and quits cleanly" ;;
+  2)
+    bad "menu: Ctrl+C killed the whole menu ($(cat "$BASE/menu-int.out"))" ;;
+  *)
+    bad "menu: Ctrl+C flow broken rc=$intrc ($(cat "$BASE/menu-int.out"))" ;;
+esac
+rm -f "$intpy" "$BASE/menu-int.out"
 # a missing agent asks before anything is downloaded
 out="$(menu_with '1\nn\n')"
 case "$out" in

@@ -11,7 +11,7 @@
 # Rows are answered by typing a number, never by a single key: a one-key reader
 # needs raw mode and spins on EOF when the terminal comes back raw.
 
-CM_MENU_VERSION="10"
+CM_MENU_VERSION="11"
 
 # Colours are empty when the output is not a terminal or NO_COLOR is set.
 _cm_colors() {
@@ -517,6 +517,13 @@ _cm_quit() {
 # Ctrl+C (rc > 128) only cancels the answer.
 _cm_menu_loop() {
   local choice rc key
+  # A bare SIGINT kills the whole shell while `read` is waiting on a tty, so
+  # Ctrl+C would close the tab. With any trap armed bash survives; bash 5.3
+  # runs the trap at once but then RESUMES the read (the `rc > 128` branch
+  # below stays unreachable), and the tty line discipline has already flushed
+  # whatever was typed — so print a newline and let the user answer fresh.
+  # The trap is removed on every way out of the menu.
+  trap 'printf "\n"' INT
   _cm_tab_title "menu"
   while :; do
     _cm_items
@@ -533,16 +540,20 @@ _cm_menu_loop() {
       continue
     fi
     if [ "$rc" -ne 0 ]; then
+      trap - INT
       printf '\n'
       return 1
     fi
     choice="${choice//[[:space:]]/}"
     case "$choice" in
       '') continue ;;
-      q | Q | quit | exit) printf '\n'; return 1 ;;
+      q | Q | quit | exit) trap - INT; printf '\n'; return 1 ;;
     esac
+    # Ten or more digits overflow `[`'s integer parse ("integer expression
+    # expected"), which made the range check silently pass and the menu
+    # continue without any notice — cap the length like any other junk.
     case "$choice" in
-      *[!0-9]*) choice=0 ;;
+      *[!0-9]* | ??????????*) choice=0 ;;
     esac
     if [ "$choice" -lt 1 ] || [ "$choice" -gt "$_CM_COUNT" ]; then
       # Printed inside the rows, not before `continue`: the loop clears the
@@ -557,10 +568,11 @@ _cm_menu_loop() {
         _cm_tab_title "shell"
         _cm_tty_fix
         # inside a tmux pane an interactive shell keeps the tab alive
-        if [ -t 0 ] && [ -t 1 ]; then exec bash -i; fi
+        if [ -t 0 ] && [ -t 1 ]; then trap - INT; exec bash -i; fi
+        trap - INT
         return 0
         ;;
-      quit) _cm_quit; return 1 ;;
+      quit) trap - INT; _cm_quit; return 1 ;;
     esac
   done
 }
