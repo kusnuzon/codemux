@@ -1,5 +1,5 @@
 # codemux:launcher begin  (managed by codemux — do not edit by hand)
-# codemux:launcher version 36
+# codemux:launcher version 37
 # Opening Termux goes straight into one tmux session: the tab strip sits on top,
 # every tab runs the codemux menu (~/.config/codemux/menu.sh), `Ctrl+b c` adds a
 # tab, `Ctrl+b d` detaches and the agent keeps running.
@@ -21,7 +21,15 @@ _oc_tmux_enter() {
   if tmux has-session -t main 2>/dev/null; then
     exec tmux attach-session -t main
   fi
-  tmux new-session -d -s main "$_oc_menu_cmd" 2>/dev/null || return 1
+  # Size the detached session to THIS terminal. The menu draws before any
+  # client attaches; a detached session defaults to 80x24, so attaching a
+  # bigger/smaller Termux window resized the pane and tmux pushed the whole
+  # menu into history — blank screen, no `Choice:` prompt (first load only).
+  # Height is LINES-1 because the client's status line takes one row: without
+  # the correction every attach still resized the pane by exactly one line.
+  tmux new-session -d -s main \
+    -x "${COLUMNS:-80}" -y "$(( ${LINES:-25} - 1 ))" \
+    "$_oc_menu_cmd" 2>/dev/null || return 1
   tmux set-option -t main default-command "$_oc_menu_cmd" 2>/dev/null
   tmux set-option -t main automatic-rename off 2>/dev/null
   tmux rename-window -t main:0 'menu' 2>/dev/null

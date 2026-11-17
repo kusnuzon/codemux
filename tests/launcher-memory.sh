@@ -417,6 +417,17 @@ if ! grep -q 'opencode --version' "$TPL" && ! grep -q 'free-pi-cli --version' "$
 else
   bad "block: .bashrc still starts an agent"
 fi
+# The detached session must be created at the attaching terminal's size: a
+# detached session defaults to 80x24, and attaching a differently sized
+# Termux window then resizes the pane, which pushes the just-drawn menu into
+# history (blank screen, no `Choice:` prompt) on first load.
+if grep -q 'new-session -d -s main' "$TPL" &&
+  grep -q -- '-x "${COLUMNS:-80}"' "$TPL" &&
+  grep -q -- '-y "$(( ${LINES:-25} - 1 ))"' "$TPL"; then
+  ok "block: the detached session is sized to the attaching terminal (status row spared)"
+else
+  bad "block: new-session is not sized (-x/-y-1) — first-load menu blanks on attach"
+fi
 # The commands the rest of the system relies on: pi/memory wrappers call
 # _oc_tty_fix, and `menu` / `version` / `fixterm` stay available.
 for fn in _oc_tty_fix fixterm menu version; do
@@ -429,10 +440,10 @@ else
 fi
 
 # --- the menu script itself --------------------------------------------------
-if grep -q 'IFS= read -e -r choice' "$MENU" && ! grep -q 'read -rsn1' "$MENU"; then
-  ok "menu: one typed line per answer, arrows handled by readline"
+if grep -q 'read -e -r -p "$prompt" choice' "$MENU" && ! grep -q 'read -rsn1' "$MENU"; then
+  ok "menu: one typed line per answer, arrows handled by readline, prompt owned by readline"
 else
-  bad "menu: arrow keys would leak raw ESC[A bytes (need read -e)"
+  bad "menu: arrow keys would leak raw ESC[A bytes or the prompt is not readline-owned (need read -e -p)"
 fi
 if grep -q '█▀▀█' "$MENU" && grep -q 'Termux · Android arm64' "$MENU"; then
   ok "menu: banner kept (art + version line)"

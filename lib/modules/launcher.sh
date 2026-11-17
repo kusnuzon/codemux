@@ -3,8 +3,8 @@
 # module: launcher — tmux auto-start in ~/.bashrc + the menu script
 # (~/.config/codemux/menu.sh). Bump when either file changes in a way users
 # should receive on `install`.
-CODEMUX_LAUNCHER_BLOCK_VERSION="36"
-CODEMUX_MENU_SCRIPT_VERSION="12"
+CODEMUX_LAUNCHER_BLOCK_VERSION="37"
+CODEMUX_MENU_SCRIPT_VERSION="13"
 
 codemux_menu_script() { printf '%s' "$HOME/.config/codemux/menu.sh"; }
 

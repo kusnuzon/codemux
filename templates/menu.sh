@@ -11,7 +11,7 @@
 # Rows are answered by typing a number, never by a single key: a one-key reader
 # needs raw mode and spins on EOF when the terminal comes back raw.
 
-CM_MENU_VERSION="12"
+CM_MENU_VERSION="13"
 
 # Colours are empty when the output is not a terminal or NO_COLOR is set.
 _cm_colors() {
@@ -516,7 +516,7 @@ _cm_quit() {
 # Print the rows, read one line, act. A dead stdin (EOF) or `q` leaves the menu;
 # Ctrl+C (rc > 128) only cancels the answer.
 _cm_menu_loop() {
-  local choice rc key
+  local choice rc key prompt
   # A bare SIGINT kills the whole shell while `read` is waiting on a tty, so
   # Ctrl+C would close the tab. With any trap armed bash survives; bash 5.3
   # runs the trap at once but then RESUMES the read (the `rc > 128` branch
@@ -531,12 +531,24 @@ _cm_menu_loop() {
     printf '\033[2J\033[H'
     _cm_banner
     _cm_list
-    printf '  %sChoice%s: ' "$BOLD" "$R"
+    # On a tty the prompt belongs to readline (`-p`): readline repaints prompt
+    # and input on SIGWINCH, so a resize while the menu waits (client attach,
+    # device rotation) can no longer wipe the `Choice:` line. Without a tty
+    # readline is not used and `-p` would print nothing, so print the prompt
+    # by hand there. \001/\002 mark the color escapes invisible to readline's
+    # column math.
+    prompt="  ${BOLD}Choice${R}: "
+    [ -n "$BOLD" ] && prompt=$'  \001'"$BOLD"$'\002Choice\001'"$R"$'\002: '
     choice=""
-    # `-e` routes the read through readline, so arrow keys edit the line
-    # instead of leaking raw `ESC[A` bytes into the answer (the tty echoes
-    # them as ^[[A in plain canonical mode).
-    IFS= read -e -r choice
+    if [ -t 0 ]; then
+      # `-e` routes the read through readline, so arrow keys edit the line
+      # instead of leaking raw `ESC[A` bytes into the answer (the tty echoes
+      # them as ^[[A in plain canonical mode).
+      IFS= read -e -r -p "$prompt" choice
+    else
+      printf '%s' "$prompt"
+      IFS= read -r choice
+    fi
     rc=$?
     if [ "$rc" -gt 128 ]; then
       printf '\n'
