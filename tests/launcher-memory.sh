@@ -520,7 +520,7 @@ mkdir -p "$SB5D/prefix/bin" "$SB5D/home"
 # reader that spins on EOF burns the CPU and the suite would never finish.
 menu_with() { # <stdin text> → "rc=<status>"
   local input="$1"
-  printf '%b' "$input" | timeout 20 env -u TMUX -u TMUX_PANE \
+  printf '%b' "$input" | timeout 20 env -u TMUX -u TMUX_PANE -u XDG_CONFIG_HOME \
     HOME="$SB5D/home" PREFIX="$SB5D/prefix" \
     PATH="$SB5D/prefix/bin:$PATH" CODEMUX_ROOT="$ROOT" CODEMUX_HOME="$SB5D/state" \
     CODEMUX_ALLOW_NONANDROID=1 OPENCODE_NO_AUTO=1 TMPDIR="$BASE" bash -c '

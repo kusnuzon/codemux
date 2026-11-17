@@ -111,14 +111,12 @@ else
 fi
 # Every binding runs the handler script and ends with `exit 0`; a run-shell that
 # fails makes tmux print the whole script over the status bar.
-for key in MouseDown1Status; do
-  line="$(grep "^bind-key -n $key " <<<"$block" || true)"
-  if grep -q 'codemux/tabctl.sh' <<<"$line" && grep -q 'exit 0' <<<"$line"; then
-    ok "block: $key runs tabctl.sh and exits 0"
-  else
-    bad "block: $key binding is wrong"
-  fi
-done
+line="$(grep '^bind-key -n MouseDown1Status ' <<<"$block" || true)"
+if grep -q 'codemux/tabctl.sh' <<<"$line" && grep -q 'exit 0' <<<"$line"; then
+  ok "block: MouseDown1Status runs tabctl.sh and exits 0"
+else
+  bad "block: MouseDown1Status binding is wrong"
+fi
 # MouseDown1StatusRight used to bind the "+" button, but the button moved onto
 # the last tab (a user|new range inside the window list) and status-right is
 # empty — a binding for a zero-width region can never fire.
