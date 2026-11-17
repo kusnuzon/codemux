@@ -11,7 +11,7 @@
 # Rows are answered by typing a number, never by a single key: a one-key reader
 # needs raw mode and spins on EOF when the terminal comes back raw.
 
-CM_MENU_VERSION="11"
+CM_MENU_VERSION="12"
 
 # Colours are empty when the output is not a terminal or NO_COLOR is set.
 _cm_colors() {
@@ -533,7 +533,10 @@ _cm_menu_loop() {
     _cm_list
     printf '  %sChoice%s: ' "$BOLD" "$R"
     choice=""
-    IFS= read -r choice
+    # `-e` routes the read through readline, so arrow keys edit the line
+    # instead of leaking raw `ESC[A` bytes into the answer (the tty echoes
+    # them as ^[[A in plain canonical mode).
+    IFS= read -e -r choice
     rc=$?
     if [ "$rc" -gt 128 ]; then
       printf '\n'

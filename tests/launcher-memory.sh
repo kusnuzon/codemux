@@ -429,10 +429,10 @@ else
 fi
 
 # --- the menu script itself --------------------------------------------------
-if grep -q 'IFS= read -r choice' "$MENU" && ! grep -q 'read -rsn1' "$MENU"; then
-  ok "menu: one typed line per answer (no single-key reader)"
+if grep -q 'IFS= read -e -r choice' "$MENU" && ! grep -q 'read -rsn1' "$MENU"; then
+  ok "menu: one typed line per answer, arrows handled by readline"
 else
-  bad "menu: a single-key reader is present"
+  bad "menu: arrow keys would leak raw ESC[A bytes (need read -e)"
 fi
 if grep -q '█▀▀█' "$MENU" && grep -q 'Termux · Android arm64' "$MENU"; then
   ok "menu: banner kept (art + version line)"
