@@ -47,21 +47,30 @@ First install asks for a number — no arrow keys:
 ```
 Which OpenCode should be installed?
 
-    1) OpenCode V2 only — new, separate DB (default)
-    2) OpenCode V1 only — stable, legacy DB
-    3) Both — V1 + V2 (more disk)
+    1) Free-pi (Pi) only — free models, no payload download (default)
+    2) OpenCode V2 only — new, separate DB
+    3) OpenCode V1 only — stable, legacy DB
+    4) Both — V1 + V2 (more disk)
 
-  Number [1-3, Enter = 1, q = cancel]:
+  Number [1-4, Enter = 1, q = cancel]:
 ```
 
-- Type `1`-`3` and press Enter (Enter alone takes the default) · `q` cancels
+- Type `1`-`4` and press Enter (Enter alone takes the default) · `q` cancels
 - The answer is saved in `~/.config/codemux/components` and reused later
-- Skipping the picker (CI, `curl | bash`): saved choice, default `v2`
+- Skipping the picker (CI, `curl | bash`): saved choice, default `pi` (Free-pi only,
+no OpenCode payload is downloaded unless you pick 2-4)
+
+The `pi` module always runs, whatever you pick. Besides the `pi` command and
+the terminal-repair wrapper it installs the managed free-pi config from this
+repo (`templates/pi/`): the default model `glm-5.3-flash` (written only when
+missing — your own `Ctrl+S` choice is never overwritten), the extensions
+`thinking-medium`, `theme-amoled-calm` and `tmux-tab-title`, and the
+`amoled-calm` theme. Drifting copies are restored on every install.
 
 Non-interactive:
 
 ```bash
-… | bash -s -- --only v2     # V2 only (default, least disk)
+… | bash -s -- --only pi     # Free-pi only (default, least disk)
 … | bash -s -- --only v1     # V1 only (V2 is never touched)
 … | bash -s -- --only both   # V1 + V2 (more disk)
 ```

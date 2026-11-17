@@ -22,7 +22,8 @@ codemux_in_list() {
 codemux_components_ask() {
   local ans i
   local -a labels=(
-    "OpenCode V2 only — new, separate DB (default)"
+    "Free-pi (Pi) only — free models, no payload download (default)"
+    "OpenCode V2 only — new, separate DB"
     "OpenCode V1 only — stable, legacy DB"
     "Both — V1 + V2 (more disk)"
   )
@@ -35,17 +36,18 @@ codemux_components_ask() {
   printf '\n' >&2
 
   while :; do
-    printf '  %sNumber [1-3, Enter = 1, q = cancel]%s: ' "$C_DIM" "$C_R" >&2
+    printf '  %sNumber [1-4, Enter = 1, q = cancel]%s: ' "$C_DIM" "$C_R" >&2
     ans=""
     IFS= read -r ans || { printf '\n' >&2; return 1; }
     ans="${ans//[[:space:]]/}"
     case "$ans" in
-      '' | 1) printf 'v2'; return 0 ;;
-      2) printf 'v1'; return 0 ;;
-      3) printf 'v1 v2'; return 0 ;;
+      '' | 1) printf 'pi'; return 0 ;;
+      2) printf 'v2'; return 0 ;;
+      3) printf 'v1'; return 0 ;;
+      4) printf 'v1 v2'; return 0 ;;
       q | Q) printf '\n' >&2; return 1 ;;
     esac
-    printf '  %stype 1, 2 or 3, or q%s\n' "$C_DIM" "$C_R" >&2
+    printf '  %stype a number from 1 to 4, or q%s\n' "$C_DIM" "$C_R" >&2
   done
 }
 

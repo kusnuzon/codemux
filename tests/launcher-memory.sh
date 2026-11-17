@@ -1219,6 +1219,57 @@ else
   bad "--only v2 did not save the choice ('$(cat "$SB5D/state/components" 2>/dev/null)')"
 fi
 
+# =============================================================================
+# 5e. managed free-pi config: default model + extensions + theme
+# =============================================================================
+# codemux ships canonical free-pi config (templates/pi/): the preferred default
+# model, three extensions and the amoled-calm theme. default-model.json is
+# written ONLY when missing (the user's Ctrl+S choice must survive an install);
+# the extensions/theme are managed and restored when they drift.
+SB5E="$(new_sandbox pi-config)"
+printf '#!/bin/sh\necho free-pi-cli 0.6.22\n' >"$SB5E/prefix/bin/free-pi-cli"
+chmod +x "$SB5E/prefix/bin/free-pi-cli"
+PATH="$SB5E/prefix/bin:$PATH" run_cm "$SB5E" install --yes --only pi --skip "$SKIP_ONLY_PI" \
+  >"$SB5E/out.log" 2>&1 || true
+PI_DIR="$SB5E/home/.free-pi/agent"
+if [ -f "$PI_DIR/default-model.json" ] && grep -q 'glm-5.3-flash' "$PI_DIR/default-model.json"; then
+  ok "fresh install writes the default model (glm-5.3-flash)"
+else
+  bad "default-model.json not written on a fresh install"
+fi
+n_ext=0
+for f in thinking-medium theme-amoled-calm tmux-tab-title; do
+  [ -f "$PI_DIR/extensions/$f.ts" ] && grep -q 'managed-by: codemux' "$PI_DIR/extensions/$f.ts" && n_ext=$((n_ext + 1))
+done
+if [ "$n_ext" -eq 3 ]; then
+  ok "the three managed extensions are installed with markers"
+else
+  bad "expected 3 managed extensions, found $n_ext"
+fi
+if [ -f "$PI_DIR/themes/amoled-calm.json" ]; then
+  ok "the amoled-calm theme is installed"
+else
+  bad "themes/amoled-calm.json missing"
+fi
+# The user's own model choice survives a re-install.
+printf '{"provider":"free-pi","model":"kimi-k3.1-pro"}\n' >"$PI_DIR/default-model.json"
+PATH="$SB5E/prefix/bin:$PATH" run_cm "$SB5E" install --yes --only pi --skip "$SKIP_ONLY_PI" \
+  >"$SB5E/out2.log" 2>&1 || true
+if grep -q 'kimi-k3.1-pro' "$PI_DIR/default-model.json"; then
+  ok "the user's model choice is never overwritten"
+else
+  bad "default-model.json was overwritten by install"
+fi
+# A drifted managed extension is restored from the canonical copy.
+echo 'drifted' >"$PI_DIR/extensions/thinking-medium.ts"
+PATH="$SB5E/prefix/bin:$PATH" run_cm "$SB5E" install --yes --only pi --skip "$SKIP_ONLY_PI" \
+  >"$SB5E/out3.log" 2>&1 || true
+if grep -q 'managed-by: codemux' "$PI_DIR/extensions/thinking-medium.ts"; then
+  ok "a drifted extension is restored from the canonical copy"
+else
+  bad "drifted extension was not restored"
+fi
+
 rm -rf "$SANDBOX_ROOT"
 printf '\n%s passed · %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

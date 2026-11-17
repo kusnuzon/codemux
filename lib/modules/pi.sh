@@ -8,6 +8,35 @@
 # Where free-pi keeps its state when it is installed normally.
 CODEMUX_PI_DIR="${PI_CODING_AGENT_DIR:-$HOME/.free-pi/agent}"
 
+# Managed free-pi config, canonical copies in $CODEMUX_ROOT/templates/pi.
+# - default-model.json is written ONLY when missing: the user's own choice
+#   (Ctrl+S in /model) must never be overwritten by an install.
+# - extensions/ and themes/ are managed: rewritten when they differ from the
+#   canonical copy (they carry a managed marker comment).
+CODEMUX_PI_MANAGED=("extensions/thinking-medium.ts" "extensions/theme-amoled-calm.ts" "extensions/tmux-tab-title.ts" "themes/amoled-calm.json")
+
+# Prints the managed config entries that are missing or stale (relative paths,
+# plus the literal "default-model.json" when the model choice is absent).
+codemux_pi_config_missing() {
+  local rel src dst
+  [ -f "$CODEMUX_ROOT/templates/pi/default-model.json" ] || return 0
+  [ -f "$CODEMUX_PI_DIR/default-model.json" ] || printf '%s\n' "default-model.json"
+  for rel in "${CODEMUX_PI_MANAGED[@]}"; do
+    src="$CODEMUX_ROOT/templates/pi/$rel"
+    dst="$CODEMUX_PI_DIR/$rel"
+    [ -f "$src" ] || continue
+    if [ ! -f "$dst" ] || ! cmp -s "$src" "$dst"; then printf '%s\n' "$rel"; fi
+  done
+}
+
+# Copy one canonical config file into the agent dir.
+codemux_pi_config_put() { # <relative-path>
+  local rel="$1" dir
+  dir="$CODEMUX_PI_DIR/$(dirname "$rel")"
+  mkdir -p "$dir" 2>/dev/null || return 1
+  cp "$CODEMUX_ROOT/templates/pi/$rel" "$CODEMUX_PI_DIR/$rel" 2>/dev/null || return 1
+}
+
 # Version of the managed wrapper block. Bumped whenever the block below changes:
 # the probe compares the marker inside ~/.bashrc with this number, so an older
 # block is rewritten on the next install instead of being left in place.
@@ -122,7 +151,16 @@ m_pi_probe() {
     PROBE=WARN; NOTE="the pi wrapper points at a different command"; return
   fi
   if [ -d "$CODEMUX_PI_DIR" ]; then
-    PROBE=OK; NOTE="pi + wrapper · $CODEMUX_PI_DIR"
+    local miss
+    miss="$(codemux_pi_config_missing | tr '\n' ' ' | sed 's/ *$//')"
+    if [ -n "$miss" ]; then
+      PROBE=WARN
+      NOTE="pi + wrapper · managed config missing/stale: $miss"
+      return
+    fi
+    local model="?"
+    model="$(sed -n 's/.*"model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CODEMUX_PI_DIR/default-model.json" 2>/dev/null | head -n 1)"
+    PROBE=OK; NOTE="pi + wrapper · model ${model:-?} · $CODEMUX_PI_DIR"
   else
     PROBE=WARN; NOTE="pi + wrapper · no agent dir yet (created on first start)"
   fi
@@ -144,11 +182,39 @@ m_pi_apply() {
     return 1
   fi
 
+  # Managed free-pi config comes FIRST: it must exist before the very first
+  # `pi` start, so session #1 already uses the preferred model and extensions.
+  # default-model.json is written only when missing — the user's own choice
+  # (Ctrl+S in /model) is never overwritten.
+  if [ -d "$CODEMUX_ROOT/templates/pi" ]; then
+    if [ ! -f "$CODEMUX_PI_DIR/default-model.json" ] &&
+      [ -f "$CODEMUX_ROOT/templates/pi/default-model.json" ]; then
+      if codemux_pi_config_put "default-model.json"; then
+        made+=("default model")
+      else
+        APPLY_NOTE="cannot write $CODEMUX_PI_DIR/default-model.json"
+        return 1
+      fi
+    fi
+    local rel
+    for rel in "${CODEMUX_PI_MANAGED[@]}"; do
+      [ -f "$CODEMUX_ROOT/templates/pi/$rel" ] || continue
+      if [ ! -f "$CODEMUX_PI_DIR/$rel" ] || ! cmp -s "$CODEMUX_ROOT/templates/pi/$rel" "$CODEMUX_PI_DIR/$rel"; then
+        if codemux_pi_config_put "$rel"; then
+          made+=("$rel")
+        else
+          APPLY_NOTE="cannot write $CODEMUX_PI_DIR/$rel"
+          return 1
+        fi
+      fi
+    done
+  fi
+
   if [ -z "$(codemux_pi_bin)" ] && [ ! -f "$HOME/.bashrc.pi.bak" ]; then
     # Installing free-pi non-interactively would download ~40 MB and then sit
     # waiting for a login, which an installer must not do. Print the exact
     # command instead; the menu asks for confirmation before running it.
-    APPLY_NOTE="pi is not installed yet — run it once to fetch it: npx -y free-pi-cli@latest"
+    APPLY_NOTE="free-pi not fetched yet${made[*]:+ (config written: ${made[*]})} — run it once: npx -y free-pi-cli@latest"
     return 0
   fi
 

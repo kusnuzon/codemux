@@ -113,8 +113,8 @@ commands:
 install options:
   --dry-run          show the plan, change nothing
   --fresh            start from step 1 (do not resume)
-  --only v2|v1|both  OpenCode V2 only (default), V1 only, or both (default: ask,
-                     or keep the saved choice; non-interactive → v2)
+  --only v2|v1|both|pi  which agents to install (default: ask, or keep the saved
+                     choice; non-interactive → pi = Free-pi only)
   --components X     same as --only
   --skip a,b         skip modules (deps,mirror,storage,toolset,glibc,v1,v2,
                      launcher,dotfiles,memory,self)
@@ -142,22 +142,28 @@ Environment knobs: `CODEMUX_HOME` (default `~/.config/codemux`),
 `CODEMUX_PROGRESS`, `CODEMUX_ALLOW_NONANDROID` + `CODEMUX_NO_APT_CHECK` (tests),
 `CODEMUX_FAKE_TAG_*` / `CODEMUX_FAKE_LOCAL_*` (tests).
 
-### 6A. Component selection (V1 only / V2 only / both)
+### 6A. Component selection (Free-pi / V1 / V2 / both)
 
 The user picks which OpenCode to install; every shared dependency is installed
 either way, so any choice works on a fresh Termux.
 
 ```
-codemux install --only v2     # OpenCode V2 only (default)
+codemux install --only pi     # Free-pi only (default; no payload download)
+codemux install --only v2     # OpenCode V2 only
 codemux install --only v1     # OpenCode V1 only (V2 is not touched)
 codemux install --only both   # V1 + V2 (more disk)
 ```
 
 - `--components X` is an alias; `CODEMUX_COMPONENTS=v1` does the same.
+- The `pi` module always runs (it is a tail module): it writes the `pi` wrapper
+  plus the managed free-pi config from `templates/pi/` — `default-model.json`
+  (`glm-5.3-flash`, only when missing so the user's Ctrl+S choice survives),
+  three extensions (`thinking-medium`, `theme-amoled-calm`, `tmux-tab-title`)
+  and the `amoled-calm` theme. Drifting copies are restored on every install.
 - Without a flag/env (interactive): a numbered picker appears once
   (type 1/2/3 then Enter; Enter alone = 1; q cancels). Without a TTY
   (CI, `curl | bash`) the
-  saved/default choice is used — default `v2`.
+  saved/default choice is used — default `pi` (Free-pi only).
 - The choice is saved in `~/.config/codemux/components` (`v1`, `v2`, `v1 v2`)
   and reused by `install`, `check`, `update-check`; `--only` overrides it.
   `--only pi` only adds the free-pi wrapper and keeps the saved v1/v2 choice.
@@ -922,7 +928,7 @@ on install/upgrade.
 | D8 | Update behaviour | **Notify only** (`update available … run: codemux upgrade`); nothing downloads automatically |
 | D9 | Update-check interval | **24 hours** cache, menu retries at most every 6 hours, `na` rows every hour |
 | D10 | Update notice inside an opencode session | Not implemented (M8) |
-| D11 | Component default | **V2 only** (`v2`) when nothing is saved; the picker remembers the answer |
+| D11 | Component default | **Free-pi only** (`pi`) when nothing is saved; the picker remembers the answer |
 | D12 | Upgrade scope | **Only installed payloads** + apt + launcher; `--only` overrides |
 | D13 | Update notice placement | Both: one line in the startup menu **and** one line in the session context through the plugin (0.7.4) |
 | D14 | Quota source | Local databases (one assistant message = one request), 200/day default, `QUOTA_LIMIT` overrides — no server-side endpoint exists |
@@ -958,7 +964,7 @@ curl -fsSL -H 'Accept: application/vnd.github.raw' \
 Component-scoped variants (nothing else is touched):
 
 ```bash
-… | bash -s -- --only v2     # V2 only   (10 modules, default)
+… | bash -s -- --only pi     # Free-pi only (11 modules, default)
 … | bash -s -- --only v1     # V1 only   (10 modules)
 … | bash -s -- --only both   # V1 + V2   (11 modules)
 ```

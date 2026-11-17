@@ -95,6 +95,9 @@ fi
 # a briefly failing upstream check (network down) must not erase an update that
 # is already known: the old result is reused, not overwritten with "na".
 SB="$(new_sandbox offline)"
+# pin the component choice: the test is about the update cache surviving a
+# network failure, not about the default component set (now "pi").
+printf 'v2\n' >"$SB/state/components"
 run_cm "$SB" update-check --quiet >/dev/null 2>&1
 env HOME="$SB/home" CODEMUX_HOME="$SB/state" PREFIX="$SB/prefix" TMPDIR="$BASE" \
   CODEMUX_ALLOW_NONANDROID=1 CODEMUX_NO_APT_CHECK=1 \
@@ -152,6 +155,7 @@ fi
 # 3. upgrade --only launcher: adopts the old block + digest wrapper
 # =============================================================================
 SB3="$(new_sandbox up)"
+printf 'v2\n' >"$SB3/state/components"
 cat >"$SB3/home/.bashrc" <<'EOS'
 # old bashrc
 export EDITOR="nano"

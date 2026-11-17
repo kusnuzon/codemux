@@ -60,7 +60,7 @@ else
   bad "check: unknown module reported as OK"
 fi
 
-# 6. install --dry-run: default is V2 only, changes nothing
+# 6. install --dry-run: default is Free-pi only, changes nothing
 # CODEMUX_HOME points at a scratch dir: the developer's ~/.config/codemux/components
 # (e.g. "pi") would otherwise decide the default and the row count.
 tmp_home="$(mktemp -d)"
@@ -68,8 +68,8 @@ out="$(CODEMUX_HOME="$tmp_home" bash bin/codemux install --dry-run 2>&1 || true)
 rm -rf "$tmp_home"
 rows="$(printf '%s\n' "$out" | grep -cE '^  [0-9]+/1[123] ' || true)"
 if [ "$rows" -ge 11 ] && printf '%s' "$out" | grep -q 'dry-run' &&
-  printf '%s\n' "$out" | grep -q 'install \[v2\]'; then
-  ok "install --dry-run (default v2, 10 modules)"
+  printf '%s\n' "$out" | grep -q 'install \[pi\]'; then
+  ok "install --dry-run (default pi, no payload)"
 else
   bad "install --dry-run (plan rows=$rows)"
 fi
