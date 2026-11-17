@@ -30,6 +30,14 @@ jobs:
       - name: harness check (mock Termux + plain runner)
         run: bash tests/harness.sh
 
+      # The canonical shared opencode files must match the V1/V2 repos; a
+      # canonical edit that was never synced fails here.
+      - name: shared opencode files in sync with V1/V2
+        run: |
+          git clone --depth 1 https://github.com/kusnuzon/opencode-termux /tmp/v1
+          git clone --depth 1 https://github.com/kusnuzon/opencode-termux-v2 /tmp/v2
+          bash tools/sync-opencode-files.sh --check /tmp/v1 /tmp/v2
+
   test:
     runs-on: ubuntu-latest
     strategy:
