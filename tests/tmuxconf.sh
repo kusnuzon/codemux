@@ -53,6 +53,16 @@ if grep -q 'extended-keys-format csi-u' <<<"$block" &&
 else
   bad "block: incomplete"
 fi
+# tmux's default copy-mode cursor/selection is bright yellow, which reads as a
+# glaring highlight over dim text on AMOLED; the block must override it with a
+# dark, readable selection style.
+if grep -q 'set -g mode-style "fg=#ffffff,bg=#5f6368"' <<<"$block" &&
+  grep -q 'copy-mode-match-style' <<<"$block" &&
+  grep -q 'copy-mode-current-match-style' <<<"$block"; then
+  ok "block: copy-mode cursor and selection stay readable"
+else
+  bad "block: copy-mode/selection style missing"
+fi
 # A finger tap is a left click, so the block must turn the mouse on and shape
 # the window list into a tab strip; otherwise tapping a tab does nothing.
 if grep -qx 'set -g mouse on' <<<"$block" &&
