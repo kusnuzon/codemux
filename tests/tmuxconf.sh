@@ -258,6 +258,9 @@ if command -v tmux >/dev/null 2>&1; then
   [ "$(width window-status-format)" -eq 20 ] &&
     ok "tmux: the keep/close tab is 20 columns" || bad "tmux: keep/close width $(width window-status-format)"
   tmux -L "$sock" set-option -u -t chk @closepending 2>/dev/null
+  grep -qF 'set -g default-terminal "tmux-256color"' "$SRC" &&
+    ok "tmux: default-terminal keeps italics real (no screen-* reverse hack)" ||
+    bad "tmux: default-terminal still screen-* — italics render as reverse"
   tmux -L "$sock" kill-server 2>/dev/null
 else
   ok "tmux: not installed (width checks skipped)"
