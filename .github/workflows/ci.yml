@@ -61,7 +61,7 @@ jobs:
           assert d["codemux"] == "codemux"
           mods = d["modules"]
           r = d["summary"]
-          assert len(mods) == 14, len(mods)   # pi module joined the list
+          assert len(mods) == 15, len(mods)   # pi + skills modules
           assert r["ok"] + r["warn"] + r["miss"] + r["fail"] + r["skip"] == len(mods), r
           assert all(m["module"] and m["status"] for m in mods), mods
           assert d["components"] in ("v1", "v2", "v1 v2", "pi"), d["components"]
