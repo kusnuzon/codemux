@@ -136,6 +136,10 @@ m_pi_probe() {
       # after apply and only looks at PROBE, so WARN (never MISS) keeps it out
       # of the failed count.
       PROBE=WARN
+      # npx comes from the nodejs package; without it the fetch command above
+      # cannot run at all. The toolset module installs nodejs since it became
+      # part of CODEMUX_APT_PACKAGES.
+      command -v npx >/dev/null 2>&1 || NOTE="$NOTE · npx missing — install nodejs (codemux toolset)"
     fi
     return
   fi
