@@ -41,7 +41,7 @@ tmux -L codemuxshot new-session -d -s "$S" -x 90 -y 20 "sleep 120" || exit 1
 
 # Fill the session with n windows; names come from -t (comma separated) or a
 # small default set that looks like real prompts.
-[ -n "$titles" ] || titles="menu,rapikan dokumen,uji tab baru,baca log,fiks bug antre,deploy"
+[ -n "$titles" ] || titles="menu,tidy-docs,test-new-tab,read-logs,fix-bug-queue,deploy"
 i=1
 while [ "$i" -lt "$n" ]; do
   name="$(printf '%s' "$titles" | cut -d, -f$((i + 1)))"

@@ -76,7 +76,7 @@ Termux opens straight into **one tmux session** whose tabs all run the same
 menu, so an agent never locks the only terminal you have:
 
 ```
- 0:menu ✕ │ 1:rapikan doku ✕ │ 2:uji tab baru ✕ │ ✚ 
+ 0:menu ✕ │ 1:tidy-docs ✕ │ 2:test-new-tab ✕ │ ✚ 
   ───────────────────────────────────────────
   1  OpenCode V1      1.19.5 · stable
   2  OpenCode V2      2.3.0 · separate DB
