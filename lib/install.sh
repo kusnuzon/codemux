@@ -5,7 +5,7 @@
 # Base modules: always installed, whatever OpenCode components are chosen.
 # The V1/V2 payload modules are appended only when selected.
 CODEMUX_INSTALL_BASE=(deps mirror storage toolset glibc)
-CODEMUX_INSTALL_TAIL=(launcher dotfiles pi memory self)
+CODEMUX_INSTALL_TAIL=(launcher dotfiles pi skills memory self)
 CODEMUX_INSTALL_CRITICAL="deps glibc"
 
 codemux_in_list() {

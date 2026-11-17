@@ -23,7 +23,7 @@ fail=0
 ok() { pass=$((pass + 1)); printf 'ok   %s\n' "$1"; }
 bad() { fail=$((fail + 1)); printf 'FAIL %s\n' "$1"; }
 
-SUITES="tests/smoke.sh tests/resume.sh tests/adapter.sh tests/launcher-memory.sh tests/maintenance.sh tests/release.sh tests/tabctl.sh"
+SUITES="tests/smoke.sh tests/resume.sh tests/adapter.sh tests/launcher-memory.sh tests/maintenance.sh tests/release.sh tests/tabctl.sh tests/skills.sh tests/sync-files.sh"
 
 # 1. a raw $PREFIX read under `set -u` kills a plain runner.
 #    ${PREFIX:-} is fine, $PREFIX and ${PREFIX} are not. Comments are skipped

@@ -342,7 +342,7 @@ lib/progress-bar.sh  the ASCII progress bar, shared with the opencode-termux rep
 lib/tmux-config.sh   the managed ~/.tmux.conf block, shared the same way
 tools/             sync-progress-bar.sh, sync-tmux-config.sh (copy, or --check for drift)
 templates/         bashrc block, the menu script, memory files
-tests/             harness, smoke, launcher-memory, maintenance, resume, release, adapter, tmuxconf, tabctl
+tests/             harness, smoke, launcher-memory, maintenance, resume, release, adapter, tmuxconf, tabctl, sync-files, skills
 install.sh         bootstrap (tarball + sha256)
 ```
 

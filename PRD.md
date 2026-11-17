@@ -804,8 +804,8 @@ Rules that keep the strip working (all learned the hard way):
 | Session digest (8 sessions, V1+V2) | < 2 seconds, never blocks the prompt |
 | Update check (background) | < 6 seconds, never blocks the menu |
 | Update-check cache | 1× per 24 hours per component (menu retries at most 1×/6 h) |
-| Tests | 8 suites, 238 assertions (smoke 61 · launcher-memory 62 · maintenance 19 ·
-resume 16 · release 7 · adapter 12 · tmuxconf 42 · tabctl 19) |
+| Tests | 10 suites (smoke 66 · launcher-memory 109 · maintenance 19 ·
+resume 16 · release 7 · adapter 12 · tmuxconf 48 · tabctl 19 · sync-files 10 · skills 14) |
 
 ---
 
