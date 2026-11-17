@@ -261,6 +261,10 @@ if command -v tmux >/dev/null 2>&1; then
   grep -qF 'set -g default-terminal "tmux-256color"' "$SRC" &&
     ok "tmux: default-terminal keeps italics real (no screen-* reverse hack)" ||
     bad "tmux: default-terminal still screen-* — italics render as reverse"
+  grep -qF 'set -g window-style "bg=#11100E"' "$SRC" &&
+    grep -qF 'set -g window-active-style "bg=#11100E"' "$SRC" &&
+    ok "tmux: panes sit on the warm near-black background" ||
+    bad "tmux: pane background (window-style) missing"
   tmux -L "$sock" kill-server 2>/dev/null
 else
   ok "tmux: not installed (width checks skipped)"
