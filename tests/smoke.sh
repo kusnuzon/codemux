@@ -134,7 +134,7 @@ if printf '%s' "$out" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
 assert d["components"] == "v1", d
-assert d["summary"]["skip"] == 1, d["summary"]
+assert d["summary"]["skip"] >= 1, d["summary"]  # linux profile adds android-only skips
 st = {m["module"]: m["status"] for m in d["modules"]}
 assert st["opencode-v2"] == "SKIP", st
 assert st["opencode-v1"] != "SKIP", st

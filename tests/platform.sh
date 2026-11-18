@@ -34,7 +34,7 @@ cm() {
 # -u TERMUX_VERSION always: inside a real Termux shell it would leak into every
 # case and the "linux" expectations would flip.
 det() { # det <env assignments...> -> codemux_detect_platform
-  env -u TERMUX_VERSION "$@" bash -c '. lib/common.sh >/dev/null 2>&1; codemux_detect_platform'
+  env -u TERMUX_VERSION -u CODEMUX_PLATFORM "$@" bash -c '. lib/common.sh >/dev/null 2>&1; codemux_detect_platform'
 }
 [ "$(det TERMUX_VERSION=0.119 PREFIX=/data/data/com.termux/files/usr)" = termux ] &&
   ok "detect: TERMUX_VERSION -> termux" || bad "detect: TERMUX_VERSION"
@@ -52,7 +52,9 @@ det() { # det <env assignments...> -> codemux_detect_platform
 # instead of the fakes.
 FVP="$SB/bin"
 BASH_BIN="$(command -v bash)"
-MINPATH="$FVP:/system/bin:/bin"
+# ONLY the fakes: on Ubuntu /bin is a symlink to /usr/bin, so any real
+# dpkg-query/pacman on the host path would answer before the fakes.
+MINPATH="$FVP"
 printf '#!/bin/sh\necho dpkg-query "$@" >>"%s/calls"\nexit 1\n' "$SB" >"$FVP/dpkg-query"
 printf '#!/bin/sh\necho pacman "$@" >>"%s/calls"\nexit 1\n' "$SB" >"$FVP/pacman"
 printf '#!/bin/sh\necho rpm "$@" >>"%s/calls"\nexit 1\n' "$SB" >"$FVP/rpm"
@@ -88,7 +90,7 @@ inst() { # inst <platform> <PATH> -> first word the package tool was called with
     '. lib/common.sh >/dev/null 2>&1; codemux_pkg_install foo; true'
   [ -f "$SB/calls" ] && head -n1 "$SB/calls" | cut -d' ' -f1 || echo none
 }
-[ "$(inst linux "$FVP2:/system/bin:/bin")" = pacman ] &&
+[ "$(inst linux "$FVP2")" = pacman ] &&
   ok "install: linux + pacman -> pacman -S" || bad "install: pacman dispatch"
 grep -q -- '--noconfirm' "$SB/calls" 2>/dev/null &&
   ok "install: pacman runs unattended" || bad "install: pacman flags"
