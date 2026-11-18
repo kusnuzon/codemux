@@ -113,6 +113,18 @@ if sel --only v3 | grep -q 'unknown component list'; then
 else
   bad "install --only v3 was not rejected"
 fi
+# A typo in --skip must be rejected like a typo in --only: a silently ignored
+# skip key does the opposite of what was asked (the module runs anyway).
+if sel --skip depz | grep -q 'unknown module in --skip'; then
+  ok "install --skip depz rejected"
+else
+  bad "install --skip depz was not rejected (typo silently ignored)"
+fi
+if sel --skip deps,mirror,storage,toolset,glibc,launcher,dotfiles,pi,skills,memory,self | grep -q 'install \[pi\]'; then
+  ok "install --skip accepts every real module name"
+else
+  bad "install --skip rejected a valid module list"
+fi
 
 # 6c. the saved choice is reused; check reports the other component as SKIP
 printf 'v1\n' >"$SB/state/components"

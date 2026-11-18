@@ -99,6 +99,23 @@ codemux_cmd_install() {
     shift
   done
 
+  # A typo in --skip must be rejected, not silently ignored: an ignored skip key
+  # runs the very module the user wanted to leave out (the opposite of the ask).
+  # Same contract as --only, which already fails on an unknown component.
+  if [ -n "$skip" ]; then
+    local sitem sk_ok="${CODEMUX_INSTALL_BASE[*]} v1 v2 ${CODEMUX_INSTALL_TAIL[*]}"
+    for sitem in ${skip//,/ }; do
+      [ -n "$sitem" ] || continue
+      case " $sk_ok " in
+        *" $sitem "*) : ;;
+        *)
+          log_fail "unknown module in --skip: '$sitem' — modules: $sk_ok"
+          return 2
+          ;;
+      esac
+    done
+  fi
+
   compfile="$(codemux_components_file)"
   if [ -n "$only" ]; then
     comps="$(codemux_components_norm "$only")" || {
