@@ -42,6 +42,34 @@ codemux_pi_config_put() { # <relative-path>
 # block is rewritten on the next install instead of being left in place.
 CODEMUX_PI_BLOCK_VERSION="2"
 
+# The work runner: `~/bin/work.sh "<desc>" -- <cmd>` runs a command inside a
+# visible tmux pane (a bottom split by default, KERJA_SPLIT=0 for a separate
+# tab) and appends a full copy to ~/work.log, so anyone watching the terminal
+# can follow what the agent executes. Canonical copy: lib/work.sh. Installed
+# and restored like the managed config above — cmp-based, no version marker:
+# any byte difference is rewritten on the next install.
+CODEMUX_PI_WORK_SRC="lib/work.sh"
+CODEMUX_PI_WORK_DST="bin/work.sh"
+
+# Prints "work.sh" when the installed runner is missing or drifted from the
+# canonical copy; prints nothing when it is up to date (or when codemux does
+# not ship a canonical copy at all).
+codemux_pi_work_missing() {
+  [ -f "$CODEMUX_ROOT/$CODEMUX_PI_WORK_SRC" ] || return 0
+  if [ -f "$HOME/$CODEMUX_PI_WORK_DST" ] &&
+    cmp -s "$CODEMUX_ROOT/$CODEMUX_PI_WORK_SRC" "$HOME/$CODEMUX_PI_WORK_DST"; then
+    return 0
+  fi
+  printf '%s\n' "work.sh"
+}
+
+# Copy the canonical runner into ~/bin and make it executable.
+codemux_pi_work_put() {
+  mkdir -p "$HOME/bin" 2>/dev/null || return 1
+  cp "$CODEMUX_ROOT/$CODEMUX_PI_WORK_SRC" "$HOME/$CODEMUX_PI_WORK_DST" 2>/dev/null || return 1
+  chmod 755 "$HOME/$CODEMUX_PI_WORK_DST" 2>/dev/null || return 1
+}
+
 # The `pi` wrapper. It is a shell FUNCTION, not an alias, so something still runs
 # after the TUI exits: a full-screen agent can hand the terminal back inside the
 # alternate screen (mouse, focus and paste modes still on) or in the middle of
@@ -156,7 +184,7 @@ m_pi_probe() {
   fi
   if [ -d "$CODEMUX_PI_DIR" ]; then
     local miss
-    miss="$(codemux_pi_config_missing | tr '\n' ' ' | sed 's/ *$//')"
+    miss="$(codemux_pi_config_missing; codemux_pi_work_missing | tr '\n' ' ' | sed 's/ *$//')"
     if [ -n "$miss" ]; then
       PROBE=WARN
       NOTE="pi + wrapper · managed config missing/stale: $miss"
@@ -212,6 +240,17 @@ m_pi_apply() {
         fi
       fi
     done
+  fi
+
+  # The work runner is installed even when free-pi itself has not been fetched
+  # yet: it is a plain shell script with no dependency on the agent.
+  if [ -n "$(codemux_pi_work_missing)" ]; then
+    if codemux_pi_work_put; then
+      made+=("work runner")
+    else
+      APPLY_NOTE="cannot write \$HOME/$CODEMUX_PI_WORK_DST"
+      return 1
+    fi
   fi
 
   if [ -z "$(codemux_pi_bin)" ] && [ ! -f "$HOME/.bashrc.pi.bak" ]; then

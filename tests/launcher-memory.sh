@@ -1270,6 +1270,51 @@ else
   bad "drifted extension was not restored"
 fi
 
+# =============================================================================
+# 5f. the work runner (~/bin/work.sh)
+# =============================================================================
+# codemux ships the work runner (lib/work.sh): `work.sh "<desc>" -- <cmd>` runs
+# a command inside a visible tmux pane (bottom split by default, KERJA_SPLIT=0
+# for a tab) and logs a full copy to ~/work.log. Installed and restored like the
+# managed config; the probe counts it among the missing/stale entries.
+SB5F="$(new_sandbox work-runner)"
+printf '#!/bin/sh\necho free-pi-cli 0.6.22\n' >"$SB5F/prefix/bin/free-pi-cli"
+chmod +x "$SB5F/prefix/bin/free-pi-cli"
+PATH="$SB5F/prefix/bin:$PATH" run_cm "$SB5F" install --yes --only pi --skip "$SKIP_ONLY_PI" \
+  >"$SB5F/out.log" 2>&1 || true
+WORK="$SB5F/home/bin/work.sh"
+if [ -f "$WORK" ] && [ -x "$WORK" ] && bash -n "$WORK" 2>/dev/null; then
+  ok "fresh install writes the work runner (executable, valid bash)"
+else
+  bad "$HOME/bin/work.sh missing/not executable/invalid after a fresh install"
+fi
+if grep -q 'KERJA_CLOSE_DELAY' "$WORK" && grep -q 'KERJA_SPLIT' "$WORK"; then
+  ok "the work runner carries the split and close-delay knobs"
+else
+  bad "work runner is missing the KERJA_SPLIT/KERJA_CLOSE_DELAY knobs"
+fi
+# Functional check, no tmux: the runner falls back to a direct run and logs it.
+# A failing tmux stub keeps the test hermetic — on a dev machine the real tmux
+# would otherwise open a window in the developer's own session.
+printf '#!/bin/sh\nexit 1\n' >"$SB5F/prefix/bin/tmux"
+chmod +x "$SB5F/prefix/bin/tmux"
+env -i HOME="$SB5F/home" PATH="$SB5F/prefix/bin:$PATH" TMPDIR="$BASE" \
+  bash "$WORK" "test run" -- echo runner-hello >"$SB5F/run.out" 2>&1
+if grep -q 'runner-hello' "$SB5F/home/work.log" 2>/dev/null; then
+  ok "the work runner executes the command and logs it to ~/work.log"
+else
+  bad "work runner did not log the run to ~/work.log"
+fi
+# A drifted runner is restored from the canonical copy.
+echo 'drifted' >"$WORK"
+PATH="$SB5F/prefix/bin:$PATH" run_cm "$SB5F" install --yes --only pi --skip "$SKIP_ONLY_PI" \
+  >"$SB5F/out2.log" 2>&1 || true
+if grep -q 'KERJA_CLOSE_DELAY' "$WORK" && ! grep -q '^drifted$' "$WORK"; then
+  ok "a drifted work runner is restored from the canonical copy"
+else
+  bad "drifted work runner was not restored"
+fi
+
 rm -rf "$SANDBOX_ROOT"
 printf '\n%s passed · %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
