@@ -1,14 +1,14 @@
 # 🚀 codemux — Termux Setup in One Command
 
-Installs and maintains **OpenCode V2 (default) or V1** on Termux: startup menu, cross-session
-memory, base toolset, Android storage, and update checks. Idempotent — safe to
-run again and again.
+Installs and maintains **Free-pi (Pi) by default, plus OpenCode V2/V1 optionally** on
+Termux: startup menu, cross-session memory, base toolset, Android storage, and
+update checks. Idempotent — safe to run again and again.
 
 > 📜 Full design: [PRD.md](PRD.md)
 
 ## ✨ What you get
 
-- 🤖 **OpenCode V2 by default, V1 optional** — you choose, nothing extra is pulled in
+- 🤖 **Free-pi (Pi) by default, OpenCode V2/V1 optional** — you choose, nothing extra is pulled in
 - 🎛️ **Startup menu in a tmux session** — Termux opens one session, every tab
   is a menu; type a number and the agent runs in that tab
 - 🧠 **Cross-session memory** — `MEMORY.md` + `RECENT.md` (with the open items)
@@ -318,6 +318,8 @@ bash tests/maintenance.sh # update-check, doctor, upgrade, uninstall
 bash tests/release.sh     # bootstrap tarball + self-update
 bash tests/tmuxconf.sh    # managed ~/.tmux.conf block: fresh, stale, blocked
 bash tests/tabctl.sh      # tap handler: switch, ask, keep, close, last tab
+bash tests/skills.sh      # managed skills sync + python deps (fake pip/curl)
+bash tests/sync-files.sh  # shared opencode files: sync, drift check, failures
 ```
 
 Each suite waits for a state with `wait_state` (a 0.1 s poll) rather than a fixed
@@ -336,10 +338,11 @@ env -u PREFIX TMPDIR="$PREFIX/tmp" bash tests/smoke.sh
 ```
 
 Two blocks are shared with the two `opencode-termux*` repos: the ASCII progress
-bar (`lib/progress-bar.sh`) and the tmux config (`lib/tmux-config.sh`). Run
-`bash tools/sync-progress-bar.sh` / `bash tools/sync-tmux-config.sh` to copy
-them into the siblings; `--check` reports drift and is what CI runs. Edit the
-source block, never a copy.
+bar (`lib/progress-bar.sh`) and the tmux config (`lib/tmux-config.sh`). The
+memory mechanism files live in `opencode-shared/` and are synced the same way.
+Run `bash tools/sync-progress-bar.sh` / `bash tools/sync-tmux-config.sh` /
+`bash tools/sync-opencode-files.sh <repo>…` to copy them into the siblings;
+`--check` reports drift and is what CI runs. Edit the source, never a copy.
 
 ## 📁 Layout
 

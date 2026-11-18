@@ -4,12 +4,13 @@ One command to make Termux "ready to use": OpenCode V1 + V2 + menu/banner + a
 base toolset + storage, both on a bare Termux and on a partially set-up one.
 New repo, public, idempotent (safe to run repeatedly).
 
-Status: **implemented — v0.7.6 (2026-11-16).** Every command in §6 exists and is
-tested: smoke 51 · launcher-memory 45 · maintenance 19 · resume 16 · release 7 ·
-adapter 12, plus `tests/harness.sh` (4 portability checks). CI runs four jobs on
-every push: `lint` (shellcheck + `bash -n`, tests included), `test` in a matrix
-(**with a mock Termux `PREFIX`** and **without one**), and `sync` (checks that
-the shared progress bar has not drifted from the two sibling repos). §18 keeps the
+Status: **implemented — v0.12.0 (2026-11-18).** Every command in §6 exists and is
+tested: smoke 68 · launcher-memory 124 · maintenance 19 · resume 16 · release 7 ·
+adapter 12 · tmuxconf 48 · tabctl 19 · sync-files 10 · skills 14 (335 assertions,
+0 failed), plus `tests/harness.sh` (portability gate). CI runs three jobs on
+every push: `lint` (shellcheck + `bash -n`, harness, drift checks on the shared
+blocks and the shared opencode files), and `test` in a matrix (**with a mock
+Termux `PREFIX`** and **without one**). §18 keeps the
 decision log; §17 shows what is done and what is next.
 
 ---
@@ -117,7 +118,8 @@ install options:
                      choice; non-interactive → pi = Free-pi only)
   --components X     same as --only
   --skip a,b         skip modules (deps,mirror,storage,toolset,glibc,v1,v2,
-                     launcher,dotfiles,memory,self)
+                     pi,launcher,dotfiles,skills,memory,self — unknown names are
+                     rejected, a typo must not silently run the module)
   -y, --yes          no confirmation, never ask (keep the saved/default choice)
 
 other options:
@@ -295,11 +297,11 @@ in one repo only, so the block lives in exactly one file:
 
 Execution order = the table below. Each module file is `lib/modules/<name>.sh`
 with `m_<name>_probe` / `m_<name>_apply` / `m_<name>_verify`. `probe` decides
-SKIP vs APPLY. `install` runs `deps → mirror → storage → toolset → glibc → v1 →
-v2 → pi → launcher → dotfiles → memory → self` (11–12 rows, depending on the
-chosen components); `check` reports **14** rows (`preflight` first, `updatecache`
-last). `preflight` runs before the rows and `update-cache` is checked by `check`
-only.
+SKIP vs APPLY. `install` runs `deps → mirror → storage → toolset → glibc → [v1 → v2] →
+launcher → dotfiles → pi → skills → memory → self` (11 rows with Free-pi only,
+13 with both payloads, depending on the chosen components); `check` reports
+**15** rows (`preflight` first, `updatecache` last). `preflight` runs before the
+rows and `update-cache` is checked by `check` only.
 
 | # | Module | Detection (probe) | Action when missing |
 |---|---|---|---|
@@ -311,12 +313,13 @@ only.
 | 5 | `glibc` | `$PREFIX/glibc/lib/ld-linux-aarch64.so.1` + `libc.so.6` | `pkg install glibc-repo glibc termux-exec-glibc`, heal `libcurl` |
 | 6 | `v1` | payload at `$PREFIX/share/opencode/opencode.real` + launcher + `apt-mark hold` | run the `opencode-termux` installer (adapter) |
 | 7 | `v2` | payload at `$PREFIX/share/opencode-v2/opencode.real` + `lib/compat` shim + launcher | run the `opencode-termux-v2` installer (adapter) |
-| 8 | `pi` | `alias pi` in the launcher block points at `free-pi-cli` (PATH, then the npx cache) | write/repoint the `# codemux:pi` block; never `npx -y …`, never the upstream `.bin/pi` |
-| 9 | `launcher` | `~/.bashrc` has the `# codemux:launcher begin` block with `version 16` and passes `bash -n` | back up, insert the block from `templates/bashrc-block.sh` (template and `CODEMUX_LAUNCHER_BLOCK_VERSION` must be bumped together) |
+| 8 | `pi` | the `pi()` wrapper block in `~/.bashrc` (`# codemux:pi` with its version marker) points at `free-pi-cli` (PATH, then the npx cache) | write/rewrite the `# codemux:pi` block (a function that calls `_oc_tty_fix` after exit); never `npx -y …`, never the upstream `.bin/pi` |
+| 9 | `launcher` | `~/.bashrc` has the `# codemux:launcher begin` block with `version 37` and passes `bash -n`; `~/.config/codemux/menu.sh` carries `CM_MENU_VERSION` | back up, insert the block from `templates/bashrc-block.sh` + the menu script (template and `CODEMUX_LAUNCHER_BLOCK_VERSION` / `CODEMUX_MENU_SCRIPT_VERSION` must be bumped together) |
 | 10 | `dotfiles` | `~/.bash_profile`, `~/.hushlogin`, managed `~/.tmux.conf` block (§12E) | write/merge, never overwrite other content |
-| 11 | `memory` | plugins (`memory.js`, `session-title.js`, `update-notice.js`), tools (`bin/session-digest.py`, `bin/quota`), `MEMORY.md`/`RECENT.md`, `instructions` entries | install the mechanism + templates (merge `opencode.jsonc`, never overwrite), symlink `quota` into `$PREFIX/bin` |
-| 12 | `self` | `codemux` on `PATH` points at this checkout/install | symlink into `$PREFIX/bin` |
-| 13 | `update-cache` | `~/.config/codemux/update-cache.tsv` younger than 24 h | refresh the cache (`check` reports its age) |
+| 11 | `skills` | the managed skills (`agent-browser`, `webapp-testing`) in `~/.agents/skills/` match `skills/<name>/SKILL.md`; `pyee` + playwright importable | sync the managed copies (backup on drift), `pip install pyee`, run the zplaywright installer when playwright is missing |
+| 12 | `memory` | plugins (`memory.js`, `session-title.js`, `update-notice.js`), tools (`bin/session-digest.py`, `bin/quota`), `MEMORY.md`/`RECENT.md`, `instructions` entries | install the mechanism + templates (merge `opencode.jsonc`, never overwrite), symlink `quota` into `$PREFIX/bin` |
+| 13 | `self` | `codemux` on `PATH` points at this checkout/install | symlink into `$PREFIX/bin` |
+| 14 | `update-cache` | `~/.config/codemux/update-cache.tsv` younger than 24 h | refresh the cache (`check` reports its age) |
 
 Per-module contract:
 
@@ -642,7 +645,7 @@ Rules:
 ## 12D. Startup: one tmux session, the menu is a script
 
 Opening Termux lands in a single tmux session (`main`). `~/.bashrc` keeps the
-launcher block (version 36) at about 40 lines — it starts or attaches the
+launcher block (version 37) at about 40 lines — it starts or attaches the
 session and defines `menu`, `fixterm`, `version`, `_oc_tty_fix`:
 
 ```bash
@@ -901,6 +904,7 @@ resume 16 · release 7 · adapter 12 · tmuxconf 48 · tabctl 19 · sync-files 1
 | M9 | `quota` (daily quota estimate + menu warning) and open items in `RECENT.md` | ✅ **0.7.4** (§12C, §12A) |
 | M10 | percentage bar in the spinner and the install plan, shared bar block with the sibling repos (§6B, §7.1) | ✅ **0.7.5** |
 | M11 | two-layout CI matrix (mock Termux / plain runner) + `tests/harness.sh` + real drift check | ✅ **0.7.5** (§7.1, §20.7) |
+| M12 | launcher split (menu in its own script), tappable tab strip, menu launch log, in-menu install, work console | ✅ **0.8.0–0.12.0** (§12D/§12E, §14) |
 
 Release history: `0.6.4` update-cache fix · `0.6.5` `quota` menu line · `0.6.6`
 early dependency install · `0.7.0` component choice · `0.7.1` progress spinner ·
@@ -910,7 +914,15 @@ items in `RECENT.md`, memory mechanism refresh on `upgrade` · `0.7.5` percentag
 bars (`codemux_content_length`, one shared `progress_bar`), memory plugins from
 `raw` instead of the rate-limited API, CI matrix + harness · `0.7.6` the quota
 estimator is called `quota` (was `kuota`); the stale file and symlink are removed
-on install/upgrade.
+on install/upgrade · `0.8.0` the launcher is split: a tiny `.bashrc` block starts
+one tmux session, the whole numbered menu lives in `~/.config/codemux/menu.sh` ·
+`0.9.x` a tappable 20-column tab strip with a `✕` per tab, keep/close
+confirmation and a `✚` new-tab button that follows the last tab · `0.10.x` every
+menu launch is logged (`codemux logs`) and a missing agent is installed from the
+menu · `0.11` the agent work console (`work.sh`/`work-diff.sh`) ships from this
+repo · `0.12.0` the menu shows the console before the agent starts and closes it
+when the agent exits; per-session console state, adoption marker, nested-call
+fallback; `--skip` rejects unknown module names.
 
 ---
 
@@ -946,7 +958,7 @@ curl -fsSL -H 'Accept: application/vnd.github.raw' \
 ```
 
 Add `--yes` for a fully non-interactive run (keeps the saved/default components),
-`--only v1|v2|both` to decide up front, or `--dry-run` to see the plan.
+`--only pi|v1|v2|both` to decide up front, or `--dry-run` to see the plan.
 
 Release assets: `codemux.tar.gz` (+ `codemux.tar.gz.sha256`). The bootstrap
 downloads both, verifies the sha256, extracts to `~/.cache/codemux/src/current`
@@ -964,9 +976,9 @@ curl -fsSL -H 'Accept: application/vnd.github.raw' \
 Component-scoped variants (nothing else is touched):
 
 ```bash
-… | bash -s -- --only pi     # Free-pi only (11 modules, default)
-… | bash -s -- --only v1     # V1 only   (10 modules)
-… | bash -s -- --only both   # V1 + V2   (11 modules)
+… | bash -s -- --only pi     # Free-pi only (default, 11 modules, least disk)
+… | bash -s -- --only v1     # V1 only   (12 modules)
+… | bash -s -- --only both   # V1 + V2   (13 modules)
 ```
 
 ---
@@ -1053,6 +1065,9 @@ the network; none of them touches the system.
 | `tests/maintenance.sh` | `update-check`, `doctor`, `upgrade`, `uninstall` |
 | `tests/release.sh` | bootstrap tarball + `self-update` |
 | `tests/tmuxconf.sh` | managed `~/.tmux.conf` block: fresh write, stale block replaced, user settings outside the markers kept, shared copies in the two `opencode-termux*` repos |
+| `tests/tabctl.sh` | the tap handler behind the tab strip: switch, ask, keep, close, last tab, junk ranges |
+| `tests/skills.sh` | the skills module: managed skill sync, drift/foreign copies, pip + zplaywright deps (all faked) |
+| `tests/sync-files.sh` | `tools/sync-opencode-files.sh`: copy, `--check` drift/missing, failed check writes nothing |
 
 Why the CI runs every suite **twice** (`with-prefix` / `without-prefix`, see
 `.github/workflows/ci.yml`): four test assumptions that only held on Termux

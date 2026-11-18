@@ -499,7 +499,7 @@ codemux_component_selected() {
 
 codemux_usage() {
   cat <<'EOF'
-codemux — Termux installer & maintainer (OpenCode V1 + V2 + memory + updates)
+codemux — Termux installer & maintainer (Free-pi + OpenCode V1/V2 + memory + updates)
 
 usage:
   codemux [command] [options]
@@ -525,9 +525,9 @@ check options:
 install options:
   --dry-run          show the plan, change nothing
   --fresh            start from step 1 (do not resume)
-  --only v2|v1|both  install OpenCode V2 only (default), V1 only, or both (default:
-                     ask, or keep the saved choice; non-interactive → v2)
-  --only pi          add the pi (free-pi) menu row and its `pi` wrapper
+  --only pi|v2|v1|both
+                     Free-pi only (default), OpenCode V2 only, V1 only, or both
+                     (default: ask, or keep the saved choice; non-interactive → pi)
   --components X     same as --only
   --skip a,b         skip modules (deps,mirror,storage,toolset,glibc,v1,v2,pi,launcher,dotfiles,memory,self)
   -y, --yes          no confirmation, never ask (keep the saved/default choice)
