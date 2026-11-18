@@ -42,32 +42,39 @@ codemux_pi_config_put() { # <relative-path>
 # block is rewritten on the next install instead of being left in place.
 CODEMUX_PI_BLOCK_VERSION="2"
 
-# The work runner: `~/bin/work.sh "<desc>" -- <cmd>` runs a command inside a
+# The work runners: `~/bin/work.sh "<desc>" -- <cmd>` runs a command inside a
 # visible tmux pane (a bottom split by default, KERJA_SPLIT=0 for a separate
 # tab) and appends a full copy to ~/work.log, so anyone watching the terminal
-# can follow what the agent executes. Canonical copy: lib/work.sh. Installed
-# and restored like the managed config above — cmp-based, no version marker:
-# any byte difference is rewritten on the next install.
-CODEMUX_PI_WORK_SRC="lib/work.sh"
-CODEMUX_PI_WORK_DST="bin/work.sh"
+# can follow what the agent executes. `~/bin/work-diff.sh <file>` shows an
+# edit's diff through the same pane. Canonical copies: lib/. Installed and
+# restored like the managed config above — cmp-based, no version marker: any
+# byte difference is rewritten on the next install.
+CODEMUX_PI_WORK_SRC="lib"
+CODEMUX_PI_WORK_DST="bin"
+CODEMUX_PI_WORK_FILES="work.sh work-diff.sh"
 
-# Prints "work.sh" when the installed runner is missing or drifted from the
-# canonical copy; prints nothing when it is up to date (or when codemux does
-# not ship a canonical copy at all).
+# Prints the name of every runner that is missing or drifted from the
+# canonical copy; prints nothing when all are up to date (or when codemux
+# does not ship canonical copies at all).
 codemux_pi_work_missing() {
-  [ -f "$CODEMUX_ROOT/$CODEMUX_PI_WORK_SRC" ] || return 0
-  if [ -f "$HOME/$CODEMUX_PI_WORK_DST" ] &&
-    cmp -s "$CODEMUX_ROOT/$CODEMUX_PI_WORK_SRC" "$HOME/$CODEMUX_PI_WORK_DST"; then
-    return 0
-  fi
-  printf '%s\n' "work.sh"
+  local f
+  [ -d "$CODEMUX_ROOT/$CODEMUX_PI_WORK_SRC" ] || return 0
+  for f in $CODEMUX_PI_WORK_FILES; do
+    if [ ! -f "$HOME/$CODEMUX_PI_WORK_DST/$f" ] ||
+      ! cmp -s "$CODEMUX_ROOT/$CODEMUX_PI_WORK_SRC/$f" "$HOME/$CODEMUX_PI_WORK_DST/$f"; then
+      printf '%s\n' "$f"
+    fi
+  done
 }
 
-# Copy the canonical runner into ~/bin and make it executable.
+# Copy the canonical runners into ~/bin and make them executable.
 codemux_pi_work_put() {
-  mkdir -p "$HOME/bin" 2>/dev/null || return 1
-  cp "$CODEMUX_ROOT/$CODEMUX_PI_WORK_SRC" "$HOME/$CODEMUX_PI_WORK_DST" 2>/dev/null || return 1
-  chmod 755 "$HOME/$CODEMUX_PI_WORK_DST" 2>/dev/null || return 1
+  mkdir -p "$HOME/$CODEMUX_PI_WORK_DST" 2>/dev/null || return 1
+  local f
+  for f in $CODEMUX_PI_WORK_FILES; do
+    cp "$CODEMUX_ROOT/$CODEMUX_PI_WORK_SRC/$f" "$HOME/$CODEMUX_PI_WORK_DST/$f" 2>/dev/null || return 1
+    chmod 755 "$HOME/$CODEMUX_PI_WORK_DST/$f" 2>/dev/null || return 1
+  done
 }
 
 # The `pi` wrapper. It is a shell FUNCTION, not an alias, so something still runs
@@ -242,8 +249,8 @@ m_pi_apply() {
     done
   fi
 
-  # The work runner is installed even when free-pi itself has not been fetched
-  # yet: it is a plain shell script with no dependency on the agent.
+  # The work runners are installed even when free-pi itself has not been
+  # fetched yet: they are plain shell scripts with no dependency on the agent.
   if [ -n "$(codemux_pi_work_missing)" ]; then
     if codemux_pi_work_put; then
       made+=("work runner")

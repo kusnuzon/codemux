@@ -1271,22 +1271,25 @@ else
 fi
 
 # =============================================================================
-# 5f. the work runner (~/bin/work.sh)
+# 5f. the work runners (~/bin/work.sh + ~/bin/work-diff.sh)
 # =============================================================================
-# codemux ships the work runner (lib/work.sh): `work.sh "<desc>" -- <cmd>` runs
-# a command inside a visible tmux pane (bottom split by default, KERJA_SPLIT=0
-# for a tab) and logs a full copy to ~/work.log. Installed and restored like the
-# managed config; the probe counts it among the missing/stale entries.
+# codemux ships the work runners (lib/): `work.sh "<desc>" -- <cmd>` runs a
+# command inside a visible tmux pane (bottom split by default, KERJA_SPLIT=0
+# for a tab) and logs a full copy to ~/work.log; `work-diff.sh <file>` shows
+# an edit's diff through the same pane. Installed and restored like the
+# managed config; the probe counts them among the missing/stale entries.
 SB5F="$(new_sandbox work-runner)"
 printf '#!/bin/sh\necho free-pi-cli 0.6.22\n' >"$SB5F/prefix/bin/free-pi-cli"
 chmod +x "$SB5F/prefix/bin/free-pi-cli"
 PATH="$SB5F/prefix/bin:$PATH" run_cm "$SB5F" install --yes --only pi --skip "$SKIP_ONLY_PI" \
   >"$SB5F/out.log" 2>&1 || true
 WORK="$SB5F/home/bin/work.sh"
-if [ -f "$WORK" ] && [ -x "$WORK" ] && bash -n "$WORK" 2>/dev/null; then
-  ok "fresh install writes the work runner (executable, valid bash)"
+WDIFF="$SB5F/home/bin/work-diff.sh"
+if [ -f "$WORK" ] && [ -x "$WORK" ] && bash -n "$WORK" 2>/dev/null &&
+  [ -f "$WDIFF" ] && [ -x "$WDIFF" ] && bash -n "$WDIFF" 2>/dev/null; then
+  ok "fresh install writes both work runners (executable, valid bash)"
 else
-  bad "$HOME/bin/work.sh missing/not executable/invalid after a fresh install"
+  bad "$HOME/bin work runners missing/not executable/invalid after a fresh install"
 fi
 if grep -q 'KERJA_CLOSE_DELAY' "$WORK" && grep -q 'KERJA_SPLIT' "$WORK"; then
   ok "the work runner carries the split and close-delay knobs"
@@ -1304,6 +1307,23 @@ if grep -q 'runner-hello' "$SB5F/home/work.log" 2>/dev/null; then
   ok "the work runner executes the command and logs it to ~/work.log"
 else
   bad "work runner did not log the run to ~/work.log"
+fi
+# work-diff shows a tracked file's diff through the same runner (direct run
+# under the tmux stub, so the output lands on stdout).
+GITD="$SB5F/home/repo"
+mkdir -p "$GITD"
+git -C "$GITD" init -q .
+git -C "$GITD" -c user.email=t@t -c user.name=t commit -qm init --allow-empty
+printf 'line1\nline2\n' >"$GITD/a.txt"
+git -C "$GITD" add a.txt
+git -C "$GITD" -c user.email=t@t -c user.name=t commit -qm a
+printf 'line1\nCHANGED\n' >"$GITD/a.txt"
+env -i HOME="$SB5F/home" PATH="$SB5F/prefix/bin:$PATH" TMPDIR="$BASE" \
+  bash "$WDIFF" "$GITD/a.txt" >"$SB5F/diff.out" 2>&1
+if grep -q 'diff --git' "$SB5F/diff.out" && grep -q '+CHANGED' "$SB5F/diff.out"; then
+  ok "work-diff shows a tracked file's diff through the work runner"
+else
+  bad "work-diff did not show the tracked file's diff"
 fi
 # A drifted runner is restored from the canonical copy.
 echo 'drifted' >"$WORK"
