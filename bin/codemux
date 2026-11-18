@@ -15,6 +15,8 @@ codemux_colors
 . "$CODEMUX_ROOT/lib/adapter.sh"
 # shellcheck source=../lib/native.sh
 . "$CODEMUX_ROOT/lib/native.sh"
+# shellcheck source=../lib/modules/memory-linux.sh
+. "$CODEMUX_ROOT/lib/modules/memory-linux.sh"
 # shellcheck source=../lib/check.sh
 . "$CODEMUX_ROOT/lib/check.sh"
 # shellcheck source=../lib/install.sh

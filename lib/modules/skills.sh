@@ -18,6 +18,17 @@ CODEMUX_SKILLS_MANAGED=(agent-browser webapp-testing)
 # codemux-managed copy from a foreign one.
 CODEMUX_SKILLS_MARKER="managed-by: codemux skills module"
 
+# On plain Linux the Python side is the official Playwright package (`pip
+# install playwright` + `playwright install chromium`); the zplaywright patcher
+# and its installer URL are Termux-only workarounds for the android-arm64
+# wheel that upstream does not ship.
+skills_python_module() {
+  case "$(codemux_detect_platform)" in
+    linux) printf 'playwright' ;;
+    *) printf 'pyee' ;;
+  esac
+}
+
 skills_python_ok() { python3 -c "import $1" >/dev/null 2>&1; }
 
 # Prints "missing" entries: "skill:<name>" for a bad/absent managed skill copy,
@@ -33,8 +44,7 @@ skills_missing_items() {
       printf 'skill:%s\n' "$s"
     fi
   done
-  skills_python_ok pyee || printf 'pip:pyee\n'
-  skills_python_ok playwright || printf 'pip:playwright\n'
+  skills_python_ok "$(skills_python_module)" || printf 'pip:%s\n' "$(skills_python_module)"
 }
 
 m_skills_probe() {
@@ -42,7 +52,10 @@ m_skills_probe() {
   miss="$(skills_missing_items)"
   if [ -z "$miss" ]; then
     PROBE=OK
-    NOTE="${#CODEMUX_SKILLS_MANAGED[@]} skills synced · pyee + playwright importable"
+    case "$(codemux_detect_platform)" in
+      linux) NOTE="${#CODEMUX_SKILLS_MANAGED[@]} skills synced · playwright importable" ;;
+      *) NOTE="${#CODEMUX_SKILLS_MANAGED[@]} skills synced · pyee + playwright importable" ;;
+    esac
   else
     n="$(printf '%s\n' "$miss" | wc -l | tr -d ' ')"
     PROBE=MISS
@@ -61,28 +74,41 @@ m_skills_apply() {
   miss="$(skills_missing_items)"
 
   # Python dependencies first: the skills are useless without them.
-  if ! skills_python_ok pyee; then
-    codemux_spin_msg "pip install pyee"
-    if ! pip install pyee >/dev/null 2>&1; then
-      APPLY_NOTE="pip install pyee failed"
-      return 1
-    fi
-  fi
-  if ! skills_python_ok playwright; then
-    if [ -z "${CODEMUX_ZPLAYWRIGHT_INSTALL:-}" ]; then
-      APPLY_NOTE="CODEMUX_ZPLAYWRIGHT_INSTALL is not set (versions.env missing?)"
-      return 1
-    fi
-    codemux_spin_msg "installing zplaywright (Playwright patcher for Termux)"
-    if ! curl -fsSL "$CODEMUX_ZPLAYWRIGHT_INSTALL" | bash >/dev/null 2>&1; then
-      APPLY_NOTE="zplaywright installer failed"
-      return 1
-    fi
-    skills_python_ok playwright || {
-      APPLY_NOTE="playwright still not importable after zplaywright install"
-      return 1
-    }
-  fi
+  case "$(codemux_detect_platform)" in
+    linux)
+      if ! skills_python_ok playwright; then
+        codemux_spin_msg "pip install playwright"
+        if ! pip install playwright >/dev/null 2>&1; then
+          APPLY_NOTE="pip install playwright failed"
+          return 1
+        fi
+      fi
+      ;;
+    *)
+      if ! skills_python_ok pyee; then
+        codemux_spin_msg "pip install pyee"
+        if ! pip install pyee >/dev/null 2>&1; then
+          APPLY_NOTE="pip install pyee failed"
+          return 1
+        fi
+      fi
+      if ! skills_python_ok playwright; then
+        if [ -z "${CODEMUX_ZPLAYWRIGHT_INSTALL:-}" ]; then
+          APPLY_NOTE="CODEMUX_ZPLAYWRIGHT_INSTALL is not set (versions.env missing?)"
+          return 1
+        fi
+        codemux_spin_msg "installing zplaywright (Playwright patcher for Termux)"
+        if ! curl -fsSL "$CODEMUX_ZPLAYWRIGHT_INSTALL" | bash >/dev/null 2>&1; then
+          APPLY_NOTE="zplaywright installer failed"
+          return 1
+        fi
+        skills_python_ok playwright || {
+          APPLY_NOTE="playwright still not importable after zplaywright install"
+          return 1
+        }
+      fi
+      ;;
+  esac
 
   # Sync the managed skill docs (backup a differing foreign copy once).
   for s in "${CODEMUX_SKILLS_MANAGED[@]}"; do

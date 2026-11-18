@@ -235,5 +235,83 @@ printf "%s" "$PROBE"
 ')"
 [ "$probe_v1" = OK ] && ok "native: v1 probe OK on linux" || bad "native: v1 probe=$probe_v1"
 
+# 7. skills + memory on the linux profile (PRD §21.2, phase 3) -----------------
+# A second sandbox: its PATH leads with a fake python3 whose import success is
+# controlled by a flag file, so the pyee/playwright dispatch is deterministic
+# on any host. Module-level tests source the module files directly — the CLI
+# entry point would run the whole install plan.
+SB2="$SB/linux2"
+mkdir -p "$SB2/bin" "$SB2/home" "$SB2/state" "$SB2/zen-src"
+HOSTPATH="$PATH"
+cat >"$SB2/bin/python3" <<'PYTEOF'
+#!/bin/sh
+# Fake python3: only the import probes are controlled; everything else falls
+# through to the real interpreter.
+case "$1$2" in
+  "-c"*import\ playwright*) [ "$(cat "${SB2:?}/py-ok" 2>/dev/null)" = playwright ] && exit 0 || exit 1 ;;
+  "-c"*import\ pyee*) [ "$(cat "${SB2:?}/py-ok" 2>/dev/null)" = pyee ] && exit 0 || exit 1 ;;
+esac
+exec "$(command -v python3)" "$@"
+PYTEOF
+chmod +x "$SB2/bin/python3"
+cat >"$SB2/bin/pip" <<'PIPTEOF'
+#!/bin/sh
+printf 'pip %s\n' "$*" >>"${SB2:?}/piplog"
+# installing a package makes its import succeed
+for a in "$@"; do case "$a" in playwright|pyee) printf '%s' "$a" >"${SB2:?}/py-ok" ;; esac; done
+exit 0
+PIPTEOF
+chmod +x "$SB2/bin/pip"
+# zen-memory CLI fixtures served through file:// (the fetch helper accepts it)
+printf '#!/bin/sh\ncase "$1" in init) mkdir -p "$HOME/.zen" ;; esac\necho zen-ok\n' >"$SB2/zen-src/zen-memory.sh"
+printf '# store fixture\n' >"$SB2/zen-src/store.sh"
+printf '#!/usr/bin/env python3\n# archiver fixture\n' >"$SB2/zen-src/zen-archiver.py"
+
+load() { # load <platform> <snippet> — source the shared libs + one module
+  env -u TERMUX_VERSION CODEMUX_PLATFORM="$1" CODEMUX_ALLOW_NONANDROID=1 \
+    HOME="$SB2/home" CODEMUX_HOME="$SB2/state" PREFIX="$SB2/prefix" TMPDIR="$BASE" \
+    SB2="$SB2" PATH="$SB2/bin:$HOSTPATH" "$BASH_BIN" -c "
+    set +euo pipefail
+    . '$ROOT/lib/common.sh'
+    . '$ROOT/lib/exec.sh'
+    . '$ROOT/lib/adapter.sh'
+    $2
+  " 2>&1
+}
+
+# skills: linux wants playwright, termux wants pyee+playwright (zplaywright)
+out="$(load linux '. '$ROOT/lib/modules/skills.sh'; skills_missing_items')"
+printf '%s' "$out" | grep -q 'pip:playwright' && ! printf '%s' "$out" | grep -q 'pip:pyee' &&
+  ok "skills: linux misses playwright only" || bad "skills: linux missing list ($out)"
+out="$(load termux '. '$ROOT/lib/modules/skills.sh'; skills_missing_items')"
+printf '%s' "$out" | grep -q 'pip:pyee' &&
+  ok "skills: termux still wants pyee" || bad "skills: termux missing list ($out)"
+out="$(load linux '. '$ROOT/lib/modules/skills.sh'; m_skills_apply; printf "rc=%s" "$?"')"
+printf '%s' "$out" | grep -q 'rc=0' && grep -q 'pip install playwright' "$SB2/piplog" &&
+  ok "skills: linux apply pip-installs playwright" || bad "skills: linux apply ($out)"
+out="$(load linux '. '$ROOT/lib/modules/skills.sh'; m_skills_probe; printf "%s" "$NOTE"')"
+printf '%s' "$out" | grep -q 'playwright importable' &&
+  ok "skills: linux probe note" || bad "skills: linux probe note ($out)"
+
+# memory: linux installs the zen-memory CLI from the (file://) repo URLs
+out="$(load linux '. '$ROOT/lib/modules/memory-linux.sh'; m_memory_linux_probe; printf "%s" "$PROBE"')"
+[ "$out" = MISS ] && ok "memory: linux probe MISS before install" || bad "memory: linux probe=$out"
+out="$(load linux '. '$ROOT/lib/modules/memory-linux.sh'; CODEMUX_ZEN_SCRIPTS_URL="file://$SB2/zen-src"; m_memory_linux_apply; printf "rc=%s" "$?"')"
+printf '%s' "$out" | grep -q 'rc=0' &&
+  ok "memory: linux apply ok" || bad "memory: linux apply ($out)"
+for f in zen-memory.sh store.sh zen-archiver.py; do
+  [ -s "$SB2/home/.local/bin/$f" ] && ok "memory: CLI $f installed" || bad "memory: CLI $f missing"
+done
+[ -d "$SB2/home/.zen" ] && ok "memory: store initialised" || bad "memory: no store"
+grep -q 'codemux:zen-memory version 1' "$SB2/home/.bashrc" &&
+  ok "memory: bashrc pointer block" || bad "memory: no bashrc block"
+out="$(load linux '. '$ROOT/lib/modules/memory-linux.sh'; m_memory_linux_probe; printf "%s" "$PROBE"')"
+[ "$out" = OK ] && ok "memory: linux probe OK after install" || bad "memory: linux probe=$out"
+# the termux profile must keep the termux memory module: run the full CLI there
+# and check the memory row does not carry the zen-memory note
+out="$(st "$(cm termux check --json)" memory)"
+[ "$out" = MISS ] &&
+  ok "memory: termux profile keeps the termux module" || bad "memory: termux module ($out)"
+
 printf '%d passed · %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

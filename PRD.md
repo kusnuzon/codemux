@@ -1147,5 +1147,9 @@ Status: **phase 1 + phase 2 implemented** (2026-11-18). Phase 1: detection,
 package provider, android-only skip. Phase 2: `v1`/`v2` install the native
 upstream tarballs on Linux (`lib/native.sh`: releases API tag lookup, musl
 variant detection, staged download + `--version` smoke test, plain launcher,
-idempotent via a `VERSION` marker). Still deferred: the `skills` zplaywright
-replacement and the `memory` module consuming the zen-memory store on Linux.
+idempotent via a `VERSION` marker). Phase 3: the `skills` module pip-installs
+the official `playwright` package on Linux (the zplaywright patcher stays
+Termux-only) and the `memory` module becomes the zen-memory CLI + tiered store
+(`lib/modules/memory-linux.sh`: fetch the scripts from the zen-memory repo,
+`zen-memory init`, a marked `~/.bashrc` pointer block) instead of the opencode
+plugin stack. Platform profile work is complete.

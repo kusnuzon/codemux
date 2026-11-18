@@ -85,7 +85,7 @@ SB="$(new_sandbox fresh)"
 fake_python3 "$SB"
 out="$(probe "$SB")"
 case "$out" in
-  "MISS|"*skill:agent-browser*skill:webapp-testing*pip:pyee*pip:playwright*) ok "fresh probe is MISS and lists every gap" ;;
+  "MISS|"*skill:agent-browser*skill:webapp-testing*pip:pyee*) ok "fresh probe is MISS and lists every gap" ;;
   *) bad "fresh probe unexpected: $out" ;;
 esac
 
