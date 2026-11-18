@@ -49,16 +49,18 @@ m_deps_apply() {
   pkgs="$(printf '%s' "$pkgs" | sed 's/^ *//')"
 
   if [ -n "$pkgs" ]; then
-    codemux_spin_msg "apt install: $pkgs"
+    codemux_spin_msg "install: $pkgs"
     # shellcheck disable=SC2086
-    if ! codemux_apt_install $pkgs; then
-      APPLY_NOTE="apt failed: $pkgs"
+    if ! codemux_pkg_install $pkgs; then
+      APPLY_NOTE="package install failed: $pkgs"
       return 1
     fi
     APPLY_NOTE="installed: $pkgs"
   fi
 
-  if m_deps_curl_broken; then
+  # The broken-curl heal exists because the Termux glibc package can overwrite
+  # libcurl; that failure mode does not exist on plain Linux.
+  if m_deps_curl_broken && [ "$(codemux_detect_platform)" = termux ]; then
     codemux_spin_msg "repairing curl (reinstalling curl/libcurl/openssl)"
     codemux_heal_curl || {
       APPLY_NOTE="curl is still broken after reinstalling"

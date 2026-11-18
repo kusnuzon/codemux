@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # codemux — Termux installer & maintainer (M6: install + maintenance + release).
 # shellcheck shell=bash
 set -Eeuo pipefail

@@ -26,7 +26,7 @@ cd "$ROOT" || exit 1
 BASE="${CODEMUX_TEST_TMP:-${TMPDIR:-/tmp}}"
 if [ -n "${PREFIX:-}" ] && [ -d "${PREFIX:-}/tmp" ]; then BASE="$PREFIX/tmp"; fi
 
-ALL="smoke launcher-memory maintenance resume release adapter tmuxconf tabctl sync-files skills"
+ALL="smoke launcher-memory maintenance resume release adapter tmuxconf tabctl sync-files skills platform"
 jobs=6
 keep=0
 serial=0

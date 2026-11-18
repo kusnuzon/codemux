@@ -161,9 +161,14 @@ codemux_cmd_install() {
 
   codemux_spin_start "" "checking the current state"
   for m in "${CODEMUX_INSTALL_MODULES[@]}"; do
-    codemux_verify_module "$m"
-    PS[$m]="$PROBE"
-    PN[$m]="$NOTE"
+    if codemux_platform_skip "$m"; then
+      PS[$m]=SKIP
+      PN[$m]="android-only (platform: $(codemux_detect_platform))"
+    else
+      codemux_verify_module "$m"
+      PS[$m]="$PROBE"
+      PN[$m]="$NOTE"
+    fi
   done
   codemux_spin_stop
 
@@ -176,6 +181,9 @@ codemux_cmd_install() {
     i=$((i + 1))
     if codemux_in_list "$m" "$skip"; then
       act=SKIP; note="skipped (--skip)"
+    elif [ "${PS[$m]}" = SKIP ]; then
+      # platform skip (android-only on Linux) or anything else pre-skipped
+      act=SKIP; note="${PN[$m]}"
     elif [ "${PS[$m]}" = OK ]; then
       act="ready"; note="${PN[$m]}"
     else
@@ -239,6 +247,14 @@ codemux_cmd_install() {
       codemux_run_set "$m" SKIP "skipped (--skip)"
       codemux_state_set "$m" SKIP "-" "skipped (--skip)"
       printf '%sSKIP%s\n' "$C_DIM" "$C_R"
+      skip_n=$((skip_n + 1))
+      continue
+    fi
+
+    if codemux_platform_skip "$m"; then
+      codemux_run_set "$m" SKIP "android-only (platform: $(codemux_detect_platform))"
+      codemux_state_set "$m" SKIP "-" "android-only (platform: $(codemux_detect_platform))"
+      printf '%sSKIP%s   android-only (platform: %s)\n' "$C_DIM" "$C_R" "$(codemux_detect_platform)"
       skip_n=$((skip_n + 1))
       continue
     fi

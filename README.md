@@ -28,6 +28,12 @@ Termux on Android, **aarch64**, **not root**. That's it — dependencies are
 installed automatically. Disk: V2-only is the smallest footprint; adding V1
 also pulls `clang`/LLVM (~500 MB) because its package compiles the wrapper.
 
+**Platform profiles:** codemux also runs on plain Linux (Debian/Arch/Fedora
+family) as a launcher + free-pi + memory toolkit. The Android-only parts (apt
+mirror, storage setup, glibc shim) are reported as `SKIP` there instead of
+being attempted, and packages install through `apt-get`, `pacman`, or `dnf`.
+OpenCode V1/V2 payloads are still Termux-only.
+
 ## ⚡ 1-Click Install
 
 Copy-paste one line into Termux and press Enter:

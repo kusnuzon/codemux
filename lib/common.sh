@@ -7,7 +7,43 @@ CODEMUX_NAME="codemux"
 CODEMUX_ROOT="${CODEMUX_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 CODEMUX_VERSION="$(cat "$CODEMUX_ROOT/VERSION" 2>/dev/null || echo "0.0.0")"
 CODEMUX_HOME="${CODEMUX_HOME:-$HOME/.config/codemux}"
+
+# --- platform profile (PRD §21) --------------------------------------------
+# Detect BEFORE the Termux PREFIX default below is applied: that default would
+# otherwise make every Linux box look like Termux. An explicit CODEMUX_PLATFORM
+# (env) wins, so tests can simulate either platform on any machine.
+if [ -z "${CODEMUX_PLATFORM:-}" ]; then
+  case "${PREFIX:-}" in
+    */com.termux*) CODEMUX_PLATFORM=termux ;;
+    *)
+      if [ -n "${TERMUX_VERSION:-}" ]; then
+        CODEMUX_PLATFORM=termux
+      else
+        CODEMUX_PLATFORM=linux
+      fi
+      ;;
+  esac
+fi
+
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+
+codemux_detect_platform() {
+  printf '%s' "$CODEMUX_PLATFORM"
+}
+
+# Modules that only make sense on Android/Termux; on plain Linux they are
+# reported as SKIP instead of attempted (PRD §21.1).
+CODEMUX_ANDROID_ONLY_MODULES="mirror storage glibc"
+
+codemux_is_android_only() {
+  case " $CODEMUX_ANDROID_ONLY_MODULES " in *" $1 "*) return 0 ;; esac
+  return 1
+}
+
+# True when the module cannot run on this platform and must be skipped.
+codemux_platform_skip() {
+  [ "$(codemux_detect_platform)" = linux ] && codemux_is_android_only "$1"
+}
 
 # versions.env (optional; never fail when it is missing)
 # Values from the environment win over the file (used by tests/ and CI).
@@ -160,7 +196,24 @@ codemux_die() {
 have() { command -v "$1" >/dev/null 2>&1; }
 
 pkg_installed() {
-  dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'
+  case "$(codemux_detect_platform)" in
+    linux)
+      # Provider interface: same question, whichever package manager the distro
+      # uses. Binary check is the last resort, never the primary answer.
+      if have dpkg-query; then
+        dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'
+      elif have pacman; then
+        pacman -Qi "$1" >/dev/null 2>&1
+      elif have rpm; then
+        rpm -q "$1" >/dev/null 2>&1
+      else
+        have "$1"
+      fi
+      ;;
+    *)
+      dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'
+      ;;
+  esac
 }
 
 human_bytes() {
@@ -284,6 +337,32 @@ codemux_apt_update() {
 
 # codemux_apt_install <package...> — install; if the package list is stale, update and retry.
 codemux_apt_install() {
+  codemux_pkg_install "$@"
+}
+
+# codemux_pkg_install <package...> — the package-manager provider interface
+# (PRD §21.2): apt on Termux/Debian, pacman on Arch, dnf on Fedora. The apt
+# implementation keeps its stale-list retry; the others are plain installs.
+codemux_pkg_install() {
+  [ "$#" -gt 0 ] || return 0
+  case "$(codemux_detect_platform)" in
+    linux)
+      if have apt-get; then
+        codemux_apt_install_impl "$@"
+      elif have pacman; then
+        pacman -S --noconfirm --needed "$@"
+      elif have dnf; then
+        dnf install -y "$@"
+      else
+        log_fail "no supported package manager found (apt-get, pacman, dnf)"
+        return 1
+      fi
+      ;;
+    *) codemux_apt_install_impl "$@" ;;
+  esac
+}
+
+codemux_apt_install_impl() {
   local pkgs=("$@") out rc=0
   [ "${#pkgs[@]}" -gt 0 ] || return 0
   have apt-get || return 1

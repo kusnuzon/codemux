@@ -45,7 +45,11 @@ codemux_cmd_check() {
     i=$((i + 1))
     PROBE=OK
     NOTE=""
-    if { [ "$m" = v1 ] || [ "$m" = v2 ]; } && ! codemux_component_selected "$m"; then
+    if codemux_platform_skip "$m"; then
+      # Android-only module on plain Linux: reported, never attempted.
+      PROBE=SKIP
+      NOTE="android-only (platform: $(codemux_detect_platform))"
+    elif { [ "$m" = v1 ] || [ "$m" = v2 ]; } && ! codemux_component_selected "$m"; then
       # Not selected by the user: report it, but do not count it as missing.
       PROBE=SKIP
       NOTE="not selected (components: $comps)"

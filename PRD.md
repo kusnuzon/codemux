@@ -1098,7 +1098,7 @@ without manual intervention, it only needs the network again.
 
 ---
 
-## 21. Platform profiles — beyond Termux (planned, not started)
+## 21. Platform profiles — beyond Termux (implemented: detection + provider + skip)
 
 Decision (2026-11-18, Master): codemux must eventually run on standard Linux
 (Debian, Arch, …) as well — **one repository, platform profiles**, not a
@@ -1116,16 +1116,26 @@ zen-memory store).
 
 ### 21.2 Design
 
-- `preflight` detects the platform (`termux` / `linux`) and the module list is
-  built from it; Android-only modules are skipped with a clear note, never
-  attempted.
-- One package-manager provider interface (`pkg_install`, `pkg_installed`, …)
-  with implementations per distro family; `doctor` prints the exact command it
-  would run.
-- bash 4.2+ compatibility baseline for everything that must run on Linux; the
-  existing harness discipline (no raw `$PREFIX`, no hardcoded Termux paths)
-  becomes a hard gate for shared files.
-- CI adds a plain-Linux job alongside the two existing matrix entries.
+- `lib/common.sh` detects the platform once, at source time and BEFORE the
+  Termux `PREFIX` default is applied (that default would otherwise make every
+  Linux box look like Termux). Detection order: `CODEMUX_PLATFORM` env override
+  → `PREFIX` containing `com.termux` → `TERMUX_VERSION` set → `linux`.
+- `codemux_platform_skip <module>` marks the Android-only modules
+  (`mirror`, `storage`, `glibc`) as SKIP in `check` and `install` on Linux —
+  they are still listed, with the note `android-only (platform: linux)`, so
+  plan rows and module counts stay stable.
+- `preflight` applies the Android/aarch64 requirements only on the `termux`
+  profile; on Linux it reports `linux · <os>/<arch>` and never fails on them.
+- One package-manager provider interface: `codemux_pkg_install` (apt with the
+  stale-list retry / pacman `-S --noconfirm --needed` / dnf) and
+  `pkg_installed` (dpkg-query / pacman -Qi / rpm -q, binary check last).
+  `codemux_apt_install` remains as a thin alias so older callers keep working.
+  The broken-curl heal stays Termux-only (the glibc overwrite failure mode
+  does not exist on Linux).
+- `bin/codemux` uses `#!/usr/bin/env bash`.
+- CI: the two existing ubuntu matrix jobs now exercise the `linux` profile for
+  real (no `TERMUX_VERSION`, no Termux `PREFIX`); `tests/platform.sh` covers
+  detection, the provider dispatch, and the skip behavior on both profiles.
 
 ### 21.3 Non-goals
 
@@ -1133,5 +1143,7 @@ zen-memory store).
   nothing is tested or promised).
 - No GUI, no daemon.
 
-Status: **planned** — design locked, implementation waits for `zen-memory` v2
-M1–M2 (see the zen-memory repo PRD).
+Status: **detection + provider + skip implemented** (2026-11-18). Still
+platform-specific and deferred: `v1`/`v2` payload install on Linux (upstream
+install paths), the `skills` zplaywright replacement, and the `memory` module
+consuming the zen-memory store on Linux.
