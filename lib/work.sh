@@ -58,10 +58,26 @@ tmp="$tmp/work-runner.$$.sh"
   printf 'ch=%q\n' "$ch"
   printf 'delay=%q\n' "${KERJA_CLOSE_DELAY:-5}"
   cat <<'BODY'
-printf '\n[%s] %s\n$ %s\n' "$ts" "$desc" "$cmd" | tee -a "$log"
+# Log stays plain text (grep-able); the pane display gets soft ANSI colors.
+plain_log() { printf '%s\n' "$1" >> "$log"; }
+plain_log "[$ts] $desc"
+printf '\033[38;2;159;184;208m◆ %s\033[0m \033[2m%s\033[0m\n' "$desc" "$ts"
+cmdline="\$ $cmd"
+plain_log "$cmdline"
+if [ "${#cmdline}" -gt 110 ]; then
+  printf '\033[2m%s…\033[0m\n' "${cmdline:0:107}"
+else
+  printf '\033[2m%s\033[0m\n' "$cmdline"
+fi
 bash -c "$cmd" 2>&1 | tee -a "$log"
 rc=${PIPESTATUS[0]}
-printf '[%s] done rc=%s\n' "$(date '+%H:%M:%S')" "$rc" | tee -a "$log"
+dur=$SECONDS
+plain_log "[$(date '+%H:%M:%S')] done rc=$rc (${dur}s)"
+if [ "$rc" -eq 0 ]; then
+  printf '\033[38;2;143;191;127m✔ done rc=%s · %ss\033[0m\n' "$rc" "$dur"
+else
+  printf '\033[38;2;224;128;128m✖ done rc=%s · %ss\033[0m\n' "$rc" "$dur"
+fi
 tmux wait-for -S "$ch"
 sleep "$delay"
 exit "$rc"
@@ -96,6 +112,10 @@ else
   }
   tmux set-option -t "$wID" automatic-rename off 2>/dev/null
 fi
+
+# Soften the work pane: gentle gray foreground on the warm near-black theme
+# background instead of the terminal's harsh pure-white default.
+tmux select-pane -t "$wID" -P 'fg=#c8ccd0,bg=#11100E' 2>/dev/null
 
 # wait for completion (event-driven, no sleep)
 timeout "${KERJA_TIMEOUT:-1800}" tmux wait-for "$ch" 2>/dev/null || {
