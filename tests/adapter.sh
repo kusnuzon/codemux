@@ -62,6 +62,10 @@ for f in "$SANDBOX/upstream/v1.sh" "$SANDBOX/upstream/v2.sh" \
 done
 
 export CODEMUX_ALLOW_NONANDROID=1
+# This suite exercises the TermuxVoid adapter path, which is Termux-only: pin
+# the platform so a Linux CI runner does not take the native-upstream branch
+# (lib/native.sh) and ignore the fake upstream scripts entirely.
+export CODEMUX_PLATFORM=termux
 # The install default is V2 only, but this suite exercises both adapters, so
 # pin the component choice instead of relying on the machine's saved choice.
 export CODEMUX_COMPONENTS="v1 v2"
