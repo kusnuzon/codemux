@@ -88,29 +88,41 @@ touch "$LOG"
 start="$(wc -l < "$LOG")"
 
 # -d: do not steal Master's focus; the tab/pane still shows up live
+open_tab() {
+  wID="$(tmux new-window -d -P -t "$sess:" -n "$name" bash "$tmp" 2>/dev/null)" || return 1
+  tmux set-option -t "$wID" automatic-rename off 2>/dev/null
+  return 0
+}
+
+# A job that opens no pane is invisible to Master AND leaves no trace in the
+# log, so every failure to display is recorded here.
+display_failed() {
+  printf '[%s] %s\n[work] job NOT displayed: no tmux split/tab could be opened\n' \
+    "$(date '+%H:%M:%S')" "$desc" >> "$LOG"
+  rm -f "$tmp"
+  exit 3
+}
+
 if [ "${KERJA_SPLIT:-1}" != "0" ]; then
   # bottom split in the session's current window (top/bottom split screen)
-  wID="$(tmux split-window -d -v -P -t "$sess:" bash "$tmp" 2>/dev/null)" || {
-    echo "kerja: failed to open tmux split pane" >&2
-    rm -f "$tmp"
-    exit 3
-  }
-  # Parallel jobs each get their own pane; main-horizontal keeps the active
-  # (Master's) pane as the large top pane and tiles every work pane evenly
-  # below it, instead of nesting ever-narrower halves. main-pane-height caps
-  # the work area at roughly a quarter of the window so the job panes stay small.
-  wh="$(tmux display-message -p -t "$sess:" '#{window_height}' 2>/dev/null)"
-  case "$wh" in ''|*[!0-9]*) wh=0 ;; esac
-  bh=$(( wh / 4 )); [ "$bh" -lt 4 ] && bh=4
-  tmux set-option -t "$sess:" main-pane-height "$(( wh - bh ))" 2>/dev/null
-  tmux select-layout -t "$sess:" main-horizontal 2>/dev/null
+  wID="$(tmux split-window -d -v -P -t "$sess:" bash "$tmp" 2>/dev/null)" || wID=""
+  if [ -n "$wID" ]; then
+    # Parallel jobs each get their own pane; main-horizontal keeps the active
+    # (Master's) pane as the large top pane and tiles every work pane evenly
+    # below it, instead of nesting ever-narrower halves. main-pane-height caps
+    # the work area at roughly a quarter of the window so the job panes stay small.
+    wh="$(tmux display-message -p -t "$sess:" '#{window_height}' 2>/dev/null)"
+    case "$wh" in ''|*[!0-9]*) wh=0 ;; esac
+    bh=$(( wh / 4 )); [ "$bh" -lt 4 ] && bh=4
+    tmux set-option -t "$sess:" main-pane-height "$(( wh - bh ))" 2>/dev/null
+    tmux select-layout -t "$sess:" main-horizontal 2>/dev/null
+  else
+    # No room for a split (window too short or too many job panes already):
+    # fall back to a strip tab so the job still shows up somewhere.
+    open_tab || display_failed
+  fi
 else
-  wID="$(tmux new-window -d -P -t "$sess:" -n "$name" bash "$tmp" 2>/dev/null)" || {
-    echo "kerja: failed to open tmux window" >&2
-    rm -f "$tmp"
-    exit 3
-  }
-  tmux set-option -t "$wID" automatic-rename off 2>/dev/null
+  open_tab || display_failed
 fi
 
 # Soften the work pane: gentle gray foreground on the warm near-black theme
