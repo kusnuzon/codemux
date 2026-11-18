@@ -1095,3 +1095,43 @@ If Android kills Termux exactly while dpkg is writing its database, the dpkg DB
 can end up half-done. That is **detected** on the next run (`dpkg --audit`) and
 repaired automatically (`dpkg --configure -a`, `apt-get -f install`) — still
 without manual intervention, it only needs the network again.
+
+---
+
+## 21. Platform profiles — beyond Termux (planned, not started)
+
+Decision (2026-11-18, Master): codemux must eventually run on standard Linux
+(Debian, Arch, …) as well — **one repository, platform profiles**, not a
+separate repo. Sequencing: the `zen-memory` v2 memory store (M1–M2) is built
+first; this milestone consumes it (the `memory` module on Linux uses the
+zen-memory store).
+
+### 21.1 Portability map (audit result, 2026-11-18)
+
+| Status | Modules |
+|---|---|
+| portable as-is | core framework (state, lock, resume, progress bar, atomic write), launcher + menu, dotfiles, tmux-config, work console, update-check, self-update, logs, check/status |
+| needs a provider/adapter | `deps`/`toolset` (pkg → apt/dnf/pacman), `v1`/`v2` (Linux = native upstream install, no glibc shim), `pi` (npm path check), `skills` (official Playwright, not zplaywright) |
+| Android-only, auto-skip on Linux | `mirror`, `storage`, `glibc` |
+
+### 21.2 Design
+
+- `preflight` detects the platform (`termux` / `linux`) and the module list is
+  built from it; Android-only modules are skipped with a clear note, never
+  attempted.
+- One package-manager provider interface (`pkg_install`, `pkg_installed`, …)
+  with implementations per distro family; `doctor` prints the exact command it
+  would run.
+- bash 4.2+ compatibility baseline for everything that must run on Linux; the
+  existing harness discipline (no raw `$PREFIX`, no hardcoded Termux paths)
+  becomes a hard gate for shared files.
+- CI adds a plain-Linux job alongside the two existing matrix entries.
+
+### 21.3 Non-goals
+
+- macOS/BSD support is not planned (tmux/agent parts would mostly work, but
+  nothing is tested or promised).
+- No GUI, no daemon.
+
+Status: **planned** — design locked, implementation waits for `zen-memory` v2
+M1–M2 (see the zen-memory repo PRD).
