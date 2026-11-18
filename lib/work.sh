@@ -139,7 +139,7 @@ retile() {
   local wh bh
   wh="$(tmux display-message -p -t "$sess:" '#{window_height}' 2>/dev/null)"
   case "$wh" in ''|*[!0-9]*) wh=0 ;; esac
-  bh=$(( wh / 4 )); [ "$bh" -lt 4 ] && bh=4
+  bh=$(( wh / 6 )); [ "$bh" -lt 4 ] && bh=4
   tmux set-option -t "$sess:" main-pane-height "$(( wh - bh ))" 2>/dev/null
   tmux select-layout -t "$sess:" main-horizontal 2>/dev/null
 }
