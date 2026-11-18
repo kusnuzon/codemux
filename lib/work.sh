@@ -56,6 +56,32 @@ fi
 name="$(printf '%s' "$desc" | tr -cs 'A-Za-z0-9' '-' | cut -c1-14)"
 [ -n "$name" ] || name=work
 
+# the pane Master was using before this job — focus always returns there, so
+# typing never lands in the console pane. If focus is already stuck on the
+# console (e.g. left over from an older run), fall back to the pane at the top
+# of the window — main-horizontal keeps Master's pane there — or any pane that
+# is not the console. The last good target is also remembered in a state file
+# for the case where the active pane cannot be read at all.
+opane="$(tmux display-message -p -t "$sess:" '#{pane_id}' 2>/dev/null)"
+conpid="$(cat "$PANE_FILE" 2>/dev/null)"
+if [ -n "$conpid" ] && [ "$opane" = "$conpid" ]; then
+  opane="$(tmux list-panes -t "$sess:" -F '#{pane_at_top} #{pane_id}' 2>/dev/null \
+    | grep '^1 ' | head -1 | cut -d' ' -f2)"
+  if [ -z "$opane" ]; then
+    opane="$(tmux list-panes -t "$sess:" -F '#{pane_id}' 2>/dev/null \
+      | grep -vx "$conpid" | head -1)"
+  fi
+fi
+[ -n "$opane" ] || opane="$(cat "$tmp/agent-master.pane" 2>/dev/null)"
+
+restore_focus() {
+  if [ -n "$opane" ] && tmux select-pane -t "$opane" 2>/dev/null; then
+    # remember the last good target for the next run
+    printf '%s' "$opane" > "$tmp/agent-master.pane"
+  fi
+  return 0
+}
+
 # --- the one runner for both display modes ------------------------------------
 # Console mode (no --once): loops, reading job-file paths from the fifo. The
 # fifo is reopened every iteration, so waiting for the next job blocks in the
@@ -204,14 +230,17 @@ if [ -z "$mode" ]; then
   if console_ensure; then
     console_follow
     tmux select-pane -t "$cpid" -P 'fg=#c8ccd0,bg=#11100E' 2>/dev/null
+    restore_focus
     printf '%s\n' "$jobfile" > "$FIFO"
   else
     open_tab || display_failed
   fi
 elif [ "$mode" = "1" ]; then
   open_split || open_tab || display_failed
+  restore_focus
 else
   open_tab || display_failed
+  restore_focus
 fi
 
 # soften one-shot panes too: gentle gray on the warm near-black theme
@@ -245,6 +274,9 @@ while :; do
   fi
 done
 rm -f "$jobfile"
+
+# give the keyboard back to Master's pane
+restore_focus
 
 # emit this run's slice of the log as output
 tail -n +"$((start + 1))" "$LOG"
