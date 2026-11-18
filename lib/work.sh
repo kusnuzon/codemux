@@ -82,10 +82,10 @@ if [ "${KERJA_SPLIT:-1}" != "0" ]; then
   # Parallel jobs each get their own pane; main-horizontal keeps the active
   # (Master's) pane as the large top pane and tiles every work pane evenly
   # below it, instead of nesting ever-narrower halves. main-pane-height caps
-  # the work area at roughly a third of the window so the job panes stay small.
+  # the work area at roughly a quarter of the window so the job panes stay small.
   wh="$(tmux display-message -p -t "$sess:" '#{window_height}' 2>/dev/null)"
   case "$wh" in ''|*[!0-9]*) wh=0 ;; esac
-  bh=$(( wh / 3 )); [ "$bh" -lt 5 ] && bh=5
+  bh=$(( wh / 4 )); [ "$bh" -lt 4 ] && bh=4
   tmux set-option -t "$sess:" main-pane-height "$(( wh - bh ))" 2>/dev/null
   tmux select-layout -t "$sess:" main-horizontal 2>/dev/null
 else
