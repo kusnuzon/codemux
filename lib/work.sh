@@ -6,7 +6,8 @@
 # auto-delay (KERJA_CLOSE_DELAY seconds, default 5) so Master can read the
 # output, then closes itself. The caller is released as soon as the run ends.
 # KERJA_SPLIT defaults to 1: the job opens as a BOTTOM SPLIT in the session's
-# current window (top/bottom split screen; focus stays where it was).
+# current window (top/bottom split screen; focus stays where it was). Parallel
+# jobs tile evenly below Master's pane (select-layout main-horizontal).
 # KERJA_SPLIT=0 falls back to a separate tab in the strip.
 set -u
 
@@ -78,6 +79,10 @@ if [ "${KERJA_SPLIT:-1}" != "0" ]; then
     rm -f "$tmp"
     exit 3
   }
+  # Parallel jobs each get their own pane; main-horizontal keeps the active
+  # (Master's) pane as the large top pane and tiles every work pane evenly
+  # below it, instead of nesting ever-narrower halves.
+  tmux select-layout -t "$sess:" main-horizontal 2>/dev/null
 else
   wID="$(tmux new-window -d -P -t "$sess:" -n "$name" bash "$tmp" 2>/dev/null)" || {
     echo "kerja: failed to open tmux window" >&2
