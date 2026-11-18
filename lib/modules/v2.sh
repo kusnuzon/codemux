@@ -10,6 +10,20 @@ m_v2_probe() {
   local launcher="$PREFIX/bin/opencode-v2"
   local ver note
 
+  if [ "$(codemux_detect_platform)" = linux ]; then
+    # linux profile: native upstream payload, no compat shim, no daemon shim.
+    if [ ! -x "$dir/opencode" ]; then
+      PROBE=MISS; NOTE="payload not installed yet ($dir/opencode)"; return
+    fi
+    ver="$(opencode_v2_version)"
+    if [ -x "$launcher" ]; then
+      PROBE=OK; NOTE="v$ver · native linux"
+    else
+      PROBE=WARN; NOTE="v$ver · launcher MISSING"
+    fi
+    return
+  fi
+
   if [ ! -x "$dir/opencode.real" ]; then
     PROBE=MISS; NOTE="payload not installed yet ($dir/opencode.real)"; return
   fi
@@ -38,6 +52,17 @@ m_v2_verify() { m_v2_probe; }
 
 m_v2_apply() {
   local script rc
+
+  if [ "$(codemux_detect_platform)" = linux ]; then
+    # linux profile: upstream native tarball, no adapter, no glibc shim.
+    if codemux_native_install 2 "$PREFIX/share/opencode-v2" "$PREFIX/bin/opencode-v2"; then
+      APPLY_NOTE="V2 native linux · opencode-v2 $(opencode_v2_version)"
+      return 0
+    fi
+    APPLY_NOTE="V2 native linux install failed"
+    return 1
+  fi
+
   if ! script="$(codemux_adapter_fetch v2 "$CODEMUX_UPSTREAM_V2")"; then
     APPLY_NOTE="failed to download upstream V2 install.sh (network?)"
     return 1

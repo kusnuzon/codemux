@@ -1143,7 +1143,9 @@ zen-memory store).
   nothing is tested or promised).
 - No GUI, no daemon.
 
-Status: **detection + provider + skip implemented** (2026-11-18). Still
-platform-specific and deferred: `v1`/`v2` payload install on Linux (upstream
-install paths), the `skills` zplaywright replacement, and the `memory` module
-consuming the zen-memory store on Linux.
+Status: **phase 1 + phase 2 implemented** (2026-11-18). Phase 1: detection,
+package provider, android-only skip. Phase 2: `v1`/`v2` install the native
+upstream tarballs on Linux (`lib/native.sh`: releases API tag lookup, musl
+variant detection, staged download + `--version` smoke test, plain launcher,
+idempotent via a `VERSION` marker). Still deferred: the `skills` zplaywright
+replacement and the `memory` module consuming the zen-memory store on Linux.

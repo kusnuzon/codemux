@@ -54,7 +54,11 @@ FVP="$SB/bin"
 BASH_BIN="$(command -v bash)"
 # ONLY the fakes: on Ubuntu /bin is a symlink to /usr/bin, so any real
 # dpkg-query/pacman on the host path would answer before the fakes.
-MINPATH="$FVP"
+# core/ holds the few non-package tools the provider path itself needs
+# (grep inside pkg_installed); everything else stays out.
+mkdir -p "$SB/core"
+ln -sf "$(command -v grep)" "$SB/core/grep"
+MINPATH="$FVP:$SB/core"
 printf '#!/bin/sh\necho dpkg-query "$@" >>"%s/calls"\nexit 1\n' "$SB" >"$FVP/dpkg-query"
 printf '#!/bin/sh\necho pacman "$@" >>"%s/calls"\nexit 1\n' "$SB" >"$FVP/pacman"
 printf '#!/bin/sh\necho rpm "$@" >>"%s/calls"\nexit 1\n' "$SB" >"$FVP/rpm"
@@ -106,6 +110,10 @@ env -u TERMUX_VERSION CODEMUX_PLATFORM=termux PATH="$MINPATH" "$BASH_BIN" -c \
   bad "install: legacy name broken"
 
 # 4. check: android-only modules are SKIP on linux, probed on termux ---------
+# Pin the components: the machine's saved choice (often just "pi") would leave
+# v1/v2 out of the module list entirely. The selection lives in the state file,
+# not in an env var, so write it into the sandbox state.
+printf 'v1 v2\n' >"$SB/state/components"
 json="$(cm linux check --json)"
 st() { # st <json> <module> -> status
   printf '%s' "$1" | python3 -c '
@@ -126,6 +134,17 @@ done
 json_t="$(cm termux check --json)"
 [ "$(st "$json_t" mirror)" != SKIP ] &&
   ok "check: mirror probed on termux" || bad "check: mirror skipped on termux"
+# Regression guard: a missing payload must read MISS on both platforms. The
+# termux probe once lost its payload check and read WARN instead, which made a
+# failed adapter run settle as DONE (adapter suite: "HTML not rejected").
+[ "$(st "$json_t" opencode-v1)" = MISS ] &&
+  ok "check: v1 MISS without payload (termux)" || bad "check: v1 termux ($(st "$json_t" v1))"
+[ "$(st "$json_t" opencode-v2)" = MISS ] &&
+  ok "check: v2 MISS without payload (termux)" || bad "check: v2 termux ($(st "$json_t" v2))"
+[ "$(st "$json" opencode-v1)" = MISS ] &&
+  ok "check: v1 MISS without payload (linux)" || bad "check: v1 linux ($(st "$json" v1))"
+[ "$(st "$json" opencode-v2)" = MISS ] &&
+  ok "check: v2 MISS without payload (linux)" || bad "check: v2 linux ($(st "$json" v2))"
 
 # 5. install plan: rows stay complete, android-only shown as SKIP ------------
 out="$(cm linux install --dry-run)"
@@ -139,6 +158,82 @@ out="$(cm termux install --dry-run)"
 printf '%s\n' "$out" | grep -E '^  [0-9]+/[0-9]+ mirror ' | grep -q SKIP &&
   bad "plan: mirror wrongly skipped on termux" ||
   ok "plan: mirror not skipped on termux"
+
+# 6. native upstream install (linux profile, PRD §21.2) -----------------------
+# Fake curl routes the releases list and the asset download to fixtures; the
+# fixture tarball holds a fake `opencode` that prints the fixture version.
+FIX="$SB/fix"
+mkdir -p "$FIX"
+printf '%s\n' '[{"tag_name":"v9.9.9"},{"tag_name":"v2.0.0"},{"tag_name":"v1.0.0"}]' >"$FIX/releases.json"
+mkfix() { # mkfix <version> <tarball-name>
+  local d="$SB/fix-$1"
+  mkdir -p "$d"
+  printf '#!/bin/sh\ncase "${1:-}" in --version) echo "%s" ;; esac\n' "$1" >"$d/opencode"
+  chmod +x "$d/opencode"
+  tar czf "$FIX/$2" -C "$d" opencode
+}
+mkfix 1.0.0 asset1.tar.gz
+mkfix 2.0.0 asset2.tar.gz
+cat >"$FVP/curl" <<'CUREOF'
+#!/bin/sh
+FIX="${ZEN_FIX:?}"
+out=""; prev=""
+for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
+case "$*" in
+  *releases?per_page*) [ -n "$out" ] && cat "$FIX/releases.json" >"$out" || cat "$FIX/releases.json" ;;
+  *releases/download/v1.0.0/*) [ -n "$out" ] && cat "$FIX/asset1.tar.gz" >"$out" || cat "$FIX/asset1.tar.gz" ;;
+  *releases/download/v2.0.0/*) [ -n "$out" ] && cat "$FIX/asset2.tar.gz" >"$out" || cat "$FIX/asset2.tar.gz" ;;
+  *) echo 404 >&2; exit 22 ;;
+esac
+printf '%s\n' "$*" | grep -o "https://[^ ]*" >>"${ZEN_SB:?}/curllog" || true
+CUREOF
+chmod +x "$FVP/curl"
+
+nat() { # nat <major> <dest> <launcher> -> rc of codemux_native_install
+  # NATPATH: fake curl first, host tools (uname/tar/jq) after — unlike the
+  # provider tests above, this path does not need to hide dpkg-query.
+  env -u TERMUX_VERSION CODEMUX_PLATFORM=linux PATH="$FVP:$PATH" HOME="$SB/home" \
+    CODEMUX_HOME="$SB/state" ZEN_FIX="$FIX" ZEN_SB="$SB" "$BASH_BIN" -c '
+. lib/common.sh >/dev/null 2>&1
+. lib/native.sh >/dev/null 2>&1
+codemux_native_install "$1" "$2" "$3"
+' nat "$1" "$2" "$3"
+}
+
+touch "$SB/curllog"
+
+V1D="$SB/prefix/share/opencode"
+V1L="$SB/prefix/bin/opencode"
+nat 1 "$V1D" "$V1L" && ok "native: v1 install rc=0" || bad "native: v1 install failed"
+[ -x "$V1D/opencode" ] && ok "native: payload executable" || bad "native: payload missing"
+[ "$(cat "$V1D/VERSION" 2>/dev/null)" = 1.0.0 ] &&
+  ok "native: VERSION file written" || bad "native: VERSION file"
+[ "$("$V1L" --version 2>/dev/null)" = 1.0.0 ] &&
+  ok "native: launcher runs the payload" || bad "native: launcher broken"
+grep -qF 'exec "' "$V1L" && ! grep -v '^#' "$V1L" | grep -q 'LD_PRELOAD\|glibc' &&
+  ok "native: launcher is a plain exec (no shim)" || bad "native: launcher has shim logic"
+
+# idempotent: a second run must not download the asset again (the cheap
+# releases-list lookup still happens, only the payload download is skipped)
+dl_before="$(grep -c '/download/' "$SB/curllog" || true)"
+nat 1 "$V1D" "$V1L" && [ "$(grep -c '/download/' "$SB/curllog" || true)" = "$dl_before" ] &&
+  ok "native: already-current install is idempotent" || bad "native: not idempotent"
+
+# v2 resolves the v2.x tag, not v1
+V2D="$SB/prefix/share/opencode-v2"
+V2L="$SB/prefix/bin/opencode-v2"
+nat 2 "$V2D" "$V2L" && [ "$(cat "$V2D/VERSION" 2>/dev/null)" = 2.0.0 ] &&
+  ok "native: v2 resolves its own major" || bad "native: v2 tag resolution"
+
+# probe sees the native install as OK
+probe_v1="$(env -u TERMUX_VERSION CODEMUX_PLATFORM=linux PATH="$FVP:$PATH" HOME="$SB/home" \
+  CODEMUX_HOME="$SB/state" PREFIX="$SB/prefix" ZEN_FIX="$FIX" ZEN_SB="$SB" "$BASH_BIN" -c '
+. lib/common.sh >/dev/null 2>&1
+. lib/modules/v1.sh >/dev/null 2>&1
+m_v1_probe
+printf "%s" "$PROBE"
+')"
+[ "$probe_v1" = OK ] && ok "native: v1 probe OK on linux" || bad "native: v1 probe=$probe_v1"
 
 printf '%d passed · %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

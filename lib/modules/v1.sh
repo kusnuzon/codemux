@@ -7,14 +7,29 @@
 CODEMUX_UPSTREAM_V1="${CODEMUX_UPSTREAM_V1:-https://api.github.com/repos/kusnuzon/opencode-termux/contents/install.sh}"
 
 m_v1_probe() {
-  local payload="$PREFIX/share/opencode/opencode.real"
-  local launcher="$PREFIX/bin/opencode"
-  local ver pkg_ver held=0 note
+  local payload launcher ver pkg_ver held=0 note
 
+  if [ "$(codemux_detect_platform)" = linux ]; then
+    # linux profile: native upstream payload, no termuxvoid dpkg, no apt hold.
+    payload="$PREFIX/share/opencode/opencode"
+    launcher="$PREFIX/bin/opencode"
+    if [ ! -x "$payload" ]; then
+      PROBE=MISS; NOTE="payload not installed yet ($payload)"; return
+    fi
+    ver="$(opencode_v1_version)"
+    if [ -x "$launcher" ]; then
+      PROBE=OK; NOTE="v$ver · native linux"
+    else
+      PROBE=WARN; NOTE="v$ver · launcher MISSING"
+    fi
+    return
+  fi
+
+  payload="$PREFIX/share/opencode/opencode.real"
+  launcher="$PREFIX/bin/opencode"
   if [ ! -x "$payload" ]; then
     PROBE=MISS; NOTE="payload not installed yet ($payload)"; return
   fi
-
   ver="$(opencode_v1_version)"
   pkg_ver="$(dpkg-query -W -f='${Version}' opencode 2>/dev/null || true)"
   apt-mark showhold 2>/dev/null | grep -qx opencode && held=1
@@ -46,6 +61,17 @@ m_v1_probe() {
 
 m_v1_apply() {
   local script rc
+
+  if [ "$(codemux_detect_platform)" = linux ]; then
+    # linux profile: upstream native tarball, no adapter, no glibc shim.
+    if codemux_native_install 1 "$PREFIX/share/opencode" "$PREFIX/bin/opencode"; then
+      APPLY_NOTE="V1 native linux · opencode $(opencode_v1_version)"
+      return 0
+    fi
+    APPLY_NOTE="V1 native linux install failed"
+    return 1
+  fi
+
   if ! script="$(codemux_adapter_fetch v1 "$CODEMUX_UPSTREAM_V1")"; then
     APPLY_NOTE="failed to download upstream V1 install.sh (network?)"
     return 1

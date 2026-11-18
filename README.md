@@ -32,7 +32,9 @@ also pulls `clang`/LLVM (~500 MB) because its package compiles the wrapper.
 family) as a launcher + free-pi + memory toolkit. The Android-only parts (apt
 mirror, storage setup, glibc shim) are reported as `SKIP` there instead of
 being attempted, and packages install through `apt-get`, `pacman`, or `dnf`.
-OpenCode V1/V2 payloads are still Termux-only.
+On Linux, OpenCode V1/V2 install natively from the upstream `sst/opencode`
+release tarballs (no glibc shim, no TermuxVoid adapter); the Termux path keeps
+using the TermuxVoid repo adapters.
 
 ## ⚡ 1-Click Install
 
