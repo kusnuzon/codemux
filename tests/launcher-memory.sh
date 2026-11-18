@@ -1334,6 +1334,34 @@ if grep -q 'KERJA_CLOSE_DELAY' "$WORK" && ! grep -q '^drifted$' "$WORK"; then
 else
   bad "drifted work runner was not restored"
 fi
+# --console mode: the launcher shows the console before the agent starts, and
+# the console closes itself once the agent (pi runs as `node`) is gone.
+if grep -q '"--console"' "$WORK" && grep -q 'CONSOLE_ONLY' "$WORK"; then
+  ok "the work runner has a --console mode (show the pane without a job)"
+else
+  bad "work runner is missing the --console mode"
+fi
+if grep -q 'agent_alive' "$WORK" && grep -q 'kill-pane -t "$self"' "$WORK" &&
+  grep -q 'agent-console-.*state' "$WORK"; then
+  ok "the console auto-closes when the agent is gone (watcher + busy flag, per-session state)"
+else
+  bad "console runner is missing the agent-gone watcher or the busy flag"
+fi
+if grep -qF 'WORK_NESTED=1' "$WORK" && grep -qF 'WORK_NESTED:-' "$WORK"; then
+  ok "nested work.sh calls fall back to a direct logged run (no fifo deadlock)"
+else
+  bad "work runner is missing the nested-call fallback"
+fi
+if grep -q '@agent-console' "$WORK" && grep -q 'never spin' "$WORK"; then
+  ok "console is marked for adoption and the runner never spins on a lost fifo"
+else
+  bad "console marker/adoption or fifo spin guard is missing"
+fi
+if grep -q 'work.sh" --console' "$MENU"; then
+  ok "the menu shows the console before launching free-pi"
+else
+  bad "menu does not call work.sh --console before launching pi"
+fi
 
 rm -rf "$SANDBOX_ROOT"
 printf '\n%s passed · %s failed\n' "$pass" "$fail"

@@ -11,7 +11,7 @@
 # Rows are answered by typing a number, never by a single key: a one-key reader
 # needs raw mode and spins on EOF when the terminal comes back raw.
 
-CM_MENU_VERSION="13"
+CM_MENU_VERSION="14"
 
 # Colours are empty when the output is not a terminal or NO_COLOR is set.
 _cm_colors() {
@@ -488,6 +488,12 @@ _cm_launch() {
   fi
   _CM_NOTICE=""
   _cm_tab_title "$key"
+  # pi: show the agent console before the agent starts, so the work pane is
+  # visible from the first second (work.sh otherwise creates it lazily on the
+  # first job). It closes itself again once the agent exits.
+  if [ "$key" = pi ] && [ -x "$HOME/bin/work.sh" ]; then
+    bash "$HOME/bin/work.sh" --console >/dev/null 2>&1
+  fi
   printf '  %s→ %s%s\n\n' "$DIM" "$name" "$R"
   _cm_capture_start
   "$cmd"
