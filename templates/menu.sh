@@ -11,7 +11,7 @@
 # Rows are answered by typing a number, never by a single key: a one-key reader
 # needs raw mode and spins on EOF when the terminal comes back raw.
 
-CM_MENU_VERSION="14"
+CM_MENU_VERSION="15"
 
 # Colours are empty when the output is not a terminal or NO_COLOR is set.
 _cm_colors() {
@@ -493,6 +493,15 @@ _cm_launch() {
   # first job). It closes itself again once the agent exits.
   if [ "$key" = pi ] && [ -x "$HOME/bin/work.sh" ]; then
     bash "$HOME/bin/work.sh" --console >/dev/null 2>&1
+  fi
+  # pi-bot bridge: keep the Telegram bridge alive whenever pi runs. The
+  # auto-restart loop lives in ~/pibot/run-loop.sh so a later pgrep -f
+  # bridge.py never matches this window's own shell cmdline.
+  if [ "$key" = pi ] && [ -x "$HOME/pibot/run-loop.sh" ] && [ -n "${TMUX:-}" ]; then
+    _cm_sess=$(tmux display-message -p '#S' 2>/dev/null || true)
+    if [ -n "$_cm_sess" ] && ! tmux list-windows -t "$_cm_sess" -F '#W' 2>/dev/null | grep -qx pibot; then
+      tmux new-window -d -t "$_cm_sess" -n pibot "bash $HOME/pibot/run-loop.sh" >/dev/null 2>&1 || true
+    fi
   fi
   printf '  %s→ %s%s\n\n' "$DIM" "$name" "$R"
   _cm_capture_start
